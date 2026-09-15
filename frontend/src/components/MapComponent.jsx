@@ -7,10 +7,12 @@ import {
   NavigationControl,
   ScaleControl,
 } from "@vis.gl/react-maplibre";
-import "maplibre-gl/dist/maplibre-gl.css";
 import { ProjectionControl } from "./controls/ProjectionControl";
+import "maplibre-gl/dist/maplibre-gl.css";
 
-export default function MapComponent({ mapRef }) {
+export default function MapComponent({ mapRef, tickets }) {
+  // console.log(tickets);
+
   return (
     <Map
       styleDiffing
@@ -35,6 +37,7 @@ export default function MapComponent({ mapRef }) {
       // Надо будет вынести для разных стилей карты в отдельный обьект
       mapStyle={`https://api.maptiler.com/maps/01a0a53f-a24b-7778-b5e1-b59ba3d6f612/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`}
     >
+      {/* Компоненты ниже отвечают за кнопки управления */}
       <NavigationControl visualizePitch visualizeRoll></NavigationControl>
       <FullscreenControl></FullscreenControl>
       <GeolocateControl></GeolocateControl>
