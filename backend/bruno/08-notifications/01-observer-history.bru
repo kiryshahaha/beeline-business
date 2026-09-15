@@ -1,0 +1,30 @@
+meta {
+  name: История наблюдателя
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/notifications?limit=20&offset=0
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Наблюдатель получил изменение статуса", function () {
+    const events = res.getBody();
+    expect(events).to.be.an("array");
+    expect(events.some(function (event) {
+      return event.kind === "ticket_status_changed"
+        && event.ticket_id === Number(bru.getVar("ticket_id"));
+    })).to.equal(true);
+  });
+}

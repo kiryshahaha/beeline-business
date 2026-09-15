@@ -1,0 +1,29 @@
+meta {
+  name: Очистить назначения перед сценарием
+  type: http
+  seq: 0
+}
+
+put {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/assignees
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"worker_ids":[]}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Список назначений очищен", function () {
+    expect(res.getBody().assignee_ids).to.deep.equal([]);
+  });
+}

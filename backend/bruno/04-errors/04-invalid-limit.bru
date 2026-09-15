@@ -1,0 +1,33 @@
+meta {
+  name: Нулевой размер страницы — 422
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets?limit=0
+  body: none
+  auth: none
+}
+
+params:query {
+  limit: 0
+}
+
+assert {
+  res.status: eq 422
+}
+
+tests {
+  test("Ошибка относится к параметру limit", function () {
+    const errors = res.getBody().detail;
+    expect(errors).to.be.an("array").and.not.empty;
+    expect(errors.some(function (error) {
+      return error.loc[0] === "query" && error.loc[1] === "limit";
+    })).to.equal(true);
+  });
+}
+
+docs {
+  Размер страницы — от 1 до 100.
+}

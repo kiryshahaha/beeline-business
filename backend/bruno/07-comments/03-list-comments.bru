@@ -1,0 +1,29 @@
+meta {
+  name: Получить ленту комментариев
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/comments
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Комментарии упорядочены", function () {
+    const items = res.getBody();
+    expect(items).to.be.an("array");
+    for (let i = 1; i < items.length; i++) {
+      expect(items[i].id).to.be.above(items[i - 1].id);
+    }
+  });
+}

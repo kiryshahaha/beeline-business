@@ -1,0 +1,26 @@
+meta {
+  name: Несуществующая заявка — 404
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets/{{missing_ticket_id}}
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 404
+}
+
+tests {
+  test("Понятное сообщение об отсутствующей заявке", function () {
+    expect(res.getBody().detail).to.equal("Заявка не найдена");
+  });
+}
+
+docs {
+  Local.missing_ticket_id должен указывать на несуществующую заявку.
+  По умолчанию 2147483647 — в демонаборе такого ID нет.
+}

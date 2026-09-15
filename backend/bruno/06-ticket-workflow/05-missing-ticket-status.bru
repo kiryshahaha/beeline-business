@@ -1,0 +1,23 @@
+meta {
+  name: Статус отсутствующего тикета
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/api/v1/tickets/{{missing_ticket_id}}/status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"status":"in_progress"}
+}
+
+assert {
+  res.status: eq 404
+}

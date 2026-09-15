@@ -1,0 +1,1 @@
+"""User notification delivery domain."""

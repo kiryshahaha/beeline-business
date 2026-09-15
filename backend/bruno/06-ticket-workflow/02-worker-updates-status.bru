@@ -1,0 +1,29 @@
+meta {
+  name: Исполнитель меняет статус
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{worker_access_token}}
+}
+
+body:json {
+  {"status":"in_progress"}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Статус изменён", function () {
+    expect(res.getBody().status).to.equal("in_progress");
+  });
+}

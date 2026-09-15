@@ -1,0 +1,23 @@
+meta {
+  name: Несуществующий исполнитель
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/assignees
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"worker_ids":[2147483647]}
+}
+
+assert {
+  res.status: eq 422
+}

@@ -1,0 +1,33 @@
+meta {
+  name: Несуществующий статус — 422
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets?status=unknown
+  body: none
+  auth: none
+}
+
+params:query {
+  status: unknown
+}
+
+assert {
+  res.status: eq 422
+}
+
+tests {
+  test("Ошибка относится к параметру status", function () {
+    const errors = res.getBody().detail;
+    expect(errors).to.be.an("array").and.not.empty;
+    expect(errors.some(function (error) {
+      return error.loc[0] === "query" && error.loc[1] === "status";
+    })).to.equal(true);
+  });
+}
+
+docs {
+  Допустимы planned, in_progress, completed, wont_fix.
+}

@@ -1,0 +1,34 @@
+meta {
+  name: Страница за пределами списка
+  type: http
+  seq: 16
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets?limit=2&offset=2147483647
+  body: none
+  auth: none
+}
+
+params:query {
+  limit: 2
+  offset: 2147483647
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Размер страницы не превышает лимит", function () {
+    expect(res.getBody().length).to.be.at.most(2);
+  });
+
+  test("За пределами списка возвращается пустой массив", function () {
+    expect(res.getBody()).to.deep.equal([]);
+  });
+}
+
+docs {
+  Заведомо большое смещение для демонабора: ожидается 200 и [].
+}

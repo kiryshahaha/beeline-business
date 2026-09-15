@@ -1,0 +1,23 @@
+meta {
+  name: Исполнитель не назначает коллег
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/assignees
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{worker_access_token}}
+}
+
+body:json {
+  {"worker_ids":[{{worker_id}}]}
+}
+
+assert {
+  res.status: eq 403
+}

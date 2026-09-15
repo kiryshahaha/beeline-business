@@ -1,0 +1,37 @@
+meta {
+  name: Город и статус
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets?city_id={{city_id}}&status=planned
+  body: none
+  auth: none
+}
+
+params:query {
+  city_id: {{city_id}}
+  status: planned
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Каждая заявка соответствует заданным фильтрам", function () {
+    res.getBody().forEach(function (ticket) {
+      expect(ticket.location.city_id).to.equal(Number(bru.getVar("city_id")));
+      expect(ticket.status).to.equal("planned");
+    });
+  });
+
+  test("Размер страницы не превышает лимит", function () {
+    expect(res.getBody().length).to.be.at.most(20);
+  });
+}
+
+docs {
+  Запланированные заявки выбранного города.
+}

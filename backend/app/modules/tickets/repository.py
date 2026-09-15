@@ -1,0 +1,215 @@
+"""Literal, parameterized SQL. Transaction boundaries are owned by the service."""
+
+from sqlalchemy import RowMapping, text
+from sqlalchemy.orm import Session
+
+from app.modules.notifications.enums import NotificationKind
+
+# Shared columns and joins keep single-ticket and list responses identical.
+TICKET_SELECT_SQL = """
+    SELECT
+        t.id, t.location_id, t.title, t.description, t.work_type, t.status,
+        t.visit_window_start, t.visit_window_end, t.planned_start_at, t.planned_end_at,
+        t.estimated_duration_minutes, t.actual_duration_minutes,
+        t.created_at, t.updated_at,
+        COALESCE(
+            (
+                SELECT array_agg(ta.worker_id ORDER BY ta.worker_id)
+                FROM ticket_assignments AS ta
+                WHERE ta.ticket_id = t.id
+            ),
+            ARRAY[]::integer[]
+        ) AS assignee_ids,
+        c.id AS city_id, c.name AS city,
+        d.id AS district_id, d.name AS district,
+        s.id AS street_id, s.name AS street,
+        b.id AS building_id, b.number AS building_number, b.block,
+        l.entrance_id, e.number AS entrance_number,
+        l.floor, l.apartment, l.latitude, l.longitude
+    FROM tickets AS t
+    JOIN locations AS l ON l.id = t.location_id
+    JOIN buildings AS b ON b.id = l.building_id
+    JOIN streets AS s ON s.id = b.street_id
+    JOIN cities AS c ON c.id = s.city_id
+    JOIN districts AS d ON d.id = b.district_id
+    LEFT JOIN entrances AS e ON e.id = l.entrance_id
+"""
+
+
+def find_location_id(session: Session, location_id: int) -> int | None:
+    # Keep this location from being deleted while its ticket is being inserted.
+    return session.execute(
+        text("SELECT id FROM locations WHERE id = :location_id FOR KEY SHARE"),
+        {"location_id": location_id},
+    ).scalar_one_or_none()
+
+
+def add_ticket(session: Session, values: dict[str, object]) -> int:
+    return session.execute(
+        text("""
+            INSERT INTO tickets (
+                location_id, title, description, work_type, status,
+                visit_window_start, visit_window_end, planned_start_at, planned_end_at,
+                estimated_duration_minutes, actual_duration_minutes
+            ) VALUES (
+                :location_id, :title, :description, :work_type, :status,
+                :visit_window_start, :visit_window_end, :planned_start_at, :planned_end_at,
+                :estimated_duration_minutes, :actual_duration_minutes
+            )
+            RETURNING id
+        """),
+        values,
+    ).scalar_one()
+
+
+def lock_ticket(session: Session, ticket_id: int) -> RowMapping | None:
+    return (
+        session.execute(
+            text("""
+                SELECT id, title, status
+                FROM tickets
+                WHERE id = :ticket_id
+                FOR UPDATE
+            """),
+            {"ticket_id": ticket_id},
+        )
+        .mappings()
+        .one_or_none()
+    )
+
+
+def find_worker_ids(session: Session, worker_ids: list[int]) -> set[int]:
+    if not worker_ids:
+        return set()
+    return set(
+        session.execute(
+            text("SELECT user_id FROM workers WHERE user_id = ANY(:worker_ids)"),
+            {"worker_ids": worker_ids},
+        )
+        .scalars()
+        .all()
+    )
+
+
+def replace_assignees(session: Session, ticket_id: int, worker_ids: list[int]) -> set[int]:
+    current_ids = set(
+        session.execute(
+            text("SELECT worker_id FROM ticket_assignments WHERE ticket_id = :ticket_id"),
+            {"ticket_id": ticket_id},
+        )
+        .scalars()
+        .all()
+    )
+    requested_ids = set(worker_ids)
+    session.execute(
+        text("DELETE FROM ticket_assignments WHERE ticket_id = :ticket_id"),
+        {"ticket_id": ticket_id},
+    )
+    for worker_id in sorted(requested_ids):
+        session.execute(
+            text("""
+                INSERT INTO ticket_assignments (ticket_id, worker_id)
+                VALUES (:ticket_id, :worker_id)
+            """),
+            {"ticket_id": ticket_id, "worker_id": worker_id},
+        )
+    return requested_ids - current_ids
+
+
+def is_worker_assigned(session: Session, ticket_id: int, worker_id: int) -> bool:
+    return (
+        session.execute(
+            text("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM ticket_assignments
+                    WHERE ticket_id = :ticket_id AND worker_id = :worker_id
+                )
+            """),
+            {"ticket_id": ticket_id, "worker_id": worker_id},
+        ).scalar_one()
+        is True
+    )
+
+
+def list_observer_ids(session: Session) -> list[int]:
+    return list(
+        session.execute(text("SELECT id FROM users WHERE role = 'observer' ORDER BY id")).scalars()
+    )
+
+
+def update_status(session: Session, ticket_id: int, status: str) -> None:
+    session.execute(
+        text("""
+            UPDATE tickets
+            SET status = :status, updated_at = now()
+            WHERE id = :ticket_id
+        """),
+        {"ticket_id": ticket_id, "status": status},
+    )
+
+
+def add_notification_events(
+    session: Session,
+    recipient_ids: list[int] | set[int],
+    *,
+    kind: NotificationKind,
+    ticket_id: int,
+    data: dict[str, object],
+) -> None:
+    import json
+
+    payload = json.dumps(data, ensure_ascii=False)
+    for recipient_id in sorted(recipient_ids):
+        session.execute(
+            text("""
+                INSERT INTO notification_events (recipient_id, ticket_id, kind, data)
+                VALUES (:recipient_id, :ticket_id, :kind, CAST(:data AS JSONB))
+            """),
+            {
+                "recipient_id": recipient_id,
+                "ticket_id": ticket_id,
+                "kind": kind.value,
+                "data": payload,
+            },
+        )
+
+
+def find_ticket(session: Session, ticket_id: int) -> RowMapping | None:
+    return (
+        session.execute(
+            text(TICKET_SELECT_SQL + " WHERE t.id = :ticket_id"),
+            {"ticket_id": ticket_id},
+        )
+        .mappings()
+        .one_or_none()
+    )
+
+
+def find_tickets(
+    session: Session,
+    *,
+    status: str | None,
+    city_id: int | None,
+    district_id: int | None,
+    limit: int,
+    offset: int,
+) -> list[RowMapping]:
+    conditions = []
+    parameters: dict[str, object] = {"limit": limit, "offset": offset}
+    if status is not None:
+        conditions.append("t.status = :status")
+        parameters["status"] = status
+    if city_id is not None:
+        conditions.append("b.city_id = :city_id")
+        parameters["city_id"] = city_id
+    if district_id is not None:
+        conditions.append("b.district_id = :district_id")
+        parameters["district_id"] = district_id
+
+    # Only fixed SQL fragments are joined; every value is a bound parameter.
+    query = TICKET_SELECT_SQL
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY t.id ASC LIMIT :limit OFFSET :offset"
+    return list(session.execute(text(query), parameters).mappings().all())

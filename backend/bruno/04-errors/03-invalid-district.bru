@@ -1,0 +1,33 @@
+meta {
+  name: Нулевой ID района — 422
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets?district_id=0
+  body: none
+  auth: none
+}
+
+params:query {
+  district_id: 0
+}
+
+assert {
+  res.status: eq 422
+}
+
+tests {
+  test("Ошибка относится к параметру district_id", function () {
+    const errors = res.getBody().detail;
+    expect(errors).to.be.an("array").and.not.empty;
+    expect(errors.some(function (error) {
+      return error.loc[0] === "query" && error.loc[1] === "district_id";
+    })).to.equal(true);
+  });
+}
+
+docs {
+  ID района должен быть положительным целым числом.
+}

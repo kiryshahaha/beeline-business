@@ -1,0 +1,35 @@
+meta {
+  name: По городу
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets?city_id={{city_id}}
+  body: none
+  auth: none
+}
+
+params:query {
+  city_id: {{city_id}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Каждая заявка соответствует заданным фильтрам", function () {
+    res.getBody().forEach(function (ticket) {
+      expect(ticket.location.city_id).to.equal(Number(bru.getVar("city_id")));
+    });
+  });
+
+  test("Размер страницы не превышает лимит", function () {
+    expect(res.getBody().length).to.be.at.most(20);
+  });
+}
+
+docs {
+  ID города задаётся в Local.city_id. В демонаборе один город — Санкт-Петербург.
+}

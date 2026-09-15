@@ -1,0 +1,29 @@
+meta {
+  name: Перенести Firebase-токен наблюдателю
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/v1/notifications/push-subscriptions
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"token":"bruno-demo-firebase-token"}
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("Токен принадлежит текущему пользователю", function () {
+    expect(res.getBody().user_id).to.equal(Number(bru.getVar("observer_id")));
+  });
+}

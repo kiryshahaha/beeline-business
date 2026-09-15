@@ -1,0 +1,35 @@
+meta {
+  name: Запланированные
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets?status=planned
+  body: none
+  auth: none
+}
+
+params:query {
+  status: planned
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Каждая заявка соответствует заданным фильтрам", function () {
+    res.getBody().forEach(function (ticket) {
+      expect(ticket.status).to.equal("planned");
+    });
+  });
+
+  test("Размер страницы не превышает лимит", function () {
+    expect(res.getBody().length).to.be.at.most(20);
+  });
+}
+
+docs {
+  В исходном демонаборе все заявки запланированы.
+}

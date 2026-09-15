@@ -1,0 +1,23 @@
+meta {
+  name: Удалить Firebase-токен
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{base_url}}/api/v1/notifications/push-subscriptions
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"token":"bruno-demo-firebase-token"}
+}
+
+assert {
+  res.status: eq 204
+}

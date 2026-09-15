@@ -1,0 +1,30 @@
+meta {
+  name: Список заявок и фильтры
+  seq: 2
+}
+
+tests {
+  test("Ответ — массив заявок с полным адресом", function () {
+    const tickets = res.getBody();
+    expect(tickets).to.be.an("array");
+    tickets.forEach(function (ticket) {
+      expect(ticket.id).to.be.a("number");
+      expect(ticket.location.id).to.equal(ticket.location_id);
+      expect(ticket.location.city_id).to.be.a("number");
+      expect(ticket.location.district_id).to.be.a("number");
+      expect(ticket.location.address).to.be.a("string").and.not.empty;
+    });
+  });
+
+  test("Заявки отсортированы по возрастанию ID", function () {
+    const tickets = res.getBody();
+    for (let i = 1; i < tickets.length; i++) {
+      expect(tickets[i].id).to.be.above(tickets[i - 1].id);
+    }
+  });
+}
+
+docs {
+  Общие проверки выполняются для каждого запроса этой папки.
+  Пустой массив допустим: совпадений с фильтрами может не быть.
+}

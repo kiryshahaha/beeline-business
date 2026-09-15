@@ -1,0 +1,33 @@
+meta {
+  name: Отрицательное смещение — 422
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets?offset=-1
+  body: none
+  auth: none
+}
+
+params:query {
+  offset: -1
+}
+
+assert {
+  res.status: eq 422
+}
+
+tests {
+  test("Ошибка относится к параметру offset", function () {
+    const errors = res.getBody().detail;
+    expect(errors).to.be.an("array").and.not.empty;
+    expect(errors.some(function (error) {
+      return error.loc[0] === "query" && error.loc[1] === "offset";
+    })).to.equal(true);
+  });
+}
+
+docs {
+  Смещение не может быть отрицательным.
+}

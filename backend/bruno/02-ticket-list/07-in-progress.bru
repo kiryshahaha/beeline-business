@@ -1,0 +1,35 @@
+meta {
+  name: В работе
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets?status=in_progress
+  body: none
+  auth: none
+}
+
+params:query {
+  status: in_progress
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Каждая заявка соответствует заданным фильтрам", function () {
+    res.getBody().forEach(function (ticket) {
+      expect(ticket.status).to.equal("in_progress");
+    });
+  });
+
+  test("Размер страницы не превышает лимит", function () {
+    expect(res.getBody().length).to.be.at.most(20);
+  });
+}
+
+docs {
+  Если заявок в работе пока нет, ожидается 200 и [].
+}

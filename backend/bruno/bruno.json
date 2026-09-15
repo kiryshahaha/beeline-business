@@ -1,0 +1,12 @@
+{
+  "version": "1",
+  "name": "Beeline API",
+  "type": "collection",
+  "presets": {
+    "defaultEnvironment": "Local"
+  },
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

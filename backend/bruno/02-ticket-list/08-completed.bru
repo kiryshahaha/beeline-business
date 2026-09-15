@@ -1,0 +1,35 @@
+meta {
+  name: Завершённые
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets?status=completed
+  body: none
+  auth: none
+}
+
+params:query {
+  status: completed
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Каждая заявка соответствует заданным фильтрам", function () {
+    res.getBody().forEach(function (ticket) {
+      expect(ticket.status).to.equal("completed");
+    });
+  });
+
+  test("Размер страницы не превышает лимит", function () {
+    expect(res.getBody().length).to.be.at.most(20);
+  });
+}
+
+docs {
+  Если завершённых заявок пока нет, ожидается 200 и [].
+}

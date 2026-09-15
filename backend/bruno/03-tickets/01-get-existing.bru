@@ -1,0 +1,28 @@
+meta {
+  name: Получить существующую заявку
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Вернулась запрошенная заявка с адресом", function () {
+    const ticket = res.getBody();
+    expect(ticket.id).to.equal(Number(bru.getVar("ticket_id")));
+    expect(ticket.location.id).to.equal(ticket.location_id);
+    expect(ticket.location.address).to.be.a("string").and.not.empty;
+  });
+}
+
+docs {
+  Укажите ID существующей заявки в Local.ticket_id. Его можно взять из ответа списка или вывода python seed_demo.py.
+}

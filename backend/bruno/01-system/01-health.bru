@@ -1,0 +1,26 @@
+meta {
+  name: Проверить доступность API
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/health
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Сервер работает", function () {
+    expect(res.getBody()).to.deep.equal({ status: "ok" });
+  });
+}
+
+docs {
+  Проверяет доступность FastAPI. Подключение к PostgreSQL этим запросом не проверяется.
+  Без окружения используется http://127.0.0.1:8000/health: base_url задаёт collection.bru.
+}

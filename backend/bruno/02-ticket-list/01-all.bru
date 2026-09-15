@@ -1,0 +1,25 @@
+meta {
+  name: Все заявки
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Размер страницы не превышает лимит", function () {
+    expect(res.getBody().length).to.be.at.most(20);
+  });
+}
+
+docs {
+  Без фильтров. По умолчанию limit=20, offset=0.
+}

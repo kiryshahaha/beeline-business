@@ -1,0 +1,35 @@
+meta {
+  name: Красногвардейский район
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets?district_id={{krasnogvardeysky_district_id}}
+  body: none
+  auth: none
+}
+
+params:query {
+  district_id: {{krasnogvardeysky_district_id}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Каждая заявка соответствует заданным фильтрам", function () {
+    res.getBody().forEach(function (ticket) {
+      expect(ticket.location.district_id).to.equal(Number(bru.getVar("krasnogvardeysky_district_id")));
+    });
+  });
+
+  test("Размер страницы не превышает лимит", function () {
+    expect(res.getBody().length).to.be.at.most(20);
+  });
+}
+
+docs {
+  Пример третьего района. Проверьте ID по location.district_id в ответе списка.
+}

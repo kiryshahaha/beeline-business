@@ -1,0 +1,23 @@
+meta {
+  name: Пустой комментарий отклоняется
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/comments
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"text":"   "}
+}
+
+assert {
+  res.status: eq 422
+}

@@ -1,0 +1,29 @@
+meta {
+  name: Комментарий наблюдателя
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/comments
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"text":"Клиент просит позвонить за 15 минут."}
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("Автор имеет роль observer", function () {
+    expect(res.getBody().author.role).to.equal("observer");
+  });
+}

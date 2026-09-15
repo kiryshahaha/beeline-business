@@ -1,0 +1,19 @@
+meta {
+  name: Чужой исполнитель не видит комментарии
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/comments
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{worker_two_access_token}}
+}
+
+assert {
+  res.status: eq 403
+}

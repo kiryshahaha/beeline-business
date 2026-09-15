@@ -1,0 +1,31 @@
+meta {
+  name: Профиль второго исполнителя
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/api/v1/users/me
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{worker_two_access_token}}
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    bru.setVar("worker_two_id", res.getBody().id);
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Профиль имеет роль worker", function () {
+    expect(res.getBody().role).to.equal("worker");
+  });
+}

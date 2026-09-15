@@ -1,0 +1,35 @@
+meta {
+  name: Прочитать только что созданную заявку
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets/{{created_ticket_id}}
+  body: none
+  auth: none
+}
+
+script:pre-request {
+  if (!bru.getVar("created_ticket_id")) {
+    throw new Error("Сначала выполните запрос «Создать заявку» в этой сессии Bruno.");
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Заявка сохранилась и доступна по ID", function () {
+    const ticket = res.getBody();
+    expect(ticket.id).to.equal(Number(bru.getVar("created_ticket_id")));
+    expect(ticket.title).to.equal("Проверка Wi-Fi из Bruno");
+    expect(ticket.location.address).to.be.a("string").and.not.empty;
+  });
+}
+
+docs {
+  Сначала выполните предыдущий POST в той же сессии или запустите папку целиком последовательно.
+  Переменная created_ticket_id хранится во время работы Bruno; после перезапуска выполните POST снова.
+}

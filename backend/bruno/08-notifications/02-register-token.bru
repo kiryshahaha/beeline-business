@@ -1,0 +1,29 @@
+meta {
+  name: Зарегистрировать Firebase-токен
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/notifications/push-subscriptions
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{worker_access_token}}
+}
+
+body:json {
+  {"token":"bruno-demo-firebase-token"}
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("Токен привязан к исполнителю", function () {
+    expect(res.getBody().user_id).to.equal(Number(bru.getVar("worker_id")));
+  });
+}
