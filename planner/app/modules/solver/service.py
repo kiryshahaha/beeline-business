@@ -27,13 +27,14 @@ class VRPTWSolver:
 
         transit_callback_index = routing.RegisterTransitCallback(time_callback)
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+        routing.SetFixedCostOfAllVehicles(self.data.vehicle_fixed_cost)
 
         # Time dimension
         time = "Time"
         routing.AddDimension(
             transit_callback_index,
-            120,  # slack_max (max waiting time)
-            14400,  # capacity (large enough to fit any time window within a day or more)
+            self.data.slack_max,  # slack_max (max waiting time)
+            self.data.time_capacity,  # capacity
             False,  # fix_start_cumul_to_zero
             time,
         )
@@ -45,7 +46,7 @@ class VRPTWSolver:
             if len(time_window) >= 2:
                 time_dimension.CumulVar(index).SetRange(time_window[0], time_window[1])
             elif len(time_window) == 1:
-                time_dimension.CumulVar(index).SetRange(time_window[0], 14400)
+                time_dimension.CumulVar(index).SetRange(time_window[0], self.data.time_capacity)
                 
         # Time windows for End nodes (since NodeToIndex only maps to Start nodes)
         for v in range(self.data.num_vehicles):
@@ -55,7 +56,7 @@ class VRPTWSolver:
             if len(time_window) >= 2:
                 time_dimension.CumulVar(end_index).SetRange(time_window[0], time_window[1])
             elif len(time_window) == 1:
-                time_dimension.CumulVar(end_index).SetRange(time_window[0], 14400)
+                time_dimension.CumulVar(end_index).SetRange(time_window[0], self.data.time_capacity)
 
         # Allowed vehicles (Hard Constraints)
         if self.data.allowed_vehicles:
@@ -88,34 +89,43 @@ class VRPTWSolver:
         search_parameters.local_search_metaheuristic = (
             routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
         )
-        search_parameters.time_limit.seconds = 3
+        search_parameters.time_limit.seconds = self.data.search_time_limit_s
 
         # Solve
         assignment = routing.SolveWithParameters(search_parameters)
 
         if not assignment:
             return SolveResponse(
-                status="NOT_SOLVED", routes=[], dropped_nodes=[], total_cost=0
+                status="NOT_SOLVED", routes=[], dropped_nodes=[], total_cost=0, total_distance=0
             )
 
         status_str = "OPTIMAL"
 
         routes = []
+        total_distance = 0
         for vehicle_id in range(self.data.num_vehicles):
             index = routing.Start(vehicle_id)
             steps = []
+            route_distance = 0
             while not routing.IsEnd(index):
                 time_var = time_dimension.CumulVar(index)
                 node_idx = manager.IndexToNode(index)
                 steps.append(Step(node=node_idx, arrival_time=assignment.Min(time_var)))
-                index = assignment.Value(routing.NextVar(index))
+                
+                next_index = assignment.Value(routing.NextVar(index))
+                next_node_idx = manager.IndexToNode(next_index)
+                if self.data.distance_matrix:
+                    route_distance += self.data.distance_matrix[node_idx][next_node_idx]
+                
+                index = next_index
 
             # Add end node
             time_var = time_dimension.CumulVar(index)
             node_idx = manager.IndexToNode(index)
             steps.append(Step(node=node_idx, arrival_time=assignment.Min(time_var)))
 
-            routes.append(Route(vehicle_id=vehicle_id, steps=steps))
+            routes.append(Route(vehicle_id=vehicle_id, distance=route_distance, steps=steps))
+            total_distance += route_distance
 
         dropped_nodes = []
         for node_idx in range(len(self.data.time_matrix)):
@@ -131,4 +141,5 @@ class VRPTWSolver:
             routes=routes,
             dropped_nodes=dropped_nodes,
             total_cost=assignment.ObjectiveValue(),
+            total_distance=total_distance,
         )
