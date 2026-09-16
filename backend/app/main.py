@@ -11,6 +11,7 @@ from app.modules.auth.schemas import (
     REFRESH_TOKEN_REQUEST_EXAMPLE,
     TOKEN_RESPONSE_EXAMPLE,
 )
+from app.modules.brigades.router import router as brigades_router
 from app.modules.comments.router import router as comments_router
 from app.modules.locations.router import router as locations_router
 from app.modules.notifications.dispatcher import create_dispatcher
@@ -22,6 +23,7 @@ from app.modules.users.router import skills_router
 from app.modules.users.schemas import (
     USER_CREATE_OBSERVER_EXAMPLE,
     USER_CREATE_WORKER_EXAMPLE,
+    USER_READ_FOREMAN_EXAMPLE,
     USER_READ_OBSERVER_EXAMPLE,
     USER_READ_WORKER_EXAMPLE,
     USER_UPDATE_EXAMPLE,
@@ -52,7 +54,10 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="Планирование выездных работ",
-    description="Основа сервиса: заявки, адресный справочник, пользователи и авторизация.",
+    description=(
+        "Заявки, адресный справочник, пользователи, бригады и авторизация. "
+        "Бригадир видит только собственную бригаду и заявки её исполнителей."
+    ),
     version="0.2.0",
     lifespan=lifespan,
 )
@@ -61,6 +66,7 @@ app.include_router(locations_router)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(skills_router)
+app.include_router(brigades_router)
 app.include_router(tickets_router)
 app.include_router(comments_router)
 app.include_router(notifications_router)
@@ -94,6 +100,7 @@ def openapi_with_examples() -> dict:
         schemas["UserRead"]["examples"] = [
             USER_READ_WORKER_EXAMPLE,
             USER_READ_OBSERVER_EXAMPLE,
+            USER_READ_FOREMAN_EXAMPLE,
         ]
     if "WorkerSkillCreate" in schemas:
         schemas["WorkerSkillCreate"]["examples"] = [WORKER_SKILL_CREATE_EXAMPLE]

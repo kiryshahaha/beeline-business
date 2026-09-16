@@ -72,7 +72,8 @@ class CommittedDatabaseTestCase(DatabaseTestCase):
                 raise RuntimeError("Refusing to reset tables outside the isolated test schema")
             connection.execute(
                 text(
-                    "TRUNCATE notification_events, push_subscriptions, ticket_comments, "
+                    "TRUNCATE brigade_members, brigades, notification_events, push_subscriptions, "
+                    "ticket_comments, "
                     "ticket_assignments, tickets, refresh_tokens, worker_skill_assignments, "
                     "worker_skills, workers, users, locations, entrances, buildings, streets, "
                     "districts, cities"

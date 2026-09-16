@@ -5,4 +5,5 @@ from enum import StrEnum
 
 class UserRole(StrEnum):
     OBSERVER = "observer"
+    FOREMAN = "foreman"
     WORKER = "worker"

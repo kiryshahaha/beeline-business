@@ -26,6 +26,9 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/users/me",
             "/api/v1/users/{id}",
             "/api/v1/worker/skills",
+            "/api/v1/brigades",
+            "/api/v1/brigades/{id}",
+            "/api/v1/brigades/{id}/members",
         ]
         for path in expected_paths:
             self.assertIn(path, paths, f"Path {path} missing in OpenAPI schema")
@@ -34,6 +37,17 @@ class OpenApiTests(unittest.TestCase):
         self.assertIn("get", user_by_id_ops)
         self.assertIn("patch", user_by_id_ops)
         self.assertIn("delete", user_by_id_ops)
+
+        self.assertIn("post", paths["/api/v1/brigades"])
+        self.assertIn("get", paths["/api/v1/brigades"])
+        self.assertIn("get", paths["/api/v1/brigades/{id}"])
+        self.assertIn("put", paths["/api/v1/brigades/{id}/members"])
+
+        self.assertIn({"BearerAuth": []}, paths["/api/v1/brigades"]["post"]["security"])
+        self.assertIn(
+            {"BearerAuth": []},
+            paths["/api/v1/brigades/{id}/members"]["put"]["security"],
+        )
 
         protected_operations = (
             paths["/api/v1/tickets/{id}/assignees"]["put"],
@@ -45,6 +59,16 @@ class OpenApiTests(unittest.TestCase):
             paths["/api/v1/notifications/push-subscriptions"]["delete"],
         )
         self.assertTrue(all(operation.get("security") for operation in protected_operations))
+
+    def test_openapi_exposes_brigade_filter_and_foreman_example(self):
+        schema = app.openapi()
+        ticket_parameters = schema["paths"]["/api/v1/tickets"]["get"]["parameters"]
+        user_parameters = schema["paths"]["/api/v1/users"]["get"]["parameters"]
+
+        self.assertIn("brigade_id", {parameter["name"] for parameter in ticket_parameters})
+        self.assertIn("brigade_id", {parameter["name"] for parameter in user_parameters})
+        examples = schema["components"]["schemas"]["UserRead"]["examples"]
+        self.assertTrue(any(example["role"] == "foreman" for example in examples))
 
     def test_openapi_uses_http_bearer_for_access_tokens(self):
         schema = app.openapi()

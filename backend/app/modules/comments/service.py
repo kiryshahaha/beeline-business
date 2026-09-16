@@ -27,7 +27,8 @@ class CommentNotFoundError(Exception):
 
 
 def _check_access(session: Session, ticket_id: int, user: UserRead) -> None:
-    if not repository.ticket_exists(session, ticket_id):
+    foreman_id = user.id if user.role == UserRole.FOREMAN else None
+    if not repository.ticket_exists(session, ticket_id, foreman_id=foreman_id):
         raise TicketNotFoundError
     if user.role == UserRole.WORKER and not repository.is_worker_assigned(
         session, ticket_id, user.id

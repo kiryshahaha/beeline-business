@@ -32,6 +32,18 @@ class CannotDeleteSelfError(Exception):
     pass
 
 
+class ActiveForemanError(Exception):
+    pass
+
+
+class WorkerProfileRoleError(Exception):
+    pass
+
+
+class WorkerProfileRequiredError(Exception):
+    pass
+
+
 def _build_user_read(row: RowMapping) -> UserRead:
     worker_profile = None
     if row["role"] == UserRole.WORKER.value and row["workshift_start"] is not None:
@@ -50,18 +62,36 @@ def _build_user_read(row: RowMapping) -> UserRead:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         worker_profile=worker_profile,
+        brigade_id=row["brigade_id"],
+        brigade_name=row["brigade_name"],
     )
 
 
-def get_user(session: Session, user_id: int) -> UserRead:
-    row = repository.find_user_by_id(session, user_id)
+def get_user(session: Session, user_id: int, current_user: UserRead | None = None) -> UserRead:
+    row = repository.find_user_by_id(
+        session,
+        user_id,
+        viewer_id=current_user.id if current_user else None,
+        viewer_role=current_user.role.value if current_user else None,
+    )
     if row is None:
         raise UserNotFoundError
     return _build_user_read(row)
 
 
-def list_users(session: Session, role: UserRole | None = None) -> list[UserRead]:
-    rows = repository.list_users(session, role.value if role else None)
+def list_users(
+    session: Session,
+    current_user: UserRead | None = None,
+    role: UserRole | None = None,
+    brigade_id: int | None = None,
+) -> list[UserRead]:
+    rows = repository.list_users(
+        session,
+        role=role.value if role else None,
+        brigade_id=brigade_id,
+        viewer_id=current_user.id if current_user else None,
+        viewer_role=current_user.role.value if current_user else None,
+    )
     return [_build_user_read(row) for row in rows]
 
 
@@ -138,13 +168,31 @@ def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:
             user_values["password_hash"] = hash_password(data.password)
 
         new_role = data.role if data.role is not None else UserRole(existing_user["role"])
+        if data.worker_profile is not None and new_role != UserRole.WORKER:
+            raise WorkerProfileRoleError
+        if new_role == UserRole.WORKER and existing_user["role"] != UserRole.WORKER.value:
+            profile = data.worker_profile
+            if (
+                profile is None
+                or profile.workshift_start is None
+                or profile.workshift_end is None
+                or not profile.skills
+            ):
+                raise WorkerProfileRequiredError
         if data.role is not None:
             user_values["role"] = data.role.value
 
         if user_values:
             repository.update_user(session, user_id, user_values)
 
-        if new_role == UserRole.OBSERVER:
+        if (
+            existing_user["role"] == UserRole.FOREMAN.value
+            and new_role != UserRole.FOREMAN
+            and repository.foreman_manages_brigade(session, user_id)
+        ):
+            raise ActiveForemanError
+
+        if new_role in (UserRole.OBSERVER, UserRole.FOREMAN):
             if existing_user["role"] == UserRole.WORKER.value:
                 repository.delete_worker(session, user_id)
         elif new_role == UserRole.WORKER:
@@ -177,6 +225,8 @@ def delete_user(session: Session, user_id: int, current_user_id: int | None = No
         raise CannotDeleteSelfError
 
     with session.begin():
+        if repository.foreman_manages_brigade(session, user_id):
+            raise ActiveForemanError
         deleted = repository.delete_user(session, user_id)
         if not deleted:
             raise UserNotFoundError
