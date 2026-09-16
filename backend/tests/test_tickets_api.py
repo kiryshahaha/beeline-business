@@ -504,6 +504,7 @@ class TicketsApiTests(DatabaseTestCase):
                 "/api/v1/tickets/{id}",
                 "/api/v1/tickets/{id}/assignees",
                 "/api/v1/tickets/{id}/comments",
+                "/api/v1/tickets/{id}/comments/{comment_id}",
                 "/api/v1/tickets/{id}/status",
             },
         )
@@ -511,6 +512,9 @@ class TicketsApiTests(DatabaseTestCase):
         self.assertEqual(set(paths["/api/v1/tickets/{id}"]), {"get"})
         self.assertEqual(set(paths["/api/v1/tickets/{id}/assignees"]), {"put"})
         self.assertEqual(set(paths["/api/v1/tickets/{id}/comments"]), {"get", "post"})
+        comment_update = paths["/api/v1/tickets/{id}/comments/{comment_id}"]
+        self.assertEqual(set(comment_update), {"patch"})
+        self.assertIn({"BearerAuth": []}, comment_update["patch"]["security"])
         self.assertEqual(set(paths["/api/v1/tickets/{id}/status"]), {"patch"})
         operation = paths["/api/v1/tickets"]["get"]
         parameters = {param["name"]: param for param in operation["parameters"]}

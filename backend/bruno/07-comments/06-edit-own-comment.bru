@@ -1,0 +1,34 @@
+meta {
+  name: Изменить свой комментарий
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/comments/{{observer_comment_id}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"text":"Клиент уточнил: позвонить за 30 минут."}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Сохранён новый текст существующего комментария", function () {
+    expect(res.getBody().id).to.equal(Number(bru.getVar("observer_comment_id")));
+    expect(res.getBody().text).to.equal("Клиент уточнил: позвонить за 30 минут.");
+  });
+}
+
+docs {
+  Сначала выполните 01-observer-comment в той же сессии, чтобы сохранить ID комментария.
+}

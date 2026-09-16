@@ -61,6 +61,28 @@ def find_comment(session: Session, comment_id: int) -> RowMapping:
     )
 
 
+def lock_comment(session: Session, ticket_id: int, comment_id: int) -> RowMapping | None:
+    return (
+        session.execute(
+            text("""
+                SELECT id, author_id FROM ticket_comments
+                WHERE id = :comment_id AND ticket_id = :ticket_id
+                FOR UPDATE
+            """),
+            {"comment_id": comment_id, "ticket_id": ticket_id},
+        )
+        .mappings()
+        .one_or_none()
+    )
+
+
+def update_comment_text(session: Session, comment_id: int, value: str) -> None:
+    session.execute(
+        text("UPDATE ticket_comments SET text = :text WHERE id = :comment_id"),
+        {"comment_id": comment_id, "text": value},
+    )
+
+
 def list_comments(session: Session, ticket_id: int) -> list[RowMapping]:
     return list(
         session.execute(

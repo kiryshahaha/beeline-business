@@ -4,7 +4,12 @@ from sqlalchemy import RowMapping
 from sqlalchemy.orm import Session
 
 from app.modules.comments import repository
-from app.modules.comments.schemas import CommentAuthorRead, CommentCreate, CommentRead
+from app.modules.comments.schemas import (
+    CommentAuthorRead,
+    CommentCreate,
+    CommentRead,
+    CommentUpdate,
+)
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
 
@@ -14,6 +19,10 @@ class TicketNotFoundError(Exception):
 
 
 class PermissionDeniedError(Exception):
+    pass
+
+
+class CommentNotFoundError(Exception):
     pass
 
 
@@ -52,6 +61,24 @@ def create_comment(
     with session.begin():
         _check_access(session, ticket_id, user)
         comment_id = repository.add_comment(session, ticket_id, user.id, data.text)
+        return _comment_from_row(repository.find_comment(session, comment_id))
+
+
+def update_comment(
+    session: Session,
+    ticket_id: int,
+    comment_id: int,
+    user: UserRead,
+    data: CommentUpdate,
+) -> CommentRead:
+    with session.begin():
+        _check_access(session, ticket_id, user)
+        comment = repository.lock_comment(session, ticket_id, comment_id)
+        if comment is None:
+            raise CommentNotFoundError
+        if comment["author_id"] != user.id:
+            raise PermissionDeniedError
+        repository.update_comment_text(session, comment_id, data.text)
         return _comment_from_row(repository.find_comment(session, comment_id))
 
 

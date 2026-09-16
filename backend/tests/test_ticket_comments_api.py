@@ -157,3 +157,125 @@ class TicketCommentsApiTests(DatabaseTestCase):
                     headers=self.auth(self.observer),
                 )
                 self.assertEqual(response.status_code, 422, response.text)
+
+    def create_comment(self, user, text_value="Исходный комментарий"):
+        response = self.client.post(
+            f"/api/v1/tickets/{self.ticket_id}/comments",
+            json={"text": text_value},
+            headers=self.auth(user),
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def test_authors_can_edit_text_without_changing_comment_identity_or_order(self):
+        url = f"/api/v1/tickets/{self.ticket_id}/comments"
+        comments = [self.create_comment(user) for user in (self.observer, self.worker)]
+        for user, original in zip((self.observer, self.worker), comments, strict=True):
+            with self.subTest(role=user.role):
+                response = self.client.patch(
+                    f"{url}/{original['id']}",
+                    json={"text": "  Исправлено: ' SELECT 1 --\nНовая строка  "},
+                    headers=self.auth(user),
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                expected = {**original, "text": "Исправлено: ' SELECT 1 --\nНовая строка"}
+                self.assertEqual(response.json(), expected)
+                original.update(expected)
+        listed = self.client.get(url, headers=self.auth(self.observer))
+        self.assertEqual(listed.json(), comments)
+
+    def test_users_cannot_edit_another_authors_comment(self):
+        url = f"/api/v1/tickets/{self.ticket_id}/comments"
+        for author, editor in ((self.worker, self.observer), (self.observer, self.worker)):
+            with self.subTest(editor=editor.role):
+                comment = self.create_comment(author)
+                response = self.client.patch(
+                    f"{url}/{comment['id']}",
+                    json={"text": "Чужая правка"},
+                    headers=self.auth(editor),
+                )
+                self.assertEqual(response.status_code, 403, response.text)
+                listed = self.client.get(url, headers=self.auth(self.observer)).json()
+                self.assertIn(comment, listed)
+
+    def test_worker_losing_ticket_access_cannot_edit_own_comment(self):
+        comment = self.create_comment(self.worker)
+        assigned = self.client.put(
+            f"/api/v1/tickets/{self.ticket_id}/assignees",
+            json={"worker_ids": []},
+            headers=self.auth(self.observer),
+        )
+        self.assertEqual(assigned.status_code, 200, assigned.text)
+        response = self.client.patch(
+            f"/api/v1/tickets/{self.ticket_id}/comments/{comment['id']}",
+            json={"text": "После снятия назначения"},
+            headers=self.auth(self.worker),
+        )
+        self.assertEqual(response.status_code, 403, response.text)
+        listed = self.client.get(
+            f"/api/v1/tickets/{self.ticket_id}/comments", headers=self.auth(self.observer)
+        )
+        self.assertEqual(listed.json(), [comment])
+
+    def test_edit_requires_auth_and_existing_ticket_and_comment(self):
+        comment = self.create_comment(self.observer)
+        url = f"/api/v1/tickets/{self.ticket_id}/comments/{comment['id']}"
+        self.assertEqual(self.client.patch(url, json={"text": "Правка"}).status_code, 401)
+        for missing_url in (
+            f"/api/v1/tickets/2147483647/comments/{comment['id']}",
+            f"/api/v1/tickets/{self.ticket_id}/comments/2147483647",
+        ):
+            with self.subTest(url=missing_url):
+                response = self.client.patch(
+                    missing_url, json={"text": "Правка"}, headers=self.auth(self.observer)
+                )
+                self.assertEqual(response.status_code, 404, response.text)
+
+    def test_comment_cannot_be_edited_through_another_ticket(self):
+        comment = self.create_comment(self.observer)
+        payload = self.client.get(f"/api/v1/tickets/{self.ticket_id}").json()
+        ticket = self.client.post(
+            "/api/v1/tickets",
+            json={
+                key: payload[key]
+                for key in (
+                    "location_id",
+                    "title",
+                    "work_type",
+                    "visit_window_start",
+                    "visit_window_end",
+                    "estimated_duration_minutes",
+                )
+            },
+        )
+        self.assertEqual(ticket.status_code, 201, ticket.text)
+        response = self.client.patch(
+            f"/api/v1/tickets/{ticket.json()['id']}/comments/{comment['id']}",
+            json={"text": "Подмена заявки"},
+            headers=self.auth(self.observer),
+        )
+        self.assertEqual(response.status_code, 404, response.text)
+        listed = self.client.get(
+            f"/api/v1/tickets/{self.ticket_id}/comments", headers=self.auth(self.observer)
+        )
+        self.assertEqual(listed.json(), [comment])
+
+    def test_edit_validates_text_and_rejects_extra_fields_without_saving_changes(self):
+        comment = self.create_comment(self.observer)
+        url = f"/api/v1/tickets/{self.ticket_id}/comments/{comment['id']}"
+        invalid_payloads = [
+            {"text": value} for value in ("", "   ", "x" * 4001, "text\x00text", None, 123)
+        ] + [{}, {"text": "Правка", "author_id": self.worker.id}]
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload):
+                response = self.client.patch(url, json=payload, headers=self.auth(self.observer))
+                self.assertEqual(response.status_code, 422, response.text)
+        listed = self.client.get(
+            f"/api/v1/tickets/{self.ticket_id}/comments", headers=self.auth(self.observer)
+        )
+        self.assertEqual(listed.json(), [comment])
+        boundary = self.client.patch(
+            url, json={"text": "я" * 4000}, headers=self.auth(self.observer)
+        )
+        self.assertEqual(boundary.status_code, 200, boundary.text)
+        self.assertEqual(boundary.json()["text"], "я" * 4000)
