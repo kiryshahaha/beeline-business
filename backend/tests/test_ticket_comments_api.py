@@ -111,6 +111,7 @@ class TicketCommentsApiTests(DatabaseTestCase):
         self.assertTrue(created[0]["id"] < created[1]["id"])
         self.assertEqual(created[0]["author"]["id"], self.observer.id)
         self.assertEqual(created[0]["author"]["role"], "observer")
+        self.assertEqual(created[0]["created_at"], created[0]["updated_at"])
 
         listed = self.client.get(url, headers=self.auth(self.observer))
         self.assertEqual(listed.status_code, 200, listed.text)
@@ -178,9 +179,14 @@ class TicketCommentsApiTests(DatabaseTestCase):
                     headers=self.auth(user),
                 )
                 self.assertEqual(response.status_code, 200, response.text)
+                edited = response.json()
                 expected = {**original, "text": "Исправлено: ' SELECT 1 --\nНовая строка"}
-                self.assertEqual(response.json(), expected)
-                original.update(expected)
+                self.assertEqual(edited["id"], expected["id"])
+                self.assertEqual(edited["author"], expected["author"])
+                self.assertEqual(edited["created_at"], expected["created_at"])
+                self.assertEqual(edited["text"], expected["text"])
+                self.assertNotEqual(edited["updated_at"], original["updated_at"])
+                original.update(edited)
         listed = self.client.get(url, headers=self.auth(self.observer))
         self.assertEqual(listed.json(), comments)
 

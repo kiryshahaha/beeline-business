@@ -26,6 +26,7 @@ tests {
   test("Сохранён новый текст существующего комментария", function () {
     expect(res.getBody().id).to.equal(Number(bru.getVar("observer_comment_id")));
     expect(res.getBody().text).to.equal("Клиент уточнил: позвонить за 30 минут.");
+    expect(res.getBody().updated_at).to.be.a("string");
   });
 }
 

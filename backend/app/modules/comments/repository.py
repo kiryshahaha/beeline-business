@@ -42,7 +42,7 @@ def add_comment(session: Session, ticket_id: int, author_id: int, value: str) ->
 
 COMMENT_SELECT_SQL = """
     SELECT
-        tc.id, tc.ticket_id, tc.text, tc.created_at,
+        tc.id, tc.ticket_id, tc.text, tc.created_at, tc.updated_at,
         u.id AS author_id, u.name AS author_name, u.surname AS author_surname,
         u.lastname AS author_lastname, u.username AS author_username, u.role AS author_role
     FROM ticket_comments AS tc
@@ -78,7 +78,11 @@ def lock_comment(session: Session, ticket_id: int, comment_id: int) -> RowMappin
 
 def update_comment_text(session: Session, comment_id: int, value: str) -> None:
     session.execute(
-        text("UPDATE ticket_comments SET text = :text WHERE id = :comment_id"),
+        text("""
+            UPDATE ticket_comments
+            SET text = :text, updated_at = clock_timestamp()
+            WHERE id = :comment_id
+        """),
         {"comment_id": comment_id, "text": value},
     )
 

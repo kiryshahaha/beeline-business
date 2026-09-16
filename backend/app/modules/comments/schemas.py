@@ -42,3 +42,4 @@ class CommentRead(BaseModel):
     author: CommentAuthorRead
     text: str
     created_at: AwareDatetime
+    updated_at: AwareDatetime

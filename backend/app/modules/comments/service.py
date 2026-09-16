@@ -41,6 +41,7 @@ def _comment_from_row(row: RowMapping) -> CommentRead:
         ticket_id=row["ticket_id"],
         text=row["text"],
         created_at=row["created_at"],
+        updated_at=row["updated_at"],
         author=CommentAuthorRead(
             id=row["author_id"],
             name=row["author_name"],
