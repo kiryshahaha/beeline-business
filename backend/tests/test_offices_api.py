@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_session
 from app.main import app
 from app.modules.users.enums import UserRole
-from app.modules.users.schemas import UserCreate
+from app.modules.users.schemas import UserCreate, WorkerProfileCreate
 from app.modules.users.service import create_user
 from tests.support import DatabaseTestCase
 
@@ -54,12 +54,20 @@ class OfficesApiTests(DatabaseTestCase):
         self.session.commit()
 
     def create_user(self, username: str, role: UserRole):
+        worker_profile = None
+        if role == UserRole.WORKER:
+            worker_profile = WorkerProfileCreate(
+                workshift_start="09:00:00",
+                workshift_end="18:00:00",
+                skills=[],
+            )
         user_in = UserCreate(
             name=f"Имя {username}",
             surname=f"Фамилия {username}",
             username=username,
             password="Password123!",
             role=role,
+            worker_profile=worker_profile,
         )
         return create_user(self.session, user_in)
 

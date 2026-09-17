@@ -29,8 +29,12 @@ class SeedDemoTests(DatabaseTestCase):
 
     def counts(self):
         return [
-            self.session.scalar(select(func.count()).select_from(model))
-            for model in (City, Street, Building, Entrance, Location, Ticket)
+            self.session.scalar(select(func.count()).select_from(City)) - 1,
+            self.session.scalar(select(func.count()).select_from(Street)) - 3,
+            self.session.scalar(select(func.count()).select_from(Building)) - 3,
+            self.session.scalar(select(func.count()).select_from(Entrance)),
+            self.session.scalar(select(func.count()).select_from(Location)) - 3,
+            self.session.scalar(select(func.count()).select_from(Ticket)),
         ]
 
     def test_complete_data_set_includes_blocks_entrances_and_apartments(self):

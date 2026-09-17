@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token
-from app.db.models import Building, City, District, Location, Street
+from app.db.models import Building, City, District, Location, Office, Street
 from app.db.session import get_session
 from app.main import app
 from app.modules.users.enums import UserRole
@@ -23,6 +23,7 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
             Building(city_id=city.id, district_id=district.id, street_id=street.id, number="1")
         )
         self.location_id = self.save(Location(building_id=building.id)).id
+        self.office_id = self.save(Office(location_id=self.location_id, name="Офис")).id
         self.city_id, self.district_id = city.id, district.id
         self.session.commit()
         self.observer = self.new_user("observer", UserRole.OBSERVER)
@@ -84,6 +85,7 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
             json={
                 "name": foreman.username,
                 "foreman_id": foreman.id,
+                "office_id": self.office_id,
                 "worker_ids": [worker.id for worker in workers],
             },
         )

@@ -153,5 +153,5 @@ class BrigadeMigrationTests(DatabaseTestCase):
         with self.assertRaises(ValidationError):
             BrigadeMembersUpdate(worker_ids=[1])
 
-        payload = BrigadeMembersUpdate(foreman_id=1, worker_ids=[2, 3])
+        payload = BrigadeMembersUpdate(foreman_id=1, office_id=1, worker_ids=[2, 3])
         self.assertEqual(payload.foreman_id, 1)
