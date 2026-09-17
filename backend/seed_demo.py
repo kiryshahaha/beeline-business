@@ -647,32 +647,14 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                 },
             ).scalar_one()
 
-        office_id = get_or_create_id(
+        get_or_create_id(
             session,
             "SELECT id FROM offices WHERE name = :name",
             "INSERT INTO offices (name, location_id) VALUES (:name, :location_id) RETURNING id",
             {"name": office_data.name, "location_id": location},
         )
 
-        # Only create one brigade per demo for simplicity
-        if i == 0:
-            foreman_id = session.execute(
-                text("SELECT id FROM users WHERE username = 'demo_foreman'")
-            ).scalar_one_or_none()
-            if foreman_id:
-                brigade_id = get_or_create_id(
-                    session,
-                    "SELECT id FROM brigades WHERE name = 'Альфа'",
-                    "INSERT INTO brigades (name, foreman_id, office_id) VALUES ('Альфа', :foreman_id, :office_id) RETURNING id",  # noqa: E501
-                    {"foreman_id": foreman_id, "office_id": office_id},
-                )
-                for w_id in worker_ids:
-                    session.execute(
-                        text(
-                            "INSERT INTO brigade_members (brigade_id, worker_id) VALUES (:b_id, :w_id) ON CONFLICT DO NOTHING"  # noqa: E501
-                        ),
-                        {"b_id": brigade_id, "w_id": w_id},
-                    )
+
 
     return results
 

@@ -22,7 +22,7 @@ body:json {
 }
 
 assert {
-  res.status: eq 200
+  res.status: eq 201
   res.body.id: isNumber
   res.body.name: eq "Тестовый Бруно Офис"
 }
