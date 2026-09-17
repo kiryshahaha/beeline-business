@@ -1,0 +1,28 @@
+meta {
+  name: Создать офис
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/v1/offices/
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "name": "Тестовый Бруно Офис",
+    "location_id": 1
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isNumber
+  res.body.name: eq "Тестовый Бруно Офис"
+}

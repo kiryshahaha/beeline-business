@@ -55,15 +55,40 @@ class BrigadeMigrationTests(DatabaseTestCase):
             ),
             {"worker_id": worker_id},
         )
+        # To insert a brigade, we need an office, which needs a building, district, street, city
+        city_id = self.connection.execute(
+            text("INSERT INTO cities (name) VALUES ('Город') RETURNING id")
+        ).scalar_one()
+        street_id = self.connection.execute(
+            text("INSERT INTO streets (name, city_id) VALUES ('Улица', :city_id) RETURNING id"),
+            {"city_id": city_id}
+        ).scalar_one()
+        district_id = self.connection.execute(
+            text("INSERT INTO districts (name, city_id) VALUES ('Район', :city_id) RETURNING id"),
+            {"city_id": city_id}
+        ).scalar_one()
+        building_id = self.connection.execute(
+            text("INSERT INTO buildings (city_id, street_id, district_id, number) VALUES (:city_id, :street_id, :district_id, '1') RETURNING id"),
+            {"city_id": city_id, "street_id": street_id, "district_id": district_id}
+        ).scalar_one()
+        location_id = self.connection.execute(
+            text("INSERT INTO locations (building_id) VALUES (:building_id) RETURNING id"),
+            {"building_id": building_id}
+        ).scalar_one()
+        office_id = self.connection.execute(
+            text("INSERT INTO offices (name, location_id) VALUES ('Офис 1', :location_id) RETURNING id"),
+            {"location_id": location_id}
+        ).scalar_one()
+
         brigade_id = self.connection.execute(
             text(
                 """
-                INSERT INTO brigades (name, foreman_id)
-                VALUES ('Бригада 1', :foreman_id)
+                INSERT INTO brigades (name, foreman_id, office_id)
+                VALUES ('Бригада 1', :foreman_id, :office_id)
                 RETURNING id
                 """
             ),
-            {"foreman_id": foreman_id},
+            {"foreman_id": foreman_id, "office_id": office_id},
         ).scalar_one()
         self.connection.execute(
             text(
@@ -90,12 +115,12 @@ class BrigadeMigrationTests(DatabaseTestCase):
         second_brigade_id = self.connection.execute(
             text(
                 """
-                INSERT INTO brigades (name, foreman_id)
-                VALUES ('Бригада 2', :foreman_id)
+                INSERT INTO brigades (name, foreman_id, office_id)
+                VALUES ('Бригада 2', :foreman_id, :office_id)
                 RETURNING id
                 """
             ),
-            {"foreman_id": second_foreman_id},
+            {"foreman_id": second_foreman_id, "office_id": office_id},
         ).scalar_one()
         with self.assertRaises(IntegrityError):
             with self.connection.begin_nested():

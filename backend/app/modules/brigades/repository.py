@@ -8,6 +8,7 @@ BRIGADE_COLUMNS = """
     b.id,
     b.name,
     b.foreman_id,
+    b.office_id,
     b.created_at,
     b.updated_at,
     COALESCE(
@@ -164,25 +165,25 @@ def find_occupied_worker_ids(
     )
 
 
-def add_brigade(session: Session, name: str, foreman_id: int) -> int:
+def add_brigade(session: Session, name: str, foreman_id: int, office_id: int) -> int:
     return session.execute(
         text("""
-            INSERT INTO brigades (name, foreman_id)
-            VALUES (:name, :foreman_id)
+            INSERT INTO brigades (name, foreman_id, office_id)
+            VALUES (:name, :foreman_id, :office_id)
             RETURNING id
         """),
-        {"name": name, "foreman_id": foreman_id},
+        {"name": name, "foreman_id": foreman_id, "office_id": office_id},
     ).scalar_one()
 
 
-def update_brigade_foreman(session: Session, brigade_id: int, foreman_id: int) -> None:
+def update_brigade_foreman_and_office(session: Session, brigade_id: int, foreman_id: int, office_id: int) -> None:
     session.execute(
         text("""
             UPDATE brigades
-            SET foreman_id = :foreman_id, updated_at = now()
+            SET foreman_id = :foreman_id, office_id = :office_id, updated_at = now()
             WHERE id = :brigade_id
         """),
-        {"brigade_id": brigade_id, "foreman_id": foreman_id},
+        {"brigade_id": brigade_id, "foreman_id": foreman_id, "office_id": office_id},
     )
 
 

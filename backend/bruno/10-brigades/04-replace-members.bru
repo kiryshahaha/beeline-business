@@ -1,0 +1,28 @@
+meta {
+  name: Обновить состав бригады
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/api/v1/brigades/1/members
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "foreman_id": 2,
+    "office_id": 1,
+    "worker_ids": []
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: eq 1
+}
