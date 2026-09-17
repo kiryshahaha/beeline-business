@@ -11,14 +11,14 @@ from app.modules.offices import service
 from app.modules.offices.schemas import OfficeCreate, OfficeRead
 from app.modules.users.enums import UserRole
 
-router = APIRouter(prefix="/offices", tags=["offices"])
+router = APIRouter(prefix="/api/v1/offices", tags=["offices"])
 
 
 @router.post("/", response_model=OfficeRead, status_code=201)
 def create_office(
     office_in: OfficeCreate,
     session: Annotated[Session, Depends(get_session)],
-    _viewer_id: Annotated[int, Depends(require_roles({UserRole.OBSERVER}))],
+    _viewer_id: Annotated[int, Depends(require_roles(UserRole.OBSERVER))],
 ):
     """Create a new office (only accessible to OBSERVER role typically, acting as admin/dispatcher)."""  # noqa: E501
     return service.create_office(session, office_in)
@@ -27,7 +27,7 @@ def create_office(
 @router.get("/", response_model=list[OfficeRead])
 def list_offices(
     session: Annotated[Session, Depends(get_session)],
-    _viewer_id: Annotated[int, Depends(require_roles({UserRole.OBSERVER, UserRole.WORKER}))],
+    _viewer_id: Annotated[int, Depends(require_roles(UserRole.OBSERVER, UserRole.WORKER))],
 ):
     """List all offices."""
     return service.list_offices(session)

@@ -24,6 +24,7 @@ class UsersAndAuthApiTests(DatabaseTestCase):
         self.client = self.enterContext(TestClient(app))
 
         from app.db.models import Building, City, District, Location, Office, Street
+
         city = City(name="Город")
         self.session.add(city)
         self.session.flush()
@@ -45,6 +46,7 @@ class UsersAndAuthApiTests(DatabaseTestCase):
         self.session.add(office)
         self.session.flush()
         self.office_id = office.id
+        self.session.commit()
 
         # Seed an initial observer directly via service
         self.observer = create_user(

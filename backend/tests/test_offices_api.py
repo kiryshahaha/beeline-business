@@ -59,7 +59,7 @@ class OfficesApiTests(DatabaseTestCase):
             worker_profile = WorkerProfileCreate(
                 workshift_start="09:00:00",
                 workshift_end="18:00:00",
-                skills=[],
+                skills=["Монтаж"],
             )
         user_in = UserCreate(
             name=f"Имя {username}",

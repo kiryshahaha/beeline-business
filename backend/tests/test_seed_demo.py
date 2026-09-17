@@ -29,18 +29,14 @@ class SeedDemoTests(DatabaseTestCase):
 
     def counts(self):
         return [
-            self.session.scalar(select(func.count()).select_from(City)) - 1,
-            self.session.scalar(select(func.count()).select_from(Street)) - 3,
-            self.session.scalar(select(func.count()).select_from(Building)) - 3,
-            self.session.scalar(select(func.count()).select_from(Entrance)),
-            self.session.scalar(select(func.count()).select_from(Location)) - 3,
-            self.session.scalar(select(func.count()).select_from(Ticket)),
+            self.session.scalar(select(func.count()).select_from(model))
+            for model in (City, Street, Building, Entrance, Location, Ticket)
         ]
 
     def test_complete_data_set_includes_blocks_entrances_and_apartments(self):
         results = seed_data(self.session, self.visit_date)
-        self.assertEqual(self.counts(), [1, 4, 6, 6, 7, 8])
-        self.assertEqual(self.session.scalar(select(func.count()).select_from(District)), 3)
+        self.assertEqual(self.counts(), [2, 7, 9, 6, 10, 8])
+        self.assertEqual(self.session.scalar(select(func.count()).select_from(District)), 6)
         self.assertTrue(all(result.created for result in results))
         for result, visit in zip(results, DEMO_VISITS, strict=True):
             ticket = self.session.get(Ticket, result.ticket_id)
@@ -78,7 +74,7 @@ class SeedDemoTests(DatabaseTestCase):
         second = seed_data(self.session, self.visit_date + timedelta(days=1))
         self.assertEqual([r.ticket_id for r in first], [r.ticket_id for r in second])
         self.assertFalse(any(result.created for result in second))
-        self.assertEqual(self.counts(), [1, 4, 6, 6, 7, 8])
+        self.assertEqual(self.counts(), [2, 7, 9, 6, 10, 8])
         self.session.expire_all()
         self.assertEqual(ticket.visit_window_start, original_window)
         self.assertEqual(ticket.status, TicketStatus.COMPLETED)
@@ -134,7 +130,7 @@ class SeedDemoTests(DatabaseTestCase):
             results = seed_data(self.session, self.visit_date)
             repeated = seed_data(self.session, self.visit_date)
         self.assertNotEqual(results[0].location_id, results[1].location_id)
-        self.assertEqual(self.counts(), [1, 1, 1, 2, 2, 2])
+        self.assertEqual(self.counts(), [2, 4, 4, 2, 5, 2])
         self.assertFalse(any(result.created for result in repeated))
 
     def test_unspecified_destination_does_not_get_overwritten_with_an_apartment(self):
@@ -143,7 +139,7 @@ class SeedDemoTests(DatabaseTestCase):
             old = seed_data(self.session, self.visit_date)[0]
         results = seed_data(self.session, self.visit_date)
         self.assertNotEqual(old.location_id, results[0].location_id)
-        self.assertEqual(self.counts(), [1, 4, 6, 6, 8, 9])
+        self.assertEqual(self.counts(), [2, 7, 9, 6, 11, 9])
         old_location = self.session.get(Location, old.location_id)
         self.assertIsNone(old_location.apartment)
         self.assertIsNone(old_location.entrance_id)
@@ -154,7 +150,7 @@ class SeedDemoTests(DatabaseTestCase):
         with patch("seed_demo.DEMO_VISITS", (basic,)):
             seed_data(self.session, self.visit_date)
             repeated = seed_data(self.session, self.visit_date)
-        self.assertEqual(self.counts(), [1, 1, 1, 0, 1, 1])
+        self.assertEqual(self.counts(), [2, 4, 4, 0, 4, 1])
         self.assertFalse(repeated[0].created)
 
     def test_conflicting_floor_is_not_overwritten(self):
@@ -166,7 +162,7 @@ class SeedDemoTests(DatabaseTestCase):
             with self.session.begin_nested():
                 seed_data(self.session, self.visit_date)
         self.assertEqual(location.floor, 8)
-        self.assertEqual(self.counts(), [1, 4, 6, 6, 7, 8])
+        self.assertEqual(self.counts(), [2, 7, 9, 6, 10, 8])
 
     def test_existing_directory_is_reused_case_insensitively(self):
         city = City(name="санкт-петербург")
@@ -198,13 +194,13 @@ class SeedDemoTests(DatabaseTestCase):
         results = seed_data(self.session, self.visit_date)
         self.session.refresh(location)
         self.assertEqual(results[0].location_id, location.id)
-        self.assertEqual(self.counts(), [1, 4, 6, 6, 7, 8])
+        self.assertEqual(self.counts(), [2, 7, 9, 6, 10, 8])
         self.assertEqual(location.latitude, Decimal(DEMO_VISITS[0].latitude))
         self.assertEqual(location.floor, DEMO_VISITS[0].floor)
         self.assertEqual(city.name, "санкт-петербург")
         self.session.refresh(building)
         self.assertEqual(building.district_id, district.id)
-        self.assertEqual(self.session.scalar(select(func.count()).select_from(District)), 3)
+        self.assertEqual(self.session.scalar(select(func.count()).select_from(District)), 6)
 
     def test_conflicting_district_rolls_back_new_tickets(self):
         original = seed_data(self.session, self.visit_date)
@@ -223,7 +219,7 @@ class SeedDemoTests(DatabaseTestCase):
         self.session.expire_all()
         self.assertEqual(first.district_id, conflicting_id)
         self.assertEqual(last.district_id, conflicting_id)
-        self.assertEqual(self.counts(), [1, 4, 6, 6, 7, 1])
+        self.assertEqual(self.counts(), [2, 7, 9, 6, 10, 1])
 
     def test_coordinate_conflict_rolls_back_the_whole_attempt(self):
         results = seed_data(self.session, self.visit_date)
@@ -236,7 +232,7 @@ class SeedDemoTests(DatabaseTestCase):
         with self.assertRaisesRegex(RuntimeError, "другие координаты"):
             with self.session.begin_nested():
                 seed_data(self.session, self.visit_date)
-        self.assertEqual(self.counts(), [1, 4, 6, 6, 7, 1])
+        self.assertEqual(self.counts(), [2, 7, 9, 6, 10, 1])
         self.assertEqual(location.latitude, Decimal("59.950000"))
 
     def test_existing_non_demo_ticket_at_same_address_is_preserved(self):
@@ -253,7 +249,7 @@ class SeedDemoTests(DatabaseTestCase):
         self.session.add(real)
         self.session.flush()
         seed_data(self.session, self.visit_date)
-        self.assertEqual(self.counts(), [1, 4, 6, 6, 7, 9])
+        self.assertEqual(self.counts(), [2, 7, 9, 6, 10, 9])
         self.assertEqual(self.session.get(Ticket, real.id).title, "Обычная заявка")
 
     def test_quotes_in_demo_values_are_saved_as_text(self):
@@ -264,4 +260,4 @@ class SeedDemoTests(DatabaseTestCase):
         ticket = self.session.get(Ticket, first[0].ticket_id)
         self.assertEqual(ticket.title, visit.title)
         self.assertEqual(first[0].ticket_id, second[0].ticket_id)
-        self.assertEqual(self.counts(), [1, 1, 1, 1, 1, 1])
+        self.assertEqual(self.counts(), [2, 4, 4, 1, 4, 1])
