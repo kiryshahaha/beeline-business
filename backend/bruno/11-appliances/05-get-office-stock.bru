@@ -1,0 +1,26 @@
+meta {
+  name: Ведомость остатков склада офиса
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/offices/{{office_id}}/stock
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body: isArray
+}
+
+tests {
+  test("Ведомость склада офиса получена", function () {
+    expect(res.getBody()).to.be.an("array");
+  });
+}

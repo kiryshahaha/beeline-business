@@ -7,6 +7,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.modules.appliances.router import (
+    appliances_router,
+    office_stock_router,
+    ticket_appliances_router,
+)
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.schemas import (
     LOGIN_REQUEST_EXAMPLE,
@@ -89,8 +94,11 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(skills_router)
 app.include_router(offices_router)
+app.include_router(office_stock_router)
+app.include_router(appliances_router)
 app.include_router(brigades_router)
 app.include_router(tickets_router)
+app.include_router(ticket_appliances_router)
 app.include_router(comments_router)
 app.include_router(notifications_router)
 

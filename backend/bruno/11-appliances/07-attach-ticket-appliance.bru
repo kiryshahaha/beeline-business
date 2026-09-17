@@ -1,0 +1,30 @@
+meta {
+  name: Прикрепить оборудование к заявке
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/appliances
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "appliance_id": {{created_appliance_id}},
+    "quantity": 2,
+    "office_id": {{office_id}}
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.ticket_id: eq {{ticket_id}}
+  res.body.appliance_id: eq {{created_appliance_id}}
+  res.body.quantity: eq 2
+}

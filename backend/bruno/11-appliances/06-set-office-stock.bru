@@ -1,0 +1,29 @@
+meta {
+  name: Установить остаток оборудования на складе офиса
+  type: http
+  seq: 6
+}
+
+put {
+  url: {{base_url}}/api/v1/offices/{{office_id}}/stock/{{created_appliance_id}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "stock": 100
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.office_id: eq {{office_id}}
+  res.body.appliance_id: eq {{created_appliance_id}}
+  res.body.stock: eq 100
+  res.body.available: eq 100
+}

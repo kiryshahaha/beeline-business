@@ -1,0 +1,31 @@
+meta {
+  name: Получить список оборудования
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/appliances/?type=CLIENT_ROUTER
+  body: none
+  auth: bearer
+}
+
+params:query {
+  type: CLIENT_ROUTER
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body: isArray
+}
+
+tests {
+  test("Список номенклатуры успешно получен", function () {
+    expect(res.getBody()).to.be.an("array");
+    expect(res.getBody().length).to.be.greaterThan(0);
+  });
+}

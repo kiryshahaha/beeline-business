@@ -1,0 +1,19 @@
+meta {
+  name: Снять оборудование с заявки
+  type: http
+  seq: 10
+}
+
+delete {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/appliances/{{created_appliance_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 204
+}

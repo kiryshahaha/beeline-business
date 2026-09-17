@@ -1,0 +1,26 @@
+meta {
+  name: Изменить количество оборудования в заявке
+  type: http
+  seq: 9
+}
+
+patch {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/appliances/{{created_appliance_id}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "quantity": 5
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.quantity: eq 5
+}
