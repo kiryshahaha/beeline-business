@@ -3,15 +3,27 @@
 import {
   FullscreenControl,
   GeolocateControl,
+  Layer,
   Map,
   NavigationControl,
   ScaleControl,
+  Source,
 } from "@vis.gl/react-maplibre";
 import { ProjectionControl } from "./controls/ProjectionControl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { useEffect, useState } from "react";
+import { ticketsToGeoJSON } from "@/utils/toGeoJson";
 
 export default function MapComponent({ mapRef, tickets }) {
-  // console.log(tickets);
+  const [data, setData] = useState([]);
+  useEffect(() => {
+    if (tickets) {
+      console.log("Получены тикеты:", tickets);
+      const geoJsonArr = ticketsToGeoJSON(tickets);
+      console.log("Преобразованные в geoJson", geoJsonArr);
+      setData(geoJsonArr);
+    }
+  }, [tickets]);
 
   return (
     <Map
@@ -43,6 +55,9 @@ export default function MapComponent({ mapRef, tickets }) {
       <GeolocateControl></GeolocateControl>
       <ScaleControl></ScaleControl>
       <ProjectionControl></ProjectionControl>
+      <Source type="geojson" data={data}>
+        <Layer type="heatmap"></Layer>
+      </Source>
     </Map>
   );
 }
