@@ -15,6 +15,9 @@ class Brigade(IntegerIdMixin, Base):
     foreman_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
+    office_id: Mapped[int] = mapped_column(
+        ForeignKey("offices.id", ondelete="RESTRICT"), nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

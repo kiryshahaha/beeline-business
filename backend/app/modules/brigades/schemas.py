@@ -21,6 +21,7 @@ class BrigadeCreate(BaseModel):
 
     name: BrigadeName
     foreman_id: PositiveInt32
+    office_id: PositiveInt32
     worker_ids: WorkerIds = Field(default_factory=list)
 
     @field_validator("name")
@@ -42,6 +43,7 @@ class BrigadeMembersUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     foreman_id: PositiveInt32
+    office_id: PositiveInt32
     worker_ids: WorkerIds
 
     @field_validator("worker_ids")
@@ -58,6 +60,7 @@ class BrigadeRead(BaseModel):
     id: PositiveInt32
     name: str
     foreman_id: PositiveInt32
+    office_id: PositiveInt32
     worker_ids: list[PositiveInt32]
     created_at: AwareDatetime
     updated_at: AwareDatetime

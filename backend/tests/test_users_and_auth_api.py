@@ -23,6 +23,31 @@ class UsersAndAuthApiTests(DatabaseTestCase):
         self.addCleanup(app.dependency_overrides.pop, get_session)
         self.client = self.enterContext(TestClient(app))
 
+        from app.db.models import Building, City, District, Location, Office, Street
+
+        city = City(name="Город")
+        self.session.add(city)
+        self.session.flush()
+        district = District(city_id=city.id, name="Район")
+        self.session.add(district)
+        self.session.flush()
+        street = Street(city_id=city.id, name="Улица")
+        self.session.add(street)
+        self.session.flush()
+        building = Building(
+            city_id=city.id, district_id=district.id, street_id=street.id, number="1"
+        )
+        self.session.add(building)
+        self.session.flush()
+        location = Location(building_id=building.id)
+        self.session.add(location)
+        self.session.flush()
+        office = Office(location_id=location.id, name="Тестовый офис")
+        self.session.add(office)
+        self.session.flush()
+        self.office_id = office.id
+        self.session.commit()
+
         # Seed an initial observer directly via service
         self.observer = create_user(
             self.session,
@@ -73,7 +98,12 @@ class UsersAndAuthApiTests(DatabaseTestCase):
     def create_brigade(self, name: str, foreman_id: int, worker_ids: list[int]) -> dict:
         response = self.client.post(
             "/api/v1/brigades",
-            json={"name": name, "foreman_id": foreman_id, "worker_ids": worker_ids},
+            json={
+                "name": name,
+                "foreman_id": foreman_id,
+                "office_id": self.office_id,
+                "worker_ids": worker_ids,
+            },
             headers=self.get_observer_header(),
         )
         self.assertEqual(response.status_code, 201)

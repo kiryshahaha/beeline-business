@@ -43,6 +43,7 @@ def _build_read(row: RowMapping) -> BrigadeRead:
         id=row["id"],
         name=row["name"],
         foreman_id=row["foreman_id"],
+        office_id=row["office_id"],
         worker_ids=list(row["worker_ids"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
@@ -73,7 +74,7 @@ def create_brigade(session: Session, data: BrigadeCreate) -> BrigadeRead:
                 raise BrigadeNameAlreadyExistsError
             _validate_foreman(session, data.foreman_id)
             _validate_workers(session, data.worker_ids)
-            brigade_id = repository.add_brigade(session, data.name, data.foreman_id)
+            brigade_id = repository.add_brigade(session, data.name, data.foreman_id, data.office_id)
             repository.add_brigade_members(session, brigade_id, data.worker_ids)
             row = repository.find_brigade_by_id(session, brigade_id)
             if row is None:
@@ -93,7 +94,10 @@ def replace_brigade_members(
                 raise BrigadeNotFoundError
             _validate_foreman(session, data.foreman_id, brigade_id)
             _validate_workers(session, data.worker_ids, brigade_id)
-            repository.update_brigade_foreman(session, brigade_id, data.foreman_id)
+            if data.foreman_id != existing["foreman_id"] or data.office_id != existing["office_id"]:
+                repository.update_brigade_foreman_and_office(
+                    session, brigade_id, data.foreman_id, data.office_id
+                )
             repository.delete_brigade_members(session, brigade_id)
             repository.add_brigade_members(session, brigade_id, data.worker_ids)
             row = repository.find_brigade_by_id(session, brigade_id)
