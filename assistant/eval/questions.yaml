@@ -1,0 +1,262 @@
+# Набор проверки ассистента.
+#   must      — группы фактов; группа засчитана, если в ответе есть любой из вариантов
+#               (без учёта регистра, ё = е). Оценка вопроса = доля засчитанных групп.
+#   must_not  — фрагменты, появление которых означает выдумку или неверный совет.
+#   sources   — разделы базы знаний, которые должен найти поиск (для hit@k).
+#   context   — ключ из contexts.yaml.
+# Автоматическая оценка грубая: итоговые ответы дополнительно читаются вручную.
+
+# --- Исполнитель: как сделать в системе ---
+- id: w-start
+  role: worker
+  category: howto
+  question: Я приехал к клиенту и начинаю работу. Какой статус поставить?
+  must: [[в работе, в работу]]
+  sources: [system/statuses.md, system/worker.md]
+
+- id: w-finish
+  role: worker
+  category: howto
+  question: Всё сделал у клиента. Как правильно закрыть заявку?
+  must: [[завершен], [комментари]]
+  sources: [system/statuses.md, system/worker.md]
+
+- id: w-client-absent
+  role: worker
+  category: howto
+  question: Клиента нет дома, дверь никто не открывает. Что делать с заявкой?
+  must: [[комментари], [диспетчер]]
+  sources: [system/worker.md]
+
+- id: w-late
+  role: worker
+  category: howto
+  question: Застрял в пробке и не успеваю к клиенту, что делать?
+  must: [[комментари, предупред, сообщ], [диспетчер]]
+  sources: [system/worker.md, system/ticket.md]
+
+- id: w-no-ticket
+  role: worker
+  category: howto
+  question: Мне сказали, что на меня есть заявка, а я её не вижу в списке. Почему?
+  must: [[назнач], [диспетчер]]
+  sources: [system/worker.md]
+
+- id: w-edit-comment
+  role: worker
+  category: howto
+  question: Можно ли исправить комментарий, который я написал с ошибкой?
+  must: [[можно, редактир]]
+  must_not: [нельзя]
+  sources: [system/ticket.md]
+
+- id: w-window
+  role: worker
+  category: howto
+  question: Чем окно визита отличается от планового времени?
+  must: [[клиент], [планов]]
+  sources: [system/ticket.md]
+
+- id: w-push
+  role: worker
+  category: howto
+  question: Мне не приходят уведомления о новых заявках. Что проверить?
+  must: [[разреш, браузер]]
+  sources: [system/notifications.md]
+
+# --- Границы ролей ---
+- id: w-assign-self
+  role: worker
+  category: boundary
+  question: Как мне назначить себя на заявку соседа?
+  must: [[диспетчер]]
+  sources: [system/worker.md, system/about.md]
+
+- id: w-change-shift
+  role: worker
+  category: boundary
+  question: Хочу поменять себе смену на ночную, как это сделать?
+  must: [[диспетчер]]
+  sources: [system/about.md, system/worker.md]
+
+- id: f-change-status
+  role: foreman
+  category: boundary
+  question: Как мне перевести заявку своего работника в статус «Завершена»?
+  must: [[не мож, не меня, недоступ, не имеет, нет прав, не вправе], [диспетчер, исполнител]]
+  sources: [system/foreman.md, system/statuses.md]
+
+- id: f-other-brigade
+  role: foreman
+  category: boundary
+  question: Почему я не вижу заявку из соседней бригады?
+  must: [[своей бригад, свою бригад, только]]
+  sources: [system/foreman.md]
+
+- id: f-reassign
+  role: foreman
+  category: boundary
+  question: Работник заболел, как передать его заявки другому?
+  must: [[диспетчер]]
+  sources: [system/foreman.md]
+
+- id: f-comment
+  role: foreman
+  category: howto
+  question: Могу ли я оставить комментарий в заявке своего работника?
+  must: [[может, можно, вправе]]
+  must_not: [не можете, нельзя]
+  sources: [system/foreman.md, system/ticket.md]
+
+# --- Диспетчер ---
+- id: o-create-worker
+  role: observer
+  category: howto
+  question: Как завести в системе нового выездного инженера?
+  must: [[смен], [навык]]
+  sources: [system/observer.md]
+
+- id: o-add-assignee
+  role: observer
+  category: howto
+  question: Как добавить второго исполнителя в заявку, не убрав первого?
+  must: [[целиком, оставьте, прежн, заменяется]]
+  sources: [system/observer.md]
+
+- id: o-dropped
+  role: observer
+  category: howto
+  question: Планировщик не назначил заявку никому. Почему так бывает и что делать?
+  must: [[навык], [смен, окно]]
+  sources: [system/observer.md, system/planning.md]
+
+- id: o-foreman
+  role: observer
+  category: howto
+  question: Как сделать сотрудника начальником бригады?
+  must: [[рол]]
+  sources: [system/observer.md]
+
+- id: o-new-skill
+  role: observer
+  category: howto
+  question: Нужен новый навык «Монтаж видеонаблюдения», как его добавить?
+  must: [[справочник, созда, добав]]
+  sources: [system/observer.md]
+
+# --- Конкретная заявка (контекст из бэкенда) ---
+- id: t-why-moved
+  role: worker
+  category: ticket
+  context: ticket_rescheduled
+  question: Почему мою заявку перенесли?
+  must: [[авари], ["18.09", "15:00"]]
+
+- id: t-new-time
+  role: worker
+  category: ticket
+  context: ticket_rescheduled
+  question: Во сколько мне теперь ехать к этому клиенту?
+  must: [["15:00"]]
+
+- id: t-before-visit
+  role: worker
+  category: ticket
+  context: ticket_access_notes
+  question: Что важно знать перед выездом на эту заявку?
+  must: [[30 минут, позвон], [консьерж, ключ]]
+
+- id: t-wont-fix
+  role: foreman
+  category: ticket
+  context: ticket_wont_fix
+  question: Почему у заявки статус «Не будет исправлено»?
+  must: [[отказ], [устройств, ноутбук, wi-fi]]
+
+- id: t-what-to-take
+  role: worker
+  category: ticket
+  context: ticket_rescheduled
+  question: Что взять с собой на эту заявку?
+  must: [[роутер, устройств, маршрутизатор], [патч, блок питания]]
+  sources: [work/equipment-replacement.md]
+
+# --- Смена и день ---
+- id: d-shift
+  role: worker
+  category: day
+  context: worker_day
+  question: Какая у меня сегодня смена и сколько заявок?
+  must: [["08:00"], ["17:00"], ["3 ", три, "3.", "3,", "(3)"]]
+
+- id: d-next
+  role: worker
+  category: day
+  context: worker_day
+  question: Какая у меня заявка после проверки кабеля и во сколько?
+  must: [[оптик, кросс], ["13:30"]]
+
+- id: f-not-started
+  role: foreman
+  category: day
+  context: foreman_brigade
+  question: Какие заявки бригады ещё не начаты?
+  must: [[проверить кабель], [оптик]]
+  must_not: [настроить wi-fi]
+
+- id: f-count
+  role: foreman
+  category: day
+  context: foreman_brigade
+  question: Сколько заявок сегодня у Ивана Иванова?
+  must: [["3 ", три, "3.", "3,", "(3)"]]
+
+# --- Подсказки по работам (база знаний) ---
+- id: k-fiber-eye
+  role: worker
+  category: work
+  question: Можно посмотреть в оптический коннектор, чтобы проверить, есть ли свет?
+  must: [[нельзя, не смотр, никогда, опасно], [лазер, глаз]]
+  sources: [work/fiber-installation.md]
+
+- id: k-slow-wifi
+  role: worker
+  category: work
+  question: У клиента медленный интернет по Wi-Fi. С чего начать проверку?
+  must: [[кабел]]
+  sources: [work/network-diagnostics.md]
+
+- id: k-emergency
+  role: worker
+  category: work
+  question: Мне пришла аварийная заявка, что делать первым делом?
+  must: [[в работе, в работу]]
+  sources: [work/emergency-repair.md]
+
+- id: k-wifi-password
+  role: worker
+  category: work
+  question: Нужно ли писать пароль от Wi-Fi клиента в комментарий?
+  must: [[не пиш, не нужно, не указ, не следует, не стоит, нельзя]]
+  sources: [work/network-setup.md]
+
+# --- Нет в базе знаний: ждём честное «не знаю» ---
+- id: u-salary
+  role: worker
+  category: unknown
+  question: Какая зарплата у выездного инженера и когда аванс?
+  must: [[справке этого нет, нет информации, не знаю, уточните, обратитесь]]
+  must_not: [руб]
+
+- id: u-iptv
+  role: worker
+  category: unknown
+  question: Как настроить IPTV-приставку клиента?
+  must: [[справке этого нет, нет информации, не знаю, уточните, обратитесь]]
+
+- id: u-tariff
+  role: observer
+  category: unknown
+  question: Сколько стоит тариф на 500 Мбит/с?
+  must: [[справке этого нет, нет информации, не знаю, уточните, обратитесь]]
+  must_not: [руб]
