@@ -280,6 +280,14 @@ DEMO_USERS = (
         "role": "foreman",
     },
     {
+        "name": "Иван",
+        "surname": "Свободный",
+        "lastname": "Иванович",
+        "username": "demo_foreman_free",
+        "password": "ForemanSecret123!",
+        "role": "foreman",
+    },
+    {
         "name": "Дмитрий",
         "surname": "Кузнецов",
         "lastname": "Сергеевич",
@@ -647,12 +655,86 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                 },
             ).scalar_one()
 
-        get_or_create_id(
+        office_id = get_or_create_id(
             session,
             "SELECT id FROM offices WHERE name = :name",
             "INSERT INTO offices (name, location_id) VALUES (:name, :location_id) RETURNING id",
             {"name": office_data.name, "location_id": location},
         )
+
+        # Only create one brigade per demo for simplicity
+        if i == 0:
+            foreman_id = session.execute(
+                text("SELECT id FROM users WHERE username = 'demo_foreman'")
+            ).scalar_one_or_none()
+            if foreman_id:
+                brigade_id = get_or_create_id(
+                    session,
+                    "SELECT id FROM brigades WHERE name = 'Альфа'",
+                    "INSERT INTO brigades (name, foreman_id, office_id) VALUES ('Альфа', :foreman_id, :office_id) RETURNING id",  # noqa: E501
+                    {"foreman_id": foreman_id, "office_id": office_id},
+                )
+                worker_ids = (
+                    session.execute(text("SELECT id FROM users WHERE role = 'worker'"))
+                    .scalars()
+                    .all()
+                )
+                for w_id in worker_ids:
+                    session.execute(
+                        text(
+                            "INSERT INTO brigade_members (brigade_id, worker_id) VALUES (:b_id, :w_id) ON CONFLICT DO NOTHING"  # noqa: E501
+                        ),
+                        {"b_id": brigade_id, "w_id": w_id},
+                    )
+
+    # Seed push subscriptions
+    session.execute(
+        text("""
+        INSERT INTO push_subscriptions (user_id, token)
+        SELECT id, 'demo_push_token_' || username
+        FROM users
+        ON CONFLICT (token) DO NOTHING
+        """)
+    )
+
+    # Seed notification events
+    if results:
+        worker_id = session.execute(
+            text("SELECT id FROM users WHERE username = 'demo_worker_1'")
+        ).scalar_one_or_none()
+        observer_id = session.execute(
+            text("SELECT id FROM users WHERE username = 'demo_observer'")
+        ).scalar_one_or_none()
+
+        if worker_id:
+            exists = session.execute(
+                text(
+                    "SELECT 1 FROM notification_events WHERE recipient_id = :r AND ticket_id = :t AND kind = 'ticket_assigned'"  # noqa: E501
+                ),
+                {"r": worker_id, "t": results[0].ticket_id},
+            ).scalar_one_or_none()
+            if not exists:
+                session.execute(
+                    text(
+                        "INSERT INTO notification_events (recipient_id, ticket_id, kind, data) VALUES (:r, :t, 'ticket_assigned', '{\"address\": \"Демо Адрес\"}')"  # noqa: E501
+                    ),
+                    {"r": worker_id, "t": results[0].ticket_id},
+                )
+
+        if observer_id and len(results) > 1:
+            exists = session.execute(
+                text(
+                    "SELECT 1 FROM notification_events WHERE recipient_id = :r AND ticket_id = :t AND kind = 'ticket_status_changed'"  # noqa: E501
+                ),
+                {"r": observer_id, "t": results[1].ticket_id},
+            ).scalar_one_or_none()
+            if not exists:
+                session.execute(
+                    text(
+                        "INSERT INTO notification_events (recipient_id, ticket_id, kind, data) VALUES (:r, :t, 'ticket_status_changed', '{\"new_status\": \"in_progress\", \"old_status\": \"open\"}')"  # noqa: E501
+                    ),
+                    {"r": observer_id, "t": results[1].ticket_id},
+                )
 
     return results
 
