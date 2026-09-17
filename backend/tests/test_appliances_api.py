@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_session
 from app.main import app
-from app.modules.appliances.enums import ApplianceType
 from app.modules.tickets.enums import TicketStatus
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserCreate, WorkerProfileCreate
@@ -35,16 +34,17 @@ class AppliancesApiTests(DatabaseTestCase):
             text("INSERT INTO cities (name) VALUES ('Тест Город') RETURNING id")
         ).scalar_one()
         street_id = self.connection.execute(
-            text("INSERT INTO streets (name, city_id) VALUES ('Тест Улица', :city_id) RETURNING id"),
-            {"city_id": city_id},
+            text("INSERT INTO streets (name, city_id) VALUES ('Тест Улица', :c_id) RETURNING id"),
+            {"c_id": city_id},
         ).scalar_one()
         district_id = self.connection.execute(
-            text("INSERT INTO districts (name, city_id) VALUES ('Тест Район', :city_id) RETURNING id"),
-            {"city_id": city_id},
+            text("INSERT INTO districts (name, city_id) VALUES ('Тест Район', :c_id) RETURNING id"),
+            {"c_id": city_id},
         ).scalar_one()
         building_id = self.connection.execute(
             text(
-                "INSERT INTO buildings (city_id, street_id, district_id, number) VALUES (:c, :s, :d, '10') RETURNING id"  # noqa: E501
+                "INSERT INTO buildings (city_id, street_id, district_id, number) "
+                "VALUES (:c, :s, :d, '10') RETURNING id"
             ),
             {"c": city_id, "s": street_id, "d": district_id},
         ).scalar_one()
@@ -55,7 +55,10 @@ class AppliancesApiTests(DatabaseTestCase):
 
         # Create office
         self.office_id = self.connection.execute(
-            text("INSERT INTO offices (name, location_id) VALUES ('Главный Склад', :loc_id) RETURNING id"),
+            text(
+                "INSERT INTO offices (name, location_id) "
+                "VALUES ('Главный Склад', :loc_id) RETURNING id"
+            ),
             {"loc_id": self.location_id},
         ).scalar_one()
 
@@ -331,7 +334,8 @@ class AppliancesApiTests(DatabaseTestCase):
         self.assertEqual(del_res.status_code, 204)
 
         # 10. Check that stock is fully available again (reserved=0, available=10)
-        stocks_after = self.client.get(f"/api/v1/offices/{self.office_id}/stock", headers=headers).json()
+        res_after = self.client.get(f"/api/v1/offices/{self.office_id}/stock", headers=headers)
+        stocks_after = res_after.json()
         st_after = next(x for x in stocks_after if x["appliance_id"] == app_id)
         self.assertEqual(st_after["reserved"], 0)
         self.assertEqual(st_after["available"], 10)

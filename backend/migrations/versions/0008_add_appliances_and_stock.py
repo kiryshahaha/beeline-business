@@ -38,8 +38,12 @@ def upgrade() -> None:
         ),
         sa.Column("unit", sa.String(length=20), server_default="шт", nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default="true", nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint("name = btrim(name) AND name <> ''", name="name_not_blank"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -51,13 +55,18 @@ def upgrade() -> None:
         sa.Column("office_id", sa.Integer(), nullable=False),
         sa.Column("appliance_id", sa.Integer(), nullable=False),
         sa.Column("stock", sa.Integer(), server_default="0", nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint("stock >= 0", name="stock_nonnegative"),
         sa.ForeignKeyConstraint(
             ["office_id"], ["offices.id"], name="fk_appliance_stocks_office_id", ondelete="RESTRICT"
         ),
         sa.ForeignKeyConstraint(
-            ["appliance_id"], ["appliances.id"], name="fk_appliance_stocks_appliance_id", ondelete="RESTRICT"
+            ["appliance_id"],
+            ["appliances.id"],
+            name="fk_appliance_stocks_appliance_id",
+            ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("office_id", "appliance_id"),
     )
@@ -69,16 +78,27 @@ def upgrade() -> None:
         sa.Column("appliance_id", sa.Integer(), nullable=False),
         sa.Column("office_id", sa.Integer(), nullable=False),
         sa.Column("quantity", sa.Integer(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint("quantity > 0", name="quantity_positive"),
         sa.ForeignKeyConstraint(
-            ["ticket_id"], ["tickets.id"], name="fk_ticket_appliances_ticket_id", ondelete="CASCADE"
+            ["ticket_id"],
+            ["tickets.id"],
+            name="fk_ticket_appliances_ticket_id",
+            ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["appliance_id"], ["appliances.id"], name="fk_ticket_appliances_appliance_id", ondelete="RESTRICT"
+            ["appliance_id"],
+            ["appliances.id"],
+            name="fk_ticket_appliances_appliance_id",
+            ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["office_id"], ["offices.id"], name="fk_ticket_appliances_office_id", ondelete="RESTRICT"
+            ["office_id"],
+            ["offices.id"],
+            name="fk_ticket_appliances_office_id",
+            ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("ticket_id", "appliance_id"),
     )

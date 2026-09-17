@@ -1,6 +1,5 @@
 """Business logic and domain operations for appliances and warehouse stock."""
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.appliances import repository
@@ -61,7 +60,9 @@ class TicketAlreadyClosedError(Exception):
     pass
 
 
-def _check_foreman_ticket_access(session: Session, ticket_id: int, current_user: UserRead | None) -> None:
+def _check_foreman_ticket_access(
+    session: Session, ticket_id: int, current_user: UserRead | None
+) -> None:
     if current_user is None or current_user.role == UserRole.OBSERVER:
         return
     if current_user.role == UserRole.FOREMAN:
@@ -167,7 +168,8 @@ def set_office_stock(
     reserved = repository.get_reserved_stock_for_office(session, office_id, appliance_id)
     if stock < reserved:
         raise CannotReduceStockBelowReservedError(
-            f"Нельзя установить остаток {stock}: в открытых заявках уже задействовано {reserved} шт."
+            f"Нельзя установить остаток {stock}: "
+            f"в открытых заявках уже задействовано {reserved} шт."
         )
 
     stock_row = repository.set_office_stock(session, office_id, appliance_id, stock)
@@ -237,7 +239,8 @@ def add_ticket_appliance(
 
     if data.quantity > available:
         raise InsufficientStockError(
-            f"Недостаточно доступного оборудования '{appliance.name}' на складе офиса (доступно: {available}, запрошено: {data.quantity})"  # noqa: E501
+            f"Недостаточно доступного оборудования '{appliance.name}' "
+            f"на складе офиса (доступно: {available}, запрошено: {data.quantity})"
         )
 
     created = repository.create_ticket_appliance(
@@ -287,7 +290,8 @@ def update_ticket_appliance(
 
     if data.quantity > available_for_this:
         raise InsufficientStockError(
-            f"Недостаточно доступного оборудования '{appliance.name}' на складе офиса (доступно: {available_for_this}, запрошено: {data.quantity})"  # noqa: E501
+            f"Недостаточно доступного оборудования '{appliance.name}' "
+            f"на складе офиса (доступно: {available_for_this}, запрошено: {data.quantity})"
         )
 
     updated = repository.update_ticket_appliance_quantity(session, ta, data.quantity)

@@ -253,7 +253,7 @@ def find_ticket_default_office_id(session: Session, ticket_id: int) -> int | Non
 
 
 def consume_ticket_appliances_on_completed(session: Session, ticket_id: int) -> None:
-    """Deduct consumables (all types except TOOL) from physical office stock upon ticket completion."""
+    """Deduct consumables (all except TOOL) from physical stock upon ticket completion."""
     query = """
         SELECT ta.office_id, ta.appliance_id, ta.quantity, a.type
         FROM ticket_appliances ta

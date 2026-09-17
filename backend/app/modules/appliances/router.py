@@ -45,7 +45,14 @@ def _handle_service_error(error: Exception) -> None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     if isinstance(error, service.ApplianceAlreadyAttachedError):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-    if isinstance(error, (service.InsufficientStockError, service.CannotReduceStockBelowReservedError, service.TicketAlreadyClosedError)):
+    if isinstance(
+        error,
+        (
+            service.InsufficientStockError,
+            service.CannotReduceStockBelowReservedError,
+            service.TicketAlreadyClosedError,
+        ),
+    ):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
     if isinstance(error, service.PermissionDeniedError):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
@@ -235,7 +242,9 @@ def update_ticket_appliance(
 ) -> TicketApplianceRead:
     try:
         with session.begin():
-            return service.update_ticket_appliance(session, ticket_id, appliance_id, data, current_user)
+            return service.update_ticket_appliance(
+                session, ticket_id, appliance_id, data, current_user
+            )
     except Exception as err:
         _handle_service_error(err)
 

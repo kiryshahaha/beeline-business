@@ -689,7 +689,7 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
 
     # Seed appliances and warehouse stock
     demo_appliances = [
-        ("Wi-Fi роутер Beeline SmartBox GIGA", "Двухдиапазонный гигабитный Wi-Fi роутер", "CLIENT_ROUTER", "шт"),
+        ("Wi-Fi роутер Beeline SmartBox GIGA", "Гигабитный Wi-Fi роутер", "CLIENT_ROUTER", "шт"),
         ("Оптический терминал GPON ONT", "Абонентский терминал", "CLIENT_ROUTER", "шт"),
         ("Кабель витая пара UTP Cat.5e", "Кабель для абонентской разводки", "CABLE", "м"),
         ("Оптический патчкорд SC/APC 3м", "Оптический патчкорд", "FIBER", "шт"),
