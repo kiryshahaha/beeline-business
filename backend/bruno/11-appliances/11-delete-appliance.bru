@@ -1,0 +1,19 @@
+meta {
+  name: Деактивировать позицию оборудования
+  type: http
+  seq: 11
+}
+
+delete {
+  url: {{base_url}}/api/v1/appliances/{{created_appliance_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 204
+}

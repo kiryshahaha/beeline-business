@@ -1,0 +1,39 @@
+meta {
+  name: Повторное создание архивированного оборудования (возврат в эксплуатацию)
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{base_url}}/api/v1/appliances/
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "name": "Wi-Fi Роутер Bruno TestBox",
+    "description": "Возвращенный в эксплуатацию роутер",
+    "type": "CLIENT_ROUTER",
+    "unit": "шт"
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: eq {{created_appliance_id}}
+  res.body.name: eq "Wi-Fi Роутер Bruno TestBox"
+  res.body.is_active: eq true
+  res.body.description: eq "Возвращенный в эксплуатацию роутер"
+}
+
+tests {
+  test("Архивированная позиция возвращена в эксплуатацию с сохранением ID", function () {
+    expect(res.getBody().is_active).to.be.true;
+    expect(res.getBody().id).to.equal(bru.getVar("created_appliance_id"));
+  });
+}

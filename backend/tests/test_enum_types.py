@@ -31,3 +31,18 @@ class EnumTypesTests(unittest.TestCase):
             schemas["NotificationKind"]["enum"],
             ["ticket_assigned", "ticket_status_changed"],
         )
+        self.assertIn("ApplianceType", schemas)
+        self.assertEqual(
+            schemas["ApplianceType"]["enum"],
+            [
+                "CLIENT_ROUTER",
+                "RACK_ROUTER",
+                "CABLE",
+                "FIBER",
+                "TOOL",
+                "TV_BOX",
+                "SPEAKER",
+                "IP_CAMERA",
+                "OTHER",
+            ],
+        )

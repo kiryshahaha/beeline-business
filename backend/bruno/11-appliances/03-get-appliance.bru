@@ -1,0 +1,21 @@
+meta {
+  name: Получить оборудование по ID
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/appliances/{{created_appliance_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: eq {{created_appliance_id}}
+  res.body.name: eq "Wi-Fi Роутер Bruno TestBox"
+}

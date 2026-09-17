@@ -1,0 +1,27 @@
+meta {
+  name: Список оборудования заявки
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/appliances
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body: isArray
+}
+
+tests {
+  test("Список оборудования заявки получен", function () {
+    expect(res.getBody()).to.be.an("array");
+    expect(res.getBody().length).to.be.greaterThan(0);
+  });
+}

@@ -1,0 +1,45 @@
+meta {
+  name: Создать позицию оборудования
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/v1/appliances/
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "name": "Wi-Fi Роутер Bruno TestBox",
+    "description": "Тестовый роутер для проверок через Bruno",
+    "type": "CLIENT_ROUTER",
+    "unit": "шт"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("created_appliance_id", res.getBody().id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isNumber
+  res.body.name: eq "Wi-Fi Роутер Bruno TestBox"
+  res.body.type: eq "CLIENT_ROUTER"
+  res.body.unit: eq "шт"
+  res.body.is_active: eq true
+}
+
+tests {
+  test("Позиция оборудования успешно создана", function () {
+    expect(res.getBody().id).to.be.a("number");
+  });
+}

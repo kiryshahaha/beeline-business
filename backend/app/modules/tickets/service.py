@@ -144,6 +144,10 @@ def update_ticket_status(
         if previous_status == status.value:
             return get_ticket(session, ticket_id)
         repository.update_status(session, ticket_id, status.value)
+        if status == TicketStatus.COMPLETED:
+            from app.modules.appliances import service as appliances_service
+
+            appliances_service.on_ticket_status_completed(session, ticket_id)
         repository.add_notification_events(
             session,
             repository.list_observer_ids(session),

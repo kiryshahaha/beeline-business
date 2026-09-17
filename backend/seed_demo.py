@@ -687,6 +687,72 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                         {"b_id": brigade_id, "w_id": w_id},
                     )
 
+    # Seed appliances and warehouse stock
+    demo_appliances = [
+        ("Wi-Fi роутер Beeline SmartBox GIGA", "Гигабитный Wi-Fi роутер", "CLIENT_ROUTER", "шт"),
+        ("Оптический терминал GPON ONT", "Абонентский терминал", "CLIENT_ROUTER", "шт"),
+        ("Кабель витая пара UTP Cat.5e", "Кабель для абонентской разводки", "CABLE", "м"),
+        ("Оптический патчкорд SC/APC 3м", "Оптический патчкорд", "FIBER", "шт"),
+        ("Обжимной инструмент (Кримпер)", "Инструмент для монтажника", "TOOL", "шт"),
+        ("ТВ-приставка Beeline TV Box", "Медиаплеер 4K", "TV_BOX", "шт"),
+        ("Умная колонка", "Колонка с голосовым помощником", "SPEAKER", "шт"),
+        ("IP-камера Cloud Cam", "Камера домашнего наблюдения", "IP_CAMERA", "шт"),
+    ]
+
+    office_ids = list(session.execute(text("SELECT id FROM offices ORDER BY id")).scalars())
+    appliance_ids = {}
+    for name, desc, a_type, unit in demo_appliances:
+        a_id = session.execute(
+            text("SELECT id FROM appliances WHERE lower(name) = lower(:name)"),
+            {"name": name},
+        ).scalar_one_or_none()
+        if a_id is None:
+            a_id = session.execute(
+                text("""
+                    INSERT INTO appliances (name, description, type, unit, is_active)
+                    VALUES (:name, :desc, :type, :unit, TRUE)
+                    RETURNING id
+                """),
+                {"name": name, "desc": desc, "type": a_type, "unit": unit},
+            ).scalar_one()
+        appliance_ids[name] = a_id
+
+        # Populate initial stock in all offices
+        for off_id in office_ids:
+            initial_stock = 1000 if a_type in ("CABLE", "FIBER") else 25
+            session.execute(
+                text("""
+                    INSERT INTO appliance_stocks (office_id, appliance_id, stock)
+                    VALUES (:off_id, :app_id, :stock)
+                    ON CONFLICT (office_id, appliance_id) DO NOTHING
+                """),
+                {"off_id": off_id, "app_id": a_id, "stock": initial_stock},
+            )
+
+    # Attach equipment to the first demo ticket if exists
+    if results and office_ids:
+        first_ticket_id = results[0].ticket_id
+        first_office_id = office_ids[0]
+        router_id = appliance_ids.get("Wi-Fi роутер Beeline SmartBox GIGA")
+        cable_id = appliance_ids.get("Кабель витая пара UTP Cat.5e")
+        tool_id = appliance_ids.get("Обжимной инструмент (Кримпер)")
+
+        for app_id, qty in [(router_id, 1), (cable_id, 20), (tool_id, 1)]:
+            if app_id is not None:
+                session.execute(
+                    text("""
+                        INSERT INTO ticket_appliances (ticket_id, appliance_id, office_id, quantity)
+                        VALUES (:ticket_id, :appliance_id, :office_id, :qty)
+                        ON CONFLICT (ticket_id, appliance_id) DO NOTHING
+                    """),
+                    {
+                        "ticket_id": first_ticket_id,
+                        "appliance_id": app_id,
+                        "office_id": first_office_id,
+                        "qty": qty,
+                    },
+                )
+
     # Seed push subscriptions
     session.execute(
         text("""

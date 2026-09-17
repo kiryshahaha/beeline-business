@@ -1,0 +1,27 @@
+meta {
+  name: Обновить позицию оборудования
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/api/v1/appliances/{{created_appliance_id}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "description": "Обновленное описание тестового роутера"
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: eq {{created_appliance_id}}
+  res.body.description: eq "Обновленное описание тестового роутера"
+}
