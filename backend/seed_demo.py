@@ -654,8 +654,6 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
             {"name": office_data.name, "location_id": location},
         )
 
-
-
     return results
 
 
