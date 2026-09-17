@@ -50,9 +50,7 @@ class ApplianceStock(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    __table_args__ = (
-        CheckConstraint("stock >= 0", name="stock_nonnegative"),
-    )
+    __table_args__ = (CheckConstraint("stock >= 0", name="stock_nonnegative"),)
 
 
 class TicketAppliance(Base):
@@ -68,9 +66,7 @@ class TicketAppliance(Base):
         ForeignKey("offices.id", ondelete="RESTRICT"), nullable=False
     )
     quantity: Mapped[int] = mapped_column(nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
         CheckConstraint("quantity > 0", name="quantity_positive"),

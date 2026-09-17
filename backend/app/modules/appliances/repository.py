@@ -52,9 +52,7 @@ def list_appliances(
     return list(session.scalars(statement).all())
 
 
-def update_appliance(
-    session: Session, appliance: Appliance, data: ApplianceUpdate
-) -> Appliance:
+def update_appliance(session: Session, appliance: Appliance, data: ApplianceUpdate) -> Appliance:
     if data.name is not None:
         appliance.name = data.name
     if data.description is not None:

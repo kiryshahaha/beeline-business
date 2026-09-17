@@ -43,4 +43,3 @@ __all__ = [
     "WorkerSkill",
     "WorkerSkillAssignment",
 ]
-

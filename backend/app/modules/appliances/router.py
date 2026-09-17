@@ -61,6 +61,7 @@ def _handle_service_error(error: Exception) -> None:
 
 # --- 1. APPLIANCES CATALOG ---
 
+
 @appliances_router.post(
     "/",
     response_model=ApplianceRead,
@@ -156,6 +157,7 @@ def delete_appliance(
 
 # --- 2. OFFICE WAREHOUSE STOCK ---
 
+
 @office_stock_router.get(
     "/{office_id}/stock",
     response_model=list[OfficeStockItemRead],
@@ -192,6 +194,7 @@ def set_office_stock(
 
 
 # --- 3. TICKET APPLIANCE ALLOCATIONS ---
+
 
 @ticket_appliances_router.get(
     "/{ticket_id}/appliances",

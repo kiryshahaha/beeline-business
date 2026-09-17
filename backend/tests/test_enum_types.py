@@ -46,4 +46,3 @@ class EnumTypesTests(unittest.TestCase):
                 "OTHER",
             ],
         )
-

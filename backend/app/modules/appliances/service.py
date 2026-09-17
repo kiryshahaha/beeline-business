@@ -119,9 +119,7 @@ def list_appliances(
     return [ApplianceRead.model_validate(item) for item in items]
 
 
-def update_appliance(
-    session: Session, appliance_id: int, data: ApplianceUpdate
-) -> ApplianceRead:
+def update_appliance(session: Session, appliance_id: int, data: ApplianceUpdate) -> ApplianceRead:
     appliance = repository.get_appliance(session, appliance_id)
     if appliance is None:
         raise ApplianceNotFoundError(f"Оборудование с id={appliance_id} не найдено")
@@ -129,9 +127,7 @@ def update_appliance(
     if data.name is not None and data.name.strip().lower() != appliance.name.lower():
         existing = repository.get_appliance_by_name(session, data.name)
         if existing is not None and existing.id != appliance_id:
-            raise ApplianceAlreadyExistsError(
-                f"Оборудование с именем '{data.name}' уже существует"
-            )
+            raise ApplianceAlreadyExistsError(f"Оборудование с именем '{data.name}' уже существует")
 
     updated = repository.update_appliance(session, appliance, data)
     return ApplianceRead.model_validate(updated)
