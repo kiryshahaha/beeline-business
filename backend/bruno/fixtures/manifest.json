@@ -1,0 +1,60 @@
+{
+  "generator": "generate_synthetic.py",
+  "parameters": {
+    "seed": 906,
+    "start_date": "2026-09-21",
+    "tickets": 24,
+    "workers": 4,
+    "days": 1
+  },
+  "counts": {
+    "appliances": 27,
+    "cities": 3,
+    "users": 12,
+    "worker_skills": 3,
+    "districts": 12,
+    "streets": 12,
+    "workers": 4,
+    "buildings": 24,
+    "worker_skill_assignments": 7,
+    "entrances": 24,
+    "locations": 24,
+    "offices": 6,
+    "tickets": 24,
+    "appliance_stocks": 162,
+    "brigades": 6,
+    "notification_events": 4,
+    "ticket_appliances": 21,
+    "ticket_assignments": 18,
+    "ticket_comments": 8,
+    "brigade_members": 4,
+    "routes": 8
+  },
+  "scenarios": [
+    "balanced",
+    "overlapping_windows",
+    "missing_skill",
+    "unassigned",
+    "missing_coordinates",
+    "equipment_shortage",
+    "urgent_example",
+    "night_shift"
+  ],
+  "files": {
+    "dataset.zip": {
+      "bytes": 7813,
+      "sha256": "04624d1d188f986e90898f0f0e8aed98f0f7055c0da4c79a7dca04fddbce4901"
+    },
+    "dataset.xlsx": {
+      "bytes": 27797,
+      "sha256": "379f59a201bf85edcc8022c4469855a281e7ec7456992d0282380eec86e9af7c"
+    }
+  },
+  "notes": [
+    "Все имена, адреса, заявки и комментарии вымышлены. Координаты служат тестовыми точками.",
+    "urgent_example отмечен в названии: поле приоритета пока отсутствует в модели заявок.",
+    "equipment_shortage: нулевой остаток позиции 26; невозможные резервы вынесены в отрицательные тесты.",
+    "Маршруты — сохранённые примеры, а не результат оптимизации или доказательство выполнимости.",
+    "Импортированные учётные записи не имеют известного пароля; пароль задаётся отдельно."
+  ]
+}

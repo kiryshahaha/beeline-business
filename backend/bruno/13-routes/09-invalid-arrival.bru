@@ -1,0 +1,23 @@
+meta {
+  name: invalid-arrival
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{base_url}}/api/v1/routes
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"worker_id": {{worker_id}}, "route_date": "2026-09-21", "stops": [{"location_id": {{location_id}}, "arrival_at": "2026-09-21T09:00:00+03:00"}, {"location_id": {{location_id}}, "arrival_at": "2026-09-21T08:00:00+03:00"}]}
+}
+
+assert {
+  res.status: eq 422
+}

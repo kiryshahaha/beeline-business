@@ -1,0 +1,27 @@
+meta {
+  name: new-day-number
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{base_url}}/api/v1/routes
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"worker_id": {{worker_id}}, "route_date": "2026-09-22", "stops": [{"location_id": {{location_id}}, "arrival_at": "2026-09-22T09:00:00+03:00"}, {"location_id": {{location_id}}, "arrival_at": "2026-09-22T10:00:00+03:00"}]}
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+test("На новый день номер снова 1", () => { expect(res.getBody().route_number).to.equal(1); });
+}

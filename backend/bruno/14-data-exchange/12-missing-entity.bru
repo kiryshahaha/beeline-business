@@ -1,0 +1,23 @@
+meta {
+  name: missing-entity
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{base_url}}/api/v1/data/import
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:multipart-form {
+  file: @file(fixtures/invalid-cities.csv)
+}
+
+assert {
+  res.status: eq 422
+}

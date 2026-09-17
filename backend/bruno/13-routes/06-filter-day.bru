@@ -1,0 +1,23 @@
+meta {
+  name: filter-day
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/api/v1/routes?worker_id={{worker_id}}&route_date=2026-09-21
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+test("Фильтр возвращает два построения", () => { expect(res.getBody().map(r => r.route_number)).to.deep.equal([1, 2]); });
+}

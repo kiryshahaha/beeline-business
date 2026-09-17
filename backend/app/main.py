@@ -20,10 +20,12 @@ from app.modules.auth.schemas import (
 )
 from app.modules.brigades.router import router as brigades_router
 from app.modules.comments.router import router as comments_router
+from app.modules.data_exchange.router import router as data_exchange_router
 from app.modules.locations.router import router as locations_router
 from app.modules.notifications.dispatcher import create_dispatcher
 from app.modules.notifications.router import router as notifications_router
 from app.modules.offices.router import router as offices_router
+from app.modules.routes.router import router as routes_router
 from app.modules.tickets.router import router as tickets_router
 from app.modules.tickets.schemas import TICKET_CREATE_EXAMPLE, TICKET_READ_EXAMPLE
 from app.modules.users.router import router as users_router
@@ -101,6 +103,8 @@ app.include_router(tickets_router)
 app.include_router(ticket_appliances_router)
 app.include_router(comments_router)
 app.include_router(notifications_router)
+app.include_router(routes_router)
+app.include_router(data_exchange_router)
 
 
 @app.get("/health", tags=["system"])

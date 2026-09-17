@@ -1,0 +1,31 @@
+meta {
+  name: transport-car
+  type: http
+  seq: 1
+}
+
+patch {
+  url: {{base_url}}/api/v1/users/{{worker_id}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "worker_profile": {
+      "transport_type": "car"
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+test("Транспорт сохранён", () => { expect(res.getBody().worker_profile.transport_type).to.equal("car"); });
+}
