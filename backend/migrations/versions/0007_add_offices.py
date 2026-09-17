@@ -5,12 +5,13 @@ Revises: 0006
 Create Date: 2026-09-17 17:20:00.000000
 
 """
-from alembic import op
+
 import sqlalchemy as sa
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = '0007'
-down_revision = '0006'
+revision = "0007"
+down_revision = "0006"
 branch_labels = None
 depends_on = None
 
@@ -18,20 +19,24 @@ depends_on = None
 def upgrade() -> None:
     # 1. Create offices table
     op.create_table(
-        'offices',
-        sa.Column('name', sa.String(length=150), nullable=False),
-        sa.Column('location_id', sa.Integer(), nullable=False),
-        sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-        sa.CheckConstraint("name = btrim(name) AND name <> ''", name='name_not_blank'),
-        sa.ForeignKeyConstraint(['location_id'], ['locations.id'], name='fk_offices_location_id', ondelete='RESTRICT'),
-        sa.PrimaryKeyConstraint('id')
+        "offices",
+        sa.Column("name", sa.String(length=150), nullable=False),
+        sa.Column("location_id", sa.Integer(), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.CheckConstraint("name = btrim(name) AND name <> ''", name="name_not_blank"),
+        sa.ForeignKeyConstraint(
+            ["location_id"], ["locations.id"], name="fk_offices_location_id", ondelete="RESTRICT"
+        ),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index('uq_offices_name', 'offices', [sa.text('lower(name)')], unique=True)
-    
+    op.create_index("uq_offices_name", "offices", [sa.text("lower(name)")], unique=True)
+
     # 2. Add office_id to brigades (nullable first)
-    op.add_column('brigades', sa.Column('office_id', sa.Integer(), nullable=True))
-    op.create_foreign_key('fk_brigades_office_id', 'brigades', 'offices', ['office_id'], ['id'], ondelete='RESTRICT')
-    
+    op.add_column("brigades", sa.Column("office_id", sa.Integer(), nullable=True))
+    op.create_foreign_key(
+        "fk_brigades_office_id", "brigades", "offices", ["office_id"], ["id"], ondelete="RESTRICT"
+    )
+
     # 3. Create dummy office for existing brigades and update them
     op.execute("""
         DO $$
@@ -80,13 +85,13 @@ def upgrade() -> None:
             END IF;
         END $$;
     """)
-    
+
     # 4. Alter column to not null
-    op.alter_column('brigades', 'office_id', existing_type=sa.Integer(), nullable=False)
+    op.alter_column("brigades", "office_id", existing_type=sa.Integer(), nullable=False)
 
 
 def downgrade() -> None:
-    op.drop_constraint('fk_brigades_office_id', 'brigades', type_='foreignkey')
-    op.drop_column('brigades', 'office_id')
-    op.drop_index('uq_offices_name', table_name='offices')
-    op.drop_table('offices')
+    op.drop_constraint("fk_brigades_office_id", "brigades", type_="foreignkey")
+    op.drop_column("brigades", "office_id")
+    op.drop_index("uq_offices_name", table_name="offices")
+    op.drop_table("offices")

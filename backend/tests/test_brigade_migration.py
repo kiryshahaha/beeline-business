@@ -61,23 +61,27 @@ class BrigadeMigrationTests(DatabaseTestCase):
         ).scalar_one()
         street_id = self.connection.execute(
             text("INSERT INTO streets (name, city_id) VALUES ('Улица', :city_id) RETURNING id"),
-            {"city_id": city_id}
+            {"city_id": city_id},
         ).scalar_one()
         district_id = self.connection.execute(
             text("INSERT INTO districts (name, city_id) VALUES ('Район', :city_id) RETURNING id"),
-            {"city_id": city_id}
+            {"city_id": city_id},
         ).scalar_one()
         building_id = self.connection.execute(
-            text("INSERT INTO buildings (city_id, street_id, district_id, number) VALUES (:city_id, :street_id, :district_id, '1') RETURNING id"),
-            {"city_id": city_id, "street_id": street_id, "district_id": district_id}
+            text(
+                "INSERT INTO buildings (city_id, street_id, district_id, number) VALUES (:city_id, :street_id, :district_id, '1') RETURNING id"
+            ),
+            {"city_id": city_id, "street_id": street_id, "district_id": district_id},
         ).scalar_one()
         location_id = self.connection.execute(
             text("INSERT INTO locations (building_id) VALUES (:building_id) RETURNING id"),
-            {"building_id": building_id}
+            {"building_id": building_id},
         ).scalar_one()
         office_id = self.connection.execute(
-            text("INSERT INTO offices (name, location_id) VALUES ('Офис 1', :location_id) RETURNING id"),
-            {"location_id": location_id}
+            text(
+                "INSERT INTO offices (name, location_id) VALUES ('Офис 1', :location_id) RETURNING id"
+            ),
+            {"location_id": location_id},
         ).scalar_one()
 
         brigade_id = self.connection.execute(

@@ -4,7 +4,6 @@ from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
-
 OFFICE_COLUMNS = """
     o.id,
     o.name,

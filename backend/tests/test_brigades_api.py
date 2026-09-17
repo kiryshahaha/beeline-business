@@ -1,7 +1,7 @@
 """Integration coverage for brigade management and read visibility."""
 
 from fastapi.testclient import TestClient
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session
@@ -29,32 +29,36 @@ class BrigadesApiTests(DatabaseTestCase):
         self.worker_one = self.create_user("worker_one", UserRole.WORKER)
         self.worker_two = self.create_user("worker_two", UserRole.WORKER)
         self.worker_three = self.create_user("worker_three", UserRole.WORKER)
-        
+
         # Create geographical hierarchy and an office for tests
         city_id = self.connection.execute(
             text("INSERT INTO cities (name) VALUES ('Город') RETURNING id")
         ).scalar_one()
         street_id = self.connection.execute(
             text("INSERT INTO streets (name, city_id) VALUES ('Улица', :city_id) RETURNING id"),
-            {"city_id": city_id}
+            {"city_id": city_id},
         ).scalar_one()
         district_id = self.connection.execute(
             text("INSERT INTO districts (name, city_id) VALUES ('Район', :city_id) RETURNING id"),
-            {"city_id": city_id}
+            {"city_id": city_id},
         ).scalar_one()
         building_id = self.connection.execute(
-            text("INSERT INTO buildings (city_id, street_id, district_id, number) VALUES (:city_id, :street_id, :district_id, '1') RETURNING id"),
-            {"city_id": city_id, "street_id": street_id, "district_id": district_id}
+            text(
+                "INSERT INTO buildings (city_id, street_id, district_id, number) VALUES (:city_id, :street_id, :district_id, '1') RETURNING id"
+            ),
+            {"city_id": city_id, "street_id": street_id, "district_id": district_id},
         ).scalar_one()
         location_id = self.connection.execute(
             text("INSERT INTO locations (building_id) VALUES (:building_id) RETURNING id"),
-            {"building_id": building_id}
+            {"building_id": building_id},
         ).scalar_one()
         self.office_id = self.connection.execute(
-            text("INSERT INTO offices (name, location_id) VALUES ('Офис 1', :location_id) RETURNING id"),
-            {"location_id": location_id}
+            text(
+                "INSERT INTO offices (name, location_id) VALUES ('Офис 1', :location_id) RETURNING id"
+            ),
+            {"location_id": location_id},
         ).scalar_one()
-        
+
         self.session.commit()
 
     def create_user(self, username: str, role: UserRole):
@@ -88,7 +92,12 @@ class BrigadesApiTests(DatabaseTestCase):
     def create_brigade(self, name: str, foreman_id: int, worker_ids: list[int]) -> dict:
         response = self.client.post(
             "/api/v1/brigades",
-            json={"name": name, "foreman_id": foreman_id, "office_id": self.office_id, "worker_ids": worker_ids},
+            json={
+                "name": name,
+                "foreman_id": foreman_id,
+                "office_id": self.office_id,
+                "worker_ids": worker_ids,
+            },
             headers=self.auth_header("observer"),
         )
         self.assertEqual(response.status_code, 201)
@@ -104,7 +113,12 @@ class BrigadesApiTests(DatabaseTestCase):
 
         duplicate = self.client.post(
             "/api/v1/brigades",
-            json={"name": "север", "foreman_id": self.foreman_two.id, "office_id": self.office_id, "worker_ids": []},
+            json={
+                "name": "север",
+                "foreman_id": self.foreman_two.id,
+                "office_id": self.office_id,
+                "worker_ids": [],
+            },
             headers=self.auth_header("observer"),
         )
         self.assertEqual(duplicate.status_code, 409)
@@ -112,7 +126,12 @@ class BrigadesApiTests(DatabaseTestCase):
     def test_creation_rejects_non_foreman_and_unknown_worker(self):
         non_foreman = self.client.post(
             "/api/v1/brigades",
-            json={"name": "Неверный", "foreman_id": self.worker_one.id, "office_id": self.office_id, "worker_ids": []},
+            json={
+                "name": "Неверный",
+                "foreman_id": self.worker_one.id,
+                "office_id": self.office_id,
+                "worker_ids": [],
+            },
             headers=self.auth_header("observer"),
         )
         self.assertEqual(non_foreman.status_code, 422)
@@ -142,7 +161,11 @@ class BrigadesApiTests(DatabaseTestCase):
         brigade = self.create_brigade("Север", self.foreman_one.id, [self.worker_one.id])
         replaced = self.client.put(
             f"/api/v1/brigades/{brigade['id']}/members",
-            json={"foreman_id": self.foreman_two.id, "office_id": self.office_id, "worker_ids": [self.worker_two.id]},
+            json={
+                "foreman_id": self.foreman_two.id,
+                "office_id": self.office_id,
+                "worker_ids": [self.worker_two.id],
+            },
             headers=self.auth_header("observer"),
         )
 
@@ -153,7 +176,11 @@ class BrigadesApiTests(DatabaseTestCase):
 
         invalid = self.client.put(
             f"/api/v1/brigades/{brigade['id']}/members",
-            json={"foreman_id": self.worker_three.id, "office_id": self.office_id, "worker_ids": []},
+            json={
+                "foreman_id": self.worker_three.id,
+                "office_id": self.office_id,
+                "worker_ids": [],
+            },
             headers=self.auth_header("observer"),
         )
         self.assertEqual(invalid.status_code, 422)
@@ -169,7 +196,11 @@ class BrigadesApiTests(DatabaseTestCase):
 
         replaced = self.client.put(
             f"/api/v1/brigades/{brigade_one['id']}/members",
-            json={"foreman_id": self.foreman_one.id, "office_id": self.office_id, "worker_ids": [self.worker_two.id]},
+            json={
+                "foreman_id": self.foreman_one.id,
+                "office_id": self.office_id,
+                "worker_ids": [self.worker_two.id],
+            },
             headers=self.auth_header("observer"),
         )
         self.assertEqual(replaced.status_code, 200)
@@ -177,7 +208,11 @@ class BrigadesApiTests(DatabaseTestCase):
 
         occupied = self.client.put(
             f"/api/v1/brigades/{brigade_one['id']}/members",
-            json={"foreman_id": self.foreman_one.id, "office_id": self.office_id, "worker_ids": [self.worker_three.id]},
+            json={
+                "foreman_id": self.foreman_one.id,
+                "office_id": self.office_id,
+                "worker_ids": [self.worker_three.id],
+            },
             headers=self.auth_header("observer"),
         )
         self.assertEqual(occupied.status_code, 409)

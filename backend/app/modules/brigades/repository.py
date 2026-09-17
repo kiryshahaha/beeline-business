@@ -176,7 +176,9 @@ def add_brigade(session: Session, name: str, foreman_id: int, office_id: int) ->
     ).scalar_one()
 
 
-def update_brigade_foreman_and_office(session: Session, brigade_id: int, foreman_id: int, office_id: int) -> None:
+def update_brigade_foreman_and_office(
+    session: Session, brigade_id: int, foreman_id: int, office_id: int
+) -> None:
     session.execute(
         text("""
             UPDATE brigades

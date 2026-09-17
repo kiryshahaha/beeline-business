@@ -8,7 +8,7 @@ from app.modules.districts.models import District
 from app.modules.entrances.models import Entrance
 from app.modules.locations.models import Location
 from app.modules.notifications.models import NotificationEvent, PushSubscription
-from app.modules.offices.models import Office
+from app.modules.offices.models import Office  # noqa: F401
 from app.modules.streets.models import Street
 from app.modules.tickets.models import Ticket, TicketAssignment
 from app.modules.users.models import (

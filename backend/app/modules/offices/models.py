@@ -1,6 +1,6 @@
 """SQLAlchemy models for offices."""
 
-from sqlalchemy import CheckConstraint, ForeignKey, String, Index, func
+from sqlalchemy import CheckConstraint, ForeignKey, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IntegerIdMixin

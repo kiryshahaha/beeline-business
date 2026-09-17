@@ -207,6 +207,7 @@ class DemoOffice:
     latitude: str
     longitude: str
 
+
 DEMO_OFFICES = (
     DemoOffice(
         name="Офис Восток",
@@ -593,7 +594,7 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                     "text": "Демонстрационная заметка наблюдателя к заявке.",
                 },
             )
-            
+
     # Seed offices and brigades after buildings are created
     for i, office_data in enumerate(DEMO_OFFICES):
         office_city_id = get_or_create_id(
@@ -625,40 +626,52 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                 "number": office_data.building,
             },
         )
-        
+
         # Insert location for this office
         location = session.execute(
-            text("SELECT id FROM locations WHERE building_id = :building_id AND entrance_id IS NULL AND apartment IS NULL"),
-            {"building_id": building_id}
+            text(
+                "SELECT id FROM locations WHERE building_id = :building_id AND entrance_id IS NULL AND apartment IS NULL"
+            ),
+            {"building_id": building_id},
         ).scalar_one_or_none()
-        
+
         if not location:
             location = session.execute(
-                text("INSERT INTO locations (building_id, latitude, longitude) VALUES (:building_id, :latitude, :longitude) RETURNING id"),
-                {"building_id": building_id, "latitude": office_data.latitude, "longitude": office_data.longitude}
+                text(
+                    "INSERT INTO locations (building_id, latitude, longitude) VALUES (:building_id, :latitude, :longitude) RETURNING id"
+                ),
+                {
+                    "building_id": building_id,
+                    "latitude": office_data.latitude,
+                    "longitude": office_data.longitude,
+                },
             ).scalar_one()
-            
+
         office_id = get_or_create_id(
             session,
             "SELECT id FROM offices WHERE name = :name",
             "INSERT INTO offices (name, location_id) VALUES (:name, :location_id) RETURNING id",
-            {"name": office_data.name, "location_id": location}
+            {"name": office_data.name, "location_id": location},
         )
-        
+
         # Only create one brigade per demo for simplicity
         if i == 0:
-            foreman_id = session.execute(text("SELECT id FROM users WHERE username = 'demo_foreman'")).scalar_one_or_none()
+            foreman_id = session.execute(
+                text("SELECT id FROM users WHERE username = 'demo_foreman'")
+            ).scalar_one_or_none()
             if foreman_id:
                 brigade_id = get_or_create_id(
                     session,
                     "SELECT id FROM brigades WHERE name = 'Альфа'",
                     "INSERT INTO brigades (name, foreman_id, office_id) VALUES ('Альфа', :foreman_id, :office_id) RETURNING id",
-                    {"foreman_id": foreman_id, "office_id": office_id}
+                    {"foreman_id": foreman_id, "office_id": office_id},
                 )
                 for w_id in worker_ids:
                     session.execute(
-                        text("INSERT INTO brigade_members (brigade_id, worker_id) VALUES (:b_id, :w_id) ON CONFLICT DO NOTHING"),
-                        {"b_id": brigade_id, "w_id": w_id}
+                        text(
+                            "INSERT INTO brigade_members (brigade_id, worker_id) VALUES (:b_id, :w_id) ON CONFLICT DO NOTHING"
+                        ),
+                        {"b_id": brigade_id, "w_id": w_id},
                     )
 
     return results
