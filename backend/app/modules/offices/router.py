@@ -20,7 +20,7 @@ def create_office(
     session: Annotated[Session, Depends(get_session)],
     _viewer_id: Annotated[int, Depends(require_roles({UserRole.OBSERVER}))],
 ):
-    """Create a new office (only accessible to OBSERVER role typically, acting as admin/dispatcher)."""
+    """Create a new office (only accessible to OBSERVER role typically, acting as admin/dispatcher)."""  # noqa: E501
     return service.create_office(session, office_in)
 
 

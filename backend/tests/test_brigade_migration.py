@@ -69,7 +69,7 @@ class BrigadeMigrationTests(DatabaseTestCase):
         ).scalar_one()
         building_id = self.connection.execute(
             text(
-                "INSERT INTO buildings (city_id, street_id, district_id, number) VALUES (:city_id, :street_id, :district_id, '1') RETURNING id"
+                "INSERT INTO buildings (city_id, street_id, district_id, number) VALUES (:city_id, :street_id, :district_id, '1') RETURNING id"  # noqa: E501
             ),
             {"city_id": city_id, "street_id": street_id, "district_id": district_id},
         ).scalar_one()
@@ -79,7 +79,7 @@ class BrigadeMigrationTests(DatabaseTestCase):
         ).scalar_one()
         office_id = self.connection.execute(
             text(
-                "INSERT INTO offices (name, location_id) VALUES ('Офис 1', :location_id) RETURNING id"
+                "INSERT INTO offices (name, location_id) VALUES ('Офис 1', :location_id) RETURNING id"  # noqa: E501
             ),
             {"location_id": location_id},
         ).scalar_one()

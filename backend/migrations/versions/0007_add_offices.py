@@ -52,35 +52,46 @@ def upgrade() -> None:
                 -- Find or create a city
                 SELECT id INTO dummy_city_id FROM cities LIMIT 1;
                 IF dummy_city_id IS NULL THEN
-                    INSERT INTO cities (name) VALUES ('Дефолтный Город') RETURNING id INTO dummy_city_id;
+                    INSERT INTO cities (name) VALUES ('Дефолтный Город') 
+                    RETURNING id INTO dummy_city_id;
                 END IF;
                 
                 -- Find or create a street
                 SELECT id INTO dummy_street_id FROM streets LIMIT 1;
                 IF dummy_street_id IS NULL THEN
-                    INSERT INTO streets (name, city_id) VALUES ('Дефолтная Улица', dummy_city_id) RETURNING id INTO dummy_street_id;
+                    INSERT INTO streets (name, city_id) 
+                    VALUES ('Дефолтная Улица', dummy_city_id) 
+                    RETURNING id INTO dummy_street_id;
                 END IF;
                 
                 -- Find or create a district
                 SELECT id INTO dummy_district_id FROM districts LIMIT 1;
                 IF dummy_district_id IS NULL THEN
-                    INSERT INTO districts (name, city_id) VALUES ('Дефолтный Район', dummy_city_id) RETURNING id INTO dummy_district_id;
+                    INSERT INTO districts (name, city_id) 
+                    VALUES ('Дефолтный Район', dummy_city_id) 
+                    RETURNING id INTO dummy_district_id;
                 END IF;
 
                 -- Find or create a building
                 SELECT id INTO dummy_building_id FROM buildings LIMIT 1;
                 IF dummy_building_id IS NULL THEN
                     INSERT INTO buildings (city_id, street_id, district_id, number) 
-                    VALUES (dummy_city_id, dummy_street_id, dummy_district_id, '1') RETURNING id INTO dummy_building_id;
+                    VALUES (dummy_city_id, dummy_street_id, dummy_district_id, '1') 
+                    RETURNING id INTO dummy_building_id;
                 END IF;
                 
                 -- Find or create a location
                 SELECT id INTO dummy_location_id FROM locations LIMIT 1;
                 IF dummy_location_id IS NULL THEN
-                    INSERT INTO locations (building_id) VALUES (dummy_building_id) RETURNING id INTO dummy_location_id;
+                    INSERT INTO locations (building_id) 
+                    VALUES (dummy_building_id) 
+                    RETURNING id INTO dummy_location_id;
                 END IF;
                 
-                INSERT INTO offices (name, location_id) VALUES ('Дефолтный Офис', dummy_location_id) RETURNING id INTO dummy_office_id;
+                INSERT INTO offices (name, location_id) 
+                VALUES ('Дефолтный Офис', dummy_location_id) 
+                RETURNING id INTO dummy_office_id;
+                
                 UPDATE brigades SET office_id = dummy_office_id WHERE office_id IS NULL;
             END IF;
         END $$;

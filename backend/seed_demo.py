@@ -617,8 +617,8 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
         )
         building_id = get_or_create_id(
             session,
-            "SELECT id FROM buildings WHERE street_id = :street_id AND lower(number) = lower(:number)",
-            "INSERT INTO buildings (city_id, street_id, district_id, number) VALUES (:city_id, :street_id, :district_id, :number) RETURNING id",
+            "SELECT id FROM buildings WHERE street_id = :street_id AND lower(number) = lower(:number)",  # noqa: E501
+            "INSERT INTO buildings (city_id, street_id, district_id, number) VALUES (:city_id, :street_id, :district_id, :number) RETURNING id",  # noqa: E501
             {
                 "city_id": office_city_id,
                 "street_id": street_id,
@@ -630,7 +630,7 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
         # Insert location for this office
         location = session.execute(
             text(
-                "SELECT id FROM locations WHERE building_id = :building_id AND entrance_id IS NULL AND apartment IS NULL"
+                "SELECT id FROM locations WHERE building_id = :building_id AND entrance_id IS NULL AND apartment IS NULL"  # noqa: E501
             ),
             {"building_id": building_id},
         ).scalar_one_or_none()
@@ -638,7 +638,7 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
         if not location:
             location = session.execute(
                 text(
-                    "INSERT INTO locations (building_id, latitude, longitude) VALUES (:building_id, :latitude, :longitude) RETURNING id"
+                    "INSERT INTO locations (building_id, latitude, longitude) VALUES (:building_id, :latitude, :longitude) RETURNING id"  # noqa: E501
                 ),
                 {
                     "building_id": building_id,
@@ -663,13 +663,13 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                 brigade_id = get_or_create_id(
                     session,
                     "SELECT id FROM brigades WHERE name = 'Альфа'",
-                    "INSERT INTO brigades (name, foreman_id, office_id) VALUES ('Альфа', :foreman_id, :office_id) RETURNING id",
+                    "INSERT INTO brigades (name, foreman_id, office_id) VALUES ('Альфа', :foreman_id, :office_id) RETURNING id",  # noqa: E501
                     {"foreman_id": foreman_id, "office_id": office_id},
                 )
                 for w_id in worker_ids:
                     session.execute(
                         text(
-                            "INSERT INTO brigade_members (brigade_id, worker_id) VALUES (:b_id, :w_id) ON CONFLICT DO NOTHING"
+                            "INSERT INTO brigade_members (brigade_id, worker_id) VALUES (:b_id, :w_id) ON CONFLICT DO NOTHING"  # noqa: E501
                         ),
                         {"b_id": brigade_id, "w_id": w_id},
                     )

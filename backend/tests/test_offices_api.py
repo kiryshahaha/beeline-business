@@ -41,7 +41,7 @@ class OfficesApiTests(DatabaseTestCase):
         ).scalar_one()
         building_id = self.connection.execute(
             text(
-                "INSERT INTO buildings (city_id, street_id, district_id, number) VALUES (:city_id, :street_id, :district_id, '1') RETURNING id"
+                "INSERT INTO buildings (city_id, street_id, district_id, number) VALUES (:city_id, :street_id, :district_id, '1') RETURNING id"  # noqa: E501
             ),
             {"city_id": city_id, "street_id": street_id, "district_id": district_id},
         ).scalar_one()
