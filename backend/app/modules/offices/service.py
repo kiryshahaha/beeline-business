@@ -41,3 +41,13 @@ def create_office(session: Session, office_in: OfficeCreate) -> OfficeRead:
 def list_offices(session: Session) -> list[OfficeRead]:
     rows = repository.list_offices(session)
     return [OfficeRead.model_validate(row) for row in rows]
+
+
+def get_office(session: Session, office_id: int) -> OfficeRead:
+    row = repository.find_office_by_id(session, office_id)
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Офис не найден",
+        )
+    return OfficeRead.model_validate(row)

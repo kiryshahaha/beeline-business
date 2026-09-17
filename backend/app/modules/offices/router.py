@@ -31,3 +31,13 @@ def list_offices(
 ):
     """List all offices."""
     return service.list_offices(session)
+
+
+@router.get("/{office_id}", response_model=OfficeRead)
+def get_office(
+    office_id: int,
+    session: Annotated[Session, Depends(get_session)],
+    _viewer_id: Annotated[int, Depends(require_roles(UserRole.OBSERVER, UserRole.WORKER))],
+):
+    """Get a specific office by ID."""
+    return service.get_office(session, office_id)

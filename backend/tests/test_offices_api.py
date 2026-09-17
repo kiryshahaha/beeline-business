@@ -154,3 +154,22 @@ class OfficesApiTests(DatabaseTestCase):
         response = self.client.get("/api/v1/offices/", headers=headers_worker)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()), 1)
+
+    def test_get_office_success(self):
+        headers = self._auth_headers(self.observer)
+        create_resp = self.client.post(
+            "/api/v1/offices/",
+            json={"name": "Офис Для Чтения", "location_id": self.location_id},
+            headers=headers,
+        )
+        office_id = create_resp.json()["id"]
+
+        response = self.client.get(f"/api/v1/offices/{office_id}", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["name"], "Офис Для Чтения")
+
+    def test_get_office_not_found(self):
+        headers = self._auth_headers(self.observer)
+        response = self.client.get("/api/v1/offices/9999", headers=headers)
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["detail"], "Офис не найден")
