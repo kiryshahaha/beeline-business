@@ -52,6 +52,16 @@ USER_CREATE_OBSERVER_EXAMPLE = {
     "worker_profile": None,
 }
 
+USER_CREATE_FOREMAN_EXAMPLE = {
+    "name": "Пётр",
+    "surname": "Сидоров",
+    "lastname": None,
+    "username": "sidorov_foreman",
+    "password": "StrongPassword123!",
+    "role": "foreman",
+    "worker_profile": None,
+}
+
 USER_READ_WORKER_EXAMPLE = {
     "id": 2,
     "name": "Иван",
@@ -74,6 +84,20 @@ USER_READ_OBSERVER_EXAMPLE = {
     "created_at": "2026-09-13T09:00:00+03:00",
     "updated_at": "2026-09-13T09:00:00+03:00",
     "worker_profile": None,
+}
+
+USER_READ_FOREMAN_EXAMPLE = {
+    "id": 3,
+    "name": "Пётр",
+    "surname": "Сидоров",
+    "lastname": None,
+    "username": "sidorov_foreman",
+    "role": "foreman",
+    "created_at": "2026-09-13T10:30:00+03:00",
+    "updated_at": "2026-09-13T10:30:00+03:00",
+    "worker_profile": None,
+    "brigade_id": None,
+    "brigade_name": None,
 }
 
 
@@ -148,7 +172,13 @@ class WorkerProfileRead(BaseModel):
 class UserCreate(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"examples": [USER_CREATE_WORKER_EXAMPLE, USER_CREATE_OBSERVER_EXAMPLE]},
+        json_schema_extra={
+            "examples": [
+                USER_CREATE_WORKER_EXAMPLE,
+                USER_CREATE_OBSERVER_EXAMPLE,
+                USER_CREATE_FOREMAN_EXAMPLE,
+            ]
+        },
     )
 
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
@@ -162,11 +192,17 @@ class UserCreate(BaseModel):
         description="Пароль пользователя (от 8 до 128 символов)"
     )
     role: UserRole = Field(
-        description="Роль пользователя: observer — наблюдатель, worker — выездной специалист"
+        description=(
+            "Роль пользователя: observer — наблюдатель, "
+            "foreman — бригадир, worker — выездной специалист"
+        )
     )
     worker_profile: WorkerProfileCreate | None = Field(
         default=None,
-        description="Профиль исполнителя. Обязателен для роли worker, строго запрещён для observer",
+        description=(
+            "Профиль исполнителя. Обязателен для роли worker и недопустим "
+            "для ролей observer и foreman"
+        ),
     )
 
     @field_validator("name", "surname", "lastname", "username", "password")
@@ -181,15 +217,21 @@ class UserCreate(BaseModel):
         if self.role == UserRole.WORKER:
             if self.worker_profile is None:
                 raise ValueError("Профиль worker_profile обязателен для роли worker")
-        elif self.role == UserRole.OBSERVER:
+        elif self.role in (UserRole.OBSERVER, UserRole.FOREMAN):
             if self.worker_profile is not None:
-                raise ValueError("Профиль worker_profile недопустим для роли observer")
+                raise ValueError("Профиль worker_profile недопустим для ролей observer и foreman")
         return self
 
 
 class UserRead(BaseModel):
     model_config = ConfigDict(
-        json_schema_extra={"examples": [USER_READ_WORKER_EXAMPLE, USER_READ_OBSERVER_EXAMPLE]}
+        json_schema_extra={
+            "examples": [
+                USER_READ_WORKER_EXAMPLE,
+                USER_READ_OBSERVER_EXAMPLE,
+                USER_READ_FOREMAN_EXAMPLE,
+            ]
+        }
     )
 
     id: PositiveInt32
@@ -201,6 +243,8 @@ class UserRead(BaseModel):
     created_at: AwareDatetime
     updated_at: AwareDatetime
     worker_profile: WorkerProfileRead | None = None
+    brigade_id: PositiveInt32 | None = None
+    brigade_name: str | None = None
 
 
 USER_UPDATE_EXAMPLE = {
@@ -281,7 +325,10 @@ class UserUpdate(BaseModel):
     )
     role: UserRole | None = Field(
         default=None,
-        description="Роль пользователя: observer — наблюдатель, worker — выездной специалист",
+        description=(
+            "Роль пользователя: observer — наблюдатель, "
+            "foreman — бригадир, worker — выездной специалист"
+        ),
     )
     worker_profile: WorkerProfileUpdate | None = Field(
         default=None,
@@ -294,3 +341,9 @@ class UserUpdate(BaseModel):
         if value is not None and "\x00" in value:
             raise ValueError("Поле не может содержать нулевой символ")
         return value
+
+    @model_validator(mode="after")
+    def validate_role_profile_coupling(self) -> Self:
+        if self.role in (UserRole.OBSERVER, UserRole.FOREMAN) and self.worker_profile is not None:
+            raise ValueError("Профиль worker_profile недопустим для ролей observer и foreman")
+        return self

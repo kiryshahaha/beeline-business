@@ -18,6 +18,16 @@ body:json {
   {"text":"Клиент просит позвонить за 15 минут."}
 }
 
+script:pre-request {
+  bru.setVar("observer_comment_id", "");
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("observer_comment_id", res.getBody().id);
+  }
+}
+
 assert {
   res.status: eq 201
 }

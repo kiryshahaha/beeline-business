@@ -10,7 +10,14 @@ class TicketCollaborationMigrationTests(DatabaseTestCase):
         inspector = inspect(self.connection)
         expected_columns = {
             "ticket_assignments": {"ticket_id", "worker_id", "assigned_at"},
-            "ticket_comments": {"id", "ticket_id", "author_id", "text", "created_at"},
+            "ticket_comments": {
+                "id",
+                "ticket_id",
+                "author_id",
+                "text",
+                "created_at",
+                "updated_at",
+            },
             "push_subscriptions": {"id", "user_id", "token", "created_at", "updated_at"},
             "notification_events": {
                 "id",

@@ -28,8 +28,14 @@ class PermissionDeniedError(Exception):
     pass
 
 
-def get_ticket(session: Session, ticket_id: int) -> TicketRead:
-    details = repository.find_ticket(session, ticket_id)
+def _foreman_id(current_user: UserRead | None) -> int | None:
+    return current_user.id if current_user and current_user.role == UserRole.FOREMAN else None
+
+
+def get_ticket(
+    session: Session, ticket_id: int, current_user: UserRead | None = None
+) -> TicketRead:
+    details = repository.find_ticket(session, ticket_id, foreman_id=_foreman_id(current_user))
     if details is None:
         raise TicketNotFoundError
     return _ticket_from_row(details)
@@ -43,6 +49,8 @@ def list_tickets(
     district_id: int | None,
     limit: int,
     offset: int,
+    brigade_id: int | None = None,
+    current_user: UserRead | None = None,
 ) -> list[TicketRead]:
     rows = repository.find_tickets(
         session,
@@ -51,6 +59,8 @@ def list_tickets(
         district_id=district_id,
         limit=limit,
         offset=offset,
+        brigade_id=brigade_id,
+        foreman_id=_foreman_id(current_user),
     )
     return [_ticket_from_row(row) for row in rows]
 
@@ -120,6 +130,8 @@ def update_ticket_status(
     status: TicketStatus,
     current_user: UserRead,
 ) -> TicketRead:
+    if current_user.role == UserRole.FOREMAN:
+        raise PermissionDeniedError
     with session.begin():
         ticket = repository.lock_ticket(session, ticket_id)
         if ticket is None:

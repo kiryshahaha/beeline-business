@@ -504,6 +504,7 @@ class TicketsApiTests(DatabaseTestCase):
                 "/api/v1/tickets/{id}",
                 "/api/v1/tickets/{id}/assignees",
                 "/api/v1/tickets/{id}/comments",
+                "/api/v1/tickets/{id}/comments/{comment_id}",
                 "/api/v1/tickets/{id}/status",
             },
         )
@@ -511,10 +512,18 @@ class TicketsApiTests(DatabaseTestCase):
         self.assertEqual(set(paths["/api/v1/tickets/{id}"]), {"get"})
         self.assertEqual(set(paths["/api/v1/tickets/{id}/assignees"]), {"put"})
         self.assertEqual(set(paths["/api/v1/tickets/{id}/comments"]), {"get", "post"})
+        comment_update = paths["/api/v1/tickets/{id}/comments/{comment_id}"]
+        self.assertEqual(set(comment_update), {"patch"})
+        self.assertIn({"BearerAuth": []}, comment_update["patch"]["security"])
         self.assertEqual(set(paths["/api/v1/tickets/{id}/status"]), {"patch"})
         operation = paths["/api/v1/tickets"]["get"]
         parameters = {param["name"]: param for param in operation["parameters"]}
-        self.assertEqual(set(parameters), {"status", "city_id", "district_id", "limit", "offset"})
+        self.assertEqual(
+            set(parameters), {"status", "city_id", "district_id", "brigade_id", "limit", "offset"}
+        )
+        self.assertFalse(parameters["brigade_id"]["required"])
+        self.assertEqual(parameters["brigade_id"]["schema"]["anyOf"][0]["minimum"], 1)
+        self.assertEqual(parameters["brigade_id"]["schema"]["anyOf"][0]["maximum"], 2_147_483_647)
         self.assertTrue(all(param["in"] == "query" for param in parameters.values()))
         self.assertEqual(parameters["limit"]["schema"]["default"], 20)
         self.assertEqual(parameters["offset"]["schema"]["default"], 0)

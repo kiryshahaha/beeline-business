@@ -23,6 +23,10 @@ class CommentCreate(BaseModel):
         return value
 
 
+class CommentUpdate(CommentCreate):
+    """Replace comment text using the same validation as creation."""
+
+
 class CommentAuthorRead(BaseModel):
     id: int
     name: str
@@ -38,3 +42,4 @@ class CommentRead(BaseModel):
     author: CommentAuthorRead
     text: str
     created_at: AwareDatetime
+    updated_at: AwareDatetime

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_session
 from app.main import app
 from app.modules.users.enums import UserRole
-from app.modules.users.schemas import UserCreate
+from app.modules.users.schemas import UserCreate, WorkerProfileCreate
 from app.modules.users.service import create_user
 from tests.support import DatabaseTestCase
 
@@ -22,6 +22,31 @@ class UsersAndAuthApiTests(DatabaseTestCase):
         app.dependency_overrides[get_session] = override_session
         self.addCleanup(app.dependency_overrides.pop, get_session)
         self.client = self.enterContext(TestClient(app))
+
+        from app.db.models import Building, City, District, Location, Office, Street
+
+        city = City(name="Город")
+        self.session.add(city)
+        self.session.flush()
+        district = District(city_id=city.id, name="Район")
+        self.session.add(district)
+        self.session.flush()
+        street = Street(city_id=city.id, name="Улица")
+        self.session.add(street)
+        self.session.flush()
+        building = Building(
+            city_id=city.id, district_id=district.id, street_id=street.id, number="1"
+        )
+        self.session.add(building)
+        self.session.flush()
+        location = Location(building_id=building.id)
+        self.session.add(location)
+        self.session.flush()
+        office = Office(location_id=location.id, name="Тестовый офис")
+        self.session.add(office)
+        self.session.flush()
+        self.office_id = office.id
+        self.session.commit()
 
         # Seed an initial observer directly via service
         self.observer = create_user(
@@ -45,6 +70,159 @@ class UsersAndAuthApiTests(DatabaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         return response.json()
+
+    def create_direct_user(self, username: str, role: UserRole):
+        worker_profile = None
+        if role == UserRole.WORKER:
+            worker_profile = WorkerProfileCreate(
+                workshift_start="09:00:00",
+                workshift_end="18:00:00",
+                skills=["Монтаж ВОЛС"],
+            )
+        return create_user(
+            self.session,
+            UserCreate(
+                name=username,
+                surname="Тестов",
+                username=username,
+                password="StrongPassword123!",
+                role=role,
+                worker_profile=worker_profile,
+            ),
+        )
+
+    def auth_header(self, username: str) -> dict[str, str]:
+        tokens = self.get_auth_tokens(username, "StrongPassword123!")
+        return {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    def create_brigade(self, name: str, foreman_id: int, worker_ids: list[int]) -> dict:
+        response = self.client.post(
+            "/api/v1/brigades",
+            json={
+                "name": name,
+                "foreman_id": foreman_id,
+                "office_id": self.office_id,
+                "worker_ids": worker_ids,
+            },
+            headers=self.get_observer_header(),
+        )
+        self.assertEqual(response.status_code, 201)
+        return response.json()
+
+    def get_observer_header(self) -> dict[str, str]:
+        tokens = self.get_auth_tokens("admin_observer", "ObserverPassword123!")
+        return {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    def test_foreman_sees_only_self_and_own_brigade_workers(self):
+        foreman = self.create_direct_user("scope_foreman", UserRole.FOREMAN)
+        other_foreman = self.create_direct_user("other_foreman", UserRole.FOREMAN)
+        own_worker = self.create_direct_user("own_worker", UserRole.WORKER)
+        foreign_worker = self.create_direct_user("foreign_worker", UserRole.WORKER)
+        self.session.commit()
+
+        own_brigade = self.create_brigade("Север", foreman.id, [own_worker.id])
+        foreign_brigade = self.create_brigade("Юг", other_foreman.id, [foreign_worker.id])
+
+        foreman_header = self.auth_header("scope_foreman")
+        scoped_list = self.client.get("/api/v1/users", headers=foreman_header)
+        self.assertEqual(scoped_list.status_code, 200)
+        self.assertCountEqual(
+            [user["id"] for user in scoped_list.json()], [foreman.id, own_worker.id]
+        )
+        own_worker_payload = next(
+            user for user in scoped_list.json() if user["id"] == own_worker.id
+        )
+        self.assertEqual(own_worker_payload["brigade_id"], own_brigade["id"])
+        self.assertEqual(own_worker_payload["brigade_name"], "Север")
+
+        foreign_detail = self.client.get(
+            f"/api/v1/users/{foreign_worker.id}", headers=foreman_header
+        )
+        self.assertEqual(foreign_detail.status_code, 404)
+
+        foreign_filter = self.client.get(
+            f"/api/v1/users?brigade_id={foreign_brigade['id']}", headers=foreman_header
+        )
+        self.assertEqual(foreign_filter.status_code, 200)
+        self.assertEqual(foreign_filter.json(), [])
+
+        observer_list = self.client.get("/api/v1/users", headers=self.get_observer_header())
+        self.assertEqual(observer_list.status_code, 200)
+        self.assertCountEqual(
+            [user["id"] for user in observer_list.json()],
+            [self.observer.id, foreman.id, other_foreman.id, own_worker.id, foreign_worker.id],
+        )
+
+    def test_promoting_worker_removes_worker_membership(self):
+        foreman = self.create_direct_user("promotion_foreman", UserRole.FOREMAN)
+        worker = self.create_direct_user("promotion_worker", UserRole.WORKER)
+        self.session.commit()
+        brigade = self.create_brigade("Восток", foreman.id, [worker.id])
+
+        response = self.client.patch(
+            f"/api/v1/users/{worker.id}",
+            json={"role": "foreman"},
+            headers=self.get_observer_header(),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["role"], "foreman")
+        self.assertIsNone(response.json()["worker_profile"])
+
+        brigade_response = self.client.get(
+            f"/api/v1/brigades/{brigade['id']}", headers=self.get_observer_header()
+        )
+        self.assertEqual(brigade_response.status_code, 200)
+        self.assertEqual(brigade_response.json()["worker_ids"], [])
+
+    def test_promoting_non_worker_without_profile_is_rejected_and_rolled_back(self):
+        observer_candidate = self.create_direct_user("observer_candidate", UserRole.OBSERVER)
+        foreman_candidate = self.create_direct_user("foreman_candidate", UserRole.FOREMAN)
+        self.session.commit()
+
+        for candidate in (observer_candidate, foreman_candidate):
+            response = self.client.patch(
+                f"/api/v1/users/{candidate.id}",
+                json={"role": "worker"},
+                headers=self.get_observer_header(),
+            )
+            self.assertEqual(response.status_code, 422)
+
+            detail = self.client.get(
+                f"/api/v1/users/{candidate.id}", headers=self.get_observer_header()
+            )
+            self.assertEqual(detail.status_code, 200)
+            self.assertEqual(detail.json()["role"], candidate.role.value)
+            self.assertIsNone(detail.json()["worker_profile"])
+
+    def test_active_foreman_cannot_be_demoted_or_deleted(self):
+        foreman = self.create_direct_user("active_foreman", UserRole.FOREMAN)
+        self.session.commit()
+        self.create_brigade("Запад", foreman.id, [])
+
+        profile_response = self.client.patch(
+            f"/api/v1/users/{foreman.id}",
+            json={
+                "worker_profile": {
+                    "workshift_start": "09:00:00",
+                    "workshift_end": "18:00:00",
+                    "skills": ["Монтаж ВОЛС"],
+                }
+            },
+            headers=self.get_observer_header(),
+        )
+        self.assertEqual(profile_response.status_code, 422)
+
+        demote_response = self.client.patch(
+            f"/api/v1/users/{foreman.id}",
+            json={"role": "observer"},
+            headers=self.get_observer_header(),
+        )
+        self.assertEqual(demote_response.status_code, 409)
+
+        delete_response = self.client.delete(
+            f"/api/v1/users/{foreman.id}", headers=self.get_observer_header()
+        )
+        self.assertEqual(delete_response.status_code, 409)
 
     def test_login_success_and_invalid_credentials(self):
         # Invalid password
