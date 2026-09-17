@@ -731,7 +731,7 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
             if not exists:
                 session.execute(
                     text(
-                        "INSERT INTO notification_events (recipient_id, ticket_id, kind, data) VALUES (:r, :t, 'ticket_status_changed', '{\"new_status\": \"in_progress\", \"old_status\": \"open\"}')"  # noqa: E501
+                        'INSERT INTO notification_events (recipient_id, ticket_id, kind, data) VALUES (:r, :t, \'ticket_status_changed\', \'{"new_status": "in_progress", "old_status": "open"}\')'  # noqa: E501
                     ),
                     {"r": observer_id, "t": results[1].ticket_id},
                 )
