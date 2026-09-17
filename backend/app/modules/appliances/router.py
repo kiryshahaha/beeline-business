@@ -197,47 +197,47 @@ def set_office_stock(
 
 
 @ticket_appliances_router.get(
-    "/{ticket_id}/appliances",
+    "/{id}/appliances",
     response_model=list[TicketApplianceRead],
     summary="Список оборудования, прикрепленного к заявке",
 )
 def list_ticket_appliances(
-    ticket_id: PositiveIntPath,
+    id: PositiveIntPath,
     session: DatabaseSession,
     current_user: CurrentUser,
 ) -> list[TicketApplianceRead]:
     try:
-        return service.list_ticket_appliances(session, ticket_id, current_user)
+        return service.list_ticket_appliances(session, id, current_user)
     except Exception as err:
         _handle_service_error(err)
 
 
 @ticket_appliances_router.post(
-    "/{ticket_id}/appliances",
+    "/{id}/appliances",
     response_model=TicketApplianceRead,
     status_code=status.HTTP_201_CREATED,
     summary="Назначить оборудование на заявку",
 )
 def add_ticket_appliance(
-    ticket_id: PositiveIntPath,
+    id: PositiveIntPath,
     data: TicketApplianceCreate,
     session: DatabaseSession,
     current_user: CurrentUser,
 ) -> TicketApplianceRead:
     try:
         with session.begin():
-            return service.add_ticket_appliance(session, ticket_id, data, current_user)
+            return service.add_ticket_appliance(session, id, data, current_user)
     except Exception as err:
         _handle_service_error(err)
 
 
 @ticket_appliances_router.patch(
-    "/{ticket_id}/appliances/{appliance_id}",
+    "/{id}/appliances/{appliance_id}",
     response_model=TicketApplianceRead,
     summary="Изменить количество оборудования в заявке",
 )
 def update_ticket_appliance(
-    ticket_id: PositiveIntPath,
+    id: PositiveIntPath,
     appliance_id: PositiveIntPath,
     data: TicketApplianceUpdate,
     session: DatabaseSession,
@@ -245,26 +245,24 @@ def update_ticket_appliance(
 ) -> TicketApplianceRead:
     try:
         with session.begin():
-            return service.update_ticket_appliance(
-                session, ticket_id, appliance_id, data, current_user
-            )
+            return service.update_ticket_appliance(session, id, appliance_id, data, current_user)
     except Exception as err:
         _handle_service_error(err)
 
 
 @ticket_appliances_router.delete(
-    "/{ticket_id}/appliances/{appliance_id}",
+    "/{id}/appliances/{appliance_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Снять оборудование с заявки",
 )
 def remove_ticket_appliance(
-    ticket_id: PositiveIntPath,
+    id: PositiveIntPath,
     appliance_id: PositiveIntPath,
     session: DatabaseSession,
     current_user: CurrentUser,
 ) -> None:
     try:
         with session.begin():
-            service.remove_ticket_appliance(session, ticket_id, appliance_id, current_user)
+            service.remove_ticket_appliance(session, id, appliance_id, current_user)
     except Exception as err:
         _handle_service_error(err)
