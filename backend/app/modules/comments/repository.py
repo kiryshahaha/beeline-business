@@ -3,15 +3,11 @@
 from sqlalchemy import RowMapping, text
 from sqlalchemy.orm import Session
 
+from app.modules.tickets import repository as tickets_repository
 
-def ticket_exists(session: Session, ticket_id: int) -> bool:
-    return (
-        session.execute(
-            text("SELECT EXISTS (SELECT 1 FROM tickets WHERE id = :ticket_id)"),
-            {"ticket_id": ticket_id},
-        ).scalar_one()
-        is True
-    )
+
+def ticket_exists(session: Session, ticket_id: int, *, foreman_id: int | None = None) -> bool:
+    return tickets_repository.ticket_exists(session, ticket_id, foreman_id=foreman_id)
 
 
 def is_worker_assigned(session: Session, ticket_id: int, worker_id: int) -> bool:

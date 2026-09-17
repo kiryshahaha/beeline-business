@@ -1,5 +1,6 @@
 """Explicit model registry for Alembic; domain modules do not import one another."""
 
+from app.modules.brigades.models import Brigade, BrigadeMember
 from app.modules.buildings.models import Building
 from app.modules.cities.models import City
 from app.modules.comments.models import TicketComment
@@ -19,6 +20,8 @@ from app.modules.users.models import (
 
 __all__ = [
     "Building",
+    "Brigade",
+    "BrigadeMember",
     "City",
     "District",
     "Entrance",

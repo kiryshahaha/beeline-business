@@ -1,0 +1,1 @@
+"""Brigade domain module."""

@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session
@@ -38,7 +38,7 @@ def create_user(
     response: Response,
     _: RequireObserver,
 ) -> UserRead:
-    """Создать нового пользователя (наблюдателя или исполнителя). Доступно только роли observer."""
+    """Создать пользователя с ролью observer, foreman или worker. Доступно только роли observer."""
     try:
         created_user = service.create_user(session, data)
     except service.UsernameAlreadyExistsError as error:
@@ -54,11 +54,16 @@ def create_user(
 @router.get("", response_model=list[UserRead])
 def list_users(
     session: DatabaseSession,
-    _: CurrentUser,
+    current_user: CurrentUser,
     role: UserRole | None = None,
+    brigade_id: Annotated[int | None, Query(ge=1, le=2_147_483_647)] = None,
 ) -> list[UserRead]:
-    """Получить список всех пользователей системы. Доступно всем авторизованным пользователям."""
-    return service.list_users(session, role)
+    """Получить список пользователей с необязательными фильтрами роли и бригады.
+
+    Наблюдатель и исполнитель видят весь каталог. Бригадир получает себя и
+    исполнителей своей бригады. Параметр brigade_id сужает выдачу для каждой роли.
+    """
+    return service.list_users(session, current_user, role, brigade_id)
 
 
 @router.get(
@@ -69,14 +74,16 @@ def list_users(
 def get_user_by_id(
     id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     session: DatabaseSession,
-    _: CurrentUser,
+    current_user: CurrentUser,
 ) -> UserRead:
     """Получить данные пользователя по его числовому ID.
 
-    Доступно всем авторизованным пользователям.
+    Наблюдатель и исполнитель видят любого пользователя. Бригадир видит себя и
+    исполнителей своей бригады. Недоступный
+    пользователь возвращается как 404.
     """
     try:
-        return service.get_user(session, id)
+        return service.get_user(session, id, current_user)
     except service.UserNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -111,6 +118,21 @@ def update_user(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Пользователь с логином '{data.username}' уже существует",
         ) from error
+    except service.ActiveForemanError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Нельзя изменить роль бригадира, пока он руководит бригадой",
+        ) from error
+    except service.WorkerProfileRoleError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Профиль исполнителя доступен только для роли worker",
+        ) from error
+    except service.WorkerProfileRequiredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Для назначения роли worker нужны смена и хотя бы один навык",
+        ) from error
 
 
 @router.delete(
@@ -138,6 +160,11 @@ def delete_user(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Пользователь не найден",
+        ) from error
+    except service.ActiveForemanError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Нельзя удалить бригадира, пока он руководит бригадой",
         ) from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

@@ -3,6 +3,31 @@
 from sqlalchemy import RowMapping, text
 from sqlalchemy.orm import Session
 
+USER_SELECT_COLUMNS = """
+    u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
+    u.created_at, u.updated_at,
+    w.workshift_start, w.workshift_end,
+    b.id AS brigade_id, b.name AS brigade_name,
+    COALESCE(
+        array_remove(array_agg(ws.skill ORDER BY ws.skill), NULL),
+        ARRAY[]::varchar[]
+    ) AS skills
+"""
+
+USER_SELECT_JOINS = """
+    FROM users AS u
+    LEFT JOIN workers AS w ON w.user_id = u.id
+    LEFT JOIN brigade_members AS bm ON bm.worker_id = w.user_id
+    LEFT JOIN brigades AS b ON b.id = bm.brigade_id
+    LEFT JOIN worker_skill_assignments AS wsa ON wsa.worker_id = w.user_id
+    LEFT JOIN worker_skills AS ws ON ws.id = wsa.skill_id
+"""
+
+USER_SELECT_GROUP_BY = """
+    GROUP BY u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
+             u.created_at, u.updated_at, w.workshift_start, w.workshift_end, b.id, b.name
+"""
+
 
 def add_user(session: Session, values: dict[str, object]) -> int:
     return session.execute(
@@ -91,22 +116,11 @@ def list_skills(session: Session) -> list[RowMapping]:
 def find_user_by_username(session: Session, username: str) -> RowMapping | None:
     return (
         session.execute(
-            text("""
-                SELECT
-                    u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
-                    u.created_at, u.updated_at,
-                    w.workshift_start, w.workshift_end,
-                    COALESCE(
-                        array_remove(array_agg(ws.skill ORDER BY ws.skill), NULL),
-                        ARRAY[]::varchar[]
-                    ) AS skills
-                FROM users AS u
-                LEFT JOIN workers AS w ON w.user_id = u.id
-                LEFT JOIN worker_skill_assignments AS wsa ON wsa.worker_id = w.user_id
-                LEFT JOIN worker_skills AS ws ON ws.id = wsa.skill_id
+            text(f"""
+                SELECT {USER_SELECT_COLUMNS}
+                {USER_SELECT_JOINS}
                 WHERE lower(u.username) = lower(:username)
-                GROUP BY u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
-                         u.created_at, u.updated_at, w.workshift_start, w.workshift_end
+                {USER_SELECT_GROUP_BY}
             """),
             {"username": username},
         )
@@ -115,55 +129,89 @@ def find_user_by_username(session: Session, username: str) -> RowMapping | None:
     )
 
 
-def find_user_by_id(session: Session, user_id: int) -> RowMapping | None:
+def find_user_by_id(
+    session: Session,
+    user_id: int,
+    viewer_id: int | None = None,
+    viewer_role: str | None = None,
+) -> RowMapping | None:
     return (
         session.execute(
-            text("""
-                SELECT
-                    u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
-                    u.created_at, u.updated_at,
-                    w.workshift_start, w.workshift_end,
-                    COALESCE(
-                        array_remove(array_agg(ws.skill ORDER BY ws.skill), NULL),
-                        ARRAY[]::varchar[]
-                    ) AS skills
-                FROM users AS u
-                LEFT JOIN workers AS w ON w.user_id = u.id
-                LEFT JOIN worker_skill_assignments AS wsa ON wsa.worker_id = w.user_id
-                LEFT JOIN worker_skills AS ws ON ws.id = wsa.skill_id
+            text(f"""
+                SELECT {USER_SELECT_COLUMNS}
+                {USER_SELECT_JOINS}
                 WHERE u.id = :user_id
-                GROUP BY u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
-                         u.created_at, u.updated_at, w.workshift_start, w.workshift_end
+                  AND (
+                    CAST(:viewer_role AS TEXT) IS NULL
+                    OR CAST(:viewer_role AS TEXT) <> 'foreman'
+                    OR u.id = :viewer_id
+                    OR EXISTS (
+                        SELECT 1
+                        FROM brigade_members AS visible_member
+                        JOIN brigades AS visible_brigade
+                          ON visible_brigade.id = visible_member.brigade_id
+                        WHERE visible_member.worker_id = u.id
+                          AND visible_brigade.foreman_id = :viewer_id
+                    )
+                  )
+                {USER_SELECT_GROUP_BY}
             """),
-            {"user_id": user_id},
+            {"user_id": user_id, "viewer_id": viewer_id, "viewer_role": viewer_role},
         )
         .mappings()
         .one_or_none()
     )
 
 
-def list_users(session: Session, role: str | None = None) -> list[RowMapping]:
+def list_users(
+    session: Session,
+    role: str | None = None,
+    brigade_id: int | None = None,
+    viewer_id: int | None = None,
+    viewer_role: str | None = None,
+) -> list[RowMapping]:
     return list(
         session.execute(
-            text("""
-                SELECT
-                    u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
-                    u.created_at, u.updated_at,
-                    w.workshift_start, w.workshift_end,
-                    COALESCE(
-                        array_remove(array_agg(ws.skill ORDER BY ws.skill), NULL),
-                        ARRAY[]::varchar[]
-                    ) AS skills
-                FROM users AS u
-                LEFT JOIN workers AS w ON w.user_id = u.id
-                LEFT JOIN worker_skill_assignments AS wsa ON wsa.worker_id = w.user_id
-                LEFT JOIN worker_skills AS ws ON ws.id = wsa.skill_id
+            text(f"""
+                SELECT {USER_SELECT_COLUMNS}
+                {USER_SELECT_JOINS}
                 WHERE (CAST(:role AS TEXT) IS NULL OR u.role = :role)
-                GROUP BY u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
-                         u.created_at, u.updated_at, w.workshift_start, w.workshift_end
+                  AND (
+                    CAST(:brigade_id AS integer) IS NULL
+                    OR b.id = CAST(:brigade_id AS integer)
+                    OR (
+                        CAST(:viewer_role AS TEXT) = 'foreman'
+                        AND u.id = :viewer_id
+                        AND EXISTS (
+                            SELECT 1
+                            FROM brigades AS requested_brigade
+                            WHERE requested_brigade.id = CAST(:brigade_id AS integer)
+                              AND requested_brigade.foreman_id = :viewer_id
+                        )
+                    )
+                  )
+                  AND (
+                    CAST(:viewer_role AS TEXT) IS NULL
+                    OR CAST(:viewer_role AS TEXT) <> 'foreman'
+                    OR u.id = :viewer_id
+                    OR EXISTS (
+                        SELECT 1
+                        FROM brigade_members AS visible_member
+                        JOIN brigades AS visible_brigade
+                          ON visible_brigade.id = visible_member.brigade_id
+                        WHERE visible_member.worker_id = u.id
+                          AND visible_brigade.foreman_id = :viewer_id
+                    )
+                  )
+                {USER_SELECT_GROUP_BY}
                 ORDER BY u.id ASC
             """),
-            {"role": role},
+            {
+                "role": role,
+                "brigade_id": brigade_id,
+                "viewer_id": viewer_id,
+                "viewer_role": viewer_role,
+            },
         )
         .mappings()
         .all()
@@ -217,3 +265,10 @@ def delete_user(session: Session, user_id: int) -> bool:
         {"user_id": user_id},
     )
     return (result.rowcount or 0) > 0
+
+
+def foreman_manages_brigade(session: Session, user_id: int) -> bool:
+    return session.execute(
+        text("SELECT EXISTS(SELECT 1 FROM brigades WHERE foreman_id = :user_id)"),
+        {"user_id": user_id},
+    ).scalar_one()

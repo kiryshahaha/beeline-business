@@ -31,7 +31,7 @@ def list_ticket_comments(
     session: DatabaseSession,
     current_user: CurrentUser,
 ) -> list[CommentRead]:
-    """Return the ticket comment feed in creation order."""
+    """Return the comment feed for a ticket visible to the current user."""
     try:
         return service.list_comments(session, id, current_user)
     except (service.TicketNotFoundError, service.PermissionDeniedError) as error:
@@ -45,7 +45,7 @@ def create_ticket_comment(
     session: DatabaseSession,
     current_user: CurrentUser,
 ) -> CommentRead:
-    """Add an authored note to a ticket."""
+    """Добавить комментарий к доступной заявке; начальник работает со своей бригадой."""
     try:
         return service.create_comment(session, id, current_user, data)
     except (service.TicketNotFoundError, service.PermissionDeniedError) as error:
@@ -62,6 +62,7 @@ def update_ticket_comment(
 ) -> CommentRead:
     """Изменить текст своего комментария при наличии доступа к заявке.
 
+    Начальник может редактировать собственные комментарии по заявкам своей бригады.
     Автор, дата создания и порядок комментариев сохраняются.
     """
     try:

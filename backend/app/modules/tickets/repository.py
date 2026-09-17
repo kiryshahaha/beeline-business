@@ -35,6 +35,28 @@ TICKET_SELECT_SQL = """
     LEFT JOIN entrances AS e ON e.id = l.entrance_id
 """
 
+# Reused by list, detail, and comment access checks; t is always the ticket alias.
+FOREMAN_VISIBILITY_SQL = """
+    EXISTS (
+        SELECT 1
+        FROM ticket_assignments AS visible_assignment
+        JOIN brigade_members AS visible_member
+            ON visible_member.worker_id = visible_assignment.worker_id
+        JOIN brigades AS visible_brigade ON visible_brigade.id = visible_member.brigade_id
+        WHERE visible_assignment.ticket_id = t.id
+          AND visible_brigade.foreman_id = :foreman_id
+    )
+"""
+
+
+def ticket_exists(session: Session, ticket_id: int, *, foreman_id: int | None = None) -> bool:
+    query = "SELECT EXISTS (SELECT 1 FROM tickets AS t WHERE t.id = :ticket_id"
+    parameters = {"ticket_id": ticket_id}
+    if foreman_id is not None:
+        query += " AND " + FOREMAN_VISIBILITY_SQL
+        parameters["foreman_id"] = foreman_id
+    return session.execute(text(query + ")"), parameters).scalar_one() is True
+
 
 def find_location_id(session: Session, location_id: int) -> int | None:
     # Keep this location from being deleted while its ticket is being inserted.
@@ -175,11 +197,18 @@ def add_notification_events(
         )
 
 
-def find_ticket(session: Session, ticket_id: int) -> RowMapping | None:
+def find_ticket(
+    session: Session, ticket_id: int, *, foreman_id: int | None = None
+) -> RowMapping | None:
+    query = TICKET_SELECT_SQL + " WHERE t.id = :ticket_id"
+    parameters = {"ticket_id": ticket_id}
+    if foreman_id is not None:
+        query += " AND " + FOREMAN_VISIBILITY_SQL
+        parameters["foreman_id"] = foreman_id
     return (
         session.execute(
-            text(TICKET_SELECT_SQL + " WHERE t.id = :ticket_id"),
-            {"ticket_id": ticket_id},
+            text(query),
+            parameters,
         )
         .mappings()
         .one_or_none()
@@ -194,6 +223,8 @@ def find_tickets(
     district_id: int | None,
     limit: int,
     offset: int,
+    brigade_id: int | None = None,
+    foreman_id: int | None = None,
 ) -> list[RowMapping]:
     conditions = []
     parameters: dict[str, object] = {"limit": limit, "offset": offset}
@@ -206,6 +237,20 @@ def find_tickets(
     if district_id is not None:
         conditions.append("b.district_id = :district_id")
         parameters["district_id"] = district_id
+    if brigade_id is not None:
+        conditions.append("""
+            EXISTS (
+                SELECT 1 FROM ticket_assignments AS brigade_assignment
+                JOIN brigade_members AS brigade_member
+                    ON brigade_member.worker_id = brigade_assignment.worker_id
+                WHERE brigade_assignment.ticket_id = t.id
+                  AND brigade_member.brigade_id = :brigade_id
+            )
+        """)
+        parameters["brigade_id"] = brigade_id
+    if foreman_id is not None:
+        conditions.append(FOREMAN_VISIBILITY_SQL)
+        parameters["foreman_id"] = foreman_id
 
     # Only fixed SQL fragments are joined; every value is a bound parameter.
     query = TICKET_SELECT_SQL
