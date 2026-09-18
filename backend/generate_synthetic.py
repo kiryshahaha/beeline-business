@@ -9,7 +9,7 @@ from pathlib import Path
 
 from app.modules.data_exchange.formats import json_default, parse_file, serialize
 from app.modules.data_exchange.registry import TABLES
-from app.modules.routes.schemas import RouteGeoJSON
+from app.modules.routing.schemas import RouteGeoJSON
 
 SCENARIOS = (
     "balanced",

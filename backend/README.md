@@ -18,7 +18,7 @@
 Новые контракты и навигация:
 
 - [Обмен CSV/XLSX](../docs/DATA_EXCHANGE.md): `/api/v1/data/schema`, `/export`, `/import`.
-- [Сохранённые маршруты](app/modules/routes/README.md): `/api/v1/routes`, `/batch`, `/{id}/geojson`.
+- [Сохранённые маршруты](app/modules/routing/README.md): `/api/v1/routes`, `/batch`, `/{id}/geojson`.
 - [Пользователи и транспорт](app/modules/users/README.md): `worker_profile.transport_type`.
 - [Описание модулей](app/modules/README.md), [схема БД](app/db/README.md), [миграции](migrations/README.md).
 - [Синтетические наборы](../data/synthetic/README.md): 1 500/10 000 заявок;

@@ -17,8 +17,8 @@ from app.main import app
 from app.modules.data_exchange.formats import parse_file, serialize
 from app.modules.data_exchange.registry import TABLES
 from app.modules.data_exchange.service import export_data, import_data
-from app.modules.routes.schemas import RouteCreate
-from app.modules.routes.service import save_routes
+from app.modules.routing.schemas import RouteCreate
+from app.modules.routing.service import save_routes
 from generate_synthetic import generate_dataset
 from tests.support import DatabaseTestCase
 

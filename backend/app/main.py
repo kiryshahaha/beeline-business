@@ -104,7 +104,6 @@ app.include_router(tickets_router)
 app.include_router(ticket_appliances_router)
 app.include_router(comments_router)
 app.include_router(notifications_router)
-app.include_router(routes_router)
 app.include_router(data_exchange_router)
 
 

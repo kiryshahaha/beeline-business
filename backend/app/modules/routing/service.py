@@ -6,8 +6,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Brigade, BrigadeMember, Location, Ticket, Worker
-from app.modules.routes.models import Route
-from app.modules.routes.schemas import RouteCreate, RouteGeoJSON, RouteRead
+from app.modules.routing.models import Route
+from app.modules.routing.schemas import RouteCreate, RouteGeoJSON, RouteRead
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
 

@@ -14,7 +14,7 @@ from app.core.security import hash_password
 from app.modules.data_exchange.formats import ExchangeError, json_default
 from app.modules.data_exchange.models import DataImport
 from app.modules.data_exchange.registry import TABLES, columns_for
-from app.modules.routes.schemas import RouteGeoJSON, StopFeature
+from app.modules.routing.schemas import RouteGeoJSON, StopFeature
 
 
 def export_data(session: Session) -> dict[str, list[dict]]:

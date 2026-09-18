@@ -71,7 +71,7 @@ npm run dev
    параметром `dry_run=false`. Подробности — [контракт обмена](docs/DATA_EXCHANGE.md).
 2. **История маршрутов.** Снимки GeoJSON с `route_number`, отдельным от ID;
    нумерация в пределах инженера и даты, времена прибытия и порядок каждой точки.
-   Подробности — [модуль routes](backend/app/modules/routes/README.md).
+   Подробности — [модуль routing](backend/app/modules/routing/README.md).
 3. **Транспорт.** В `worker_profile.transport_type` доступны `car`, `walking`,
    `bicycle`, `public_transport`. Старые записи и запросы без поля используют
    `walking`; PATCH без этого поля сохраняет прежнее значение.
