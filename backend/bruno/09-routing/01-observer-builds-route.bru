@@ -21,21 +21,26 @@ body:json {
   }
 }
 
-assert {
-  res.status: eq 200
-}
-
 tests {
-  test("Вернулись расстояние, время и линия маршрута", function () {
-    const route = res.getBody();
-    expect(route.distance_meters).to.be.a("number").and.greaterThan(0);
-    expect(route.duration_seconds).to.be.a("number").and.greaterThan(0);
-    expect(route.geometry.type).to.equal("MultiLineString");
-    expect(route.geometry.coordinates).to.be.an("array").and.not.empty;
+  test("Наблюдатель получает маршрут при настроенном Geoapify", function () {
+    const status = res.getStatus();
+    const body = res.getBody();
+
+    if (status === 503) {
+      expect(body.detail).to.equal("Сервис построения маршрутов не настроен");
+      return;
+    }
+
+    expect(status).to.equal(200);
+    expect(body.distance_meters).to.be.a("number").and.greaterThan(0);
+    expect(body.duration_seconds).to.be.a("number").and.greaterThan(0);
+    expect(body.geometry.type).to.equal("MultiLineString");
+    expect(body.geometry.coordinates).to.be.an("array").and.not.empty;
   });
 }
 
 docs {
   Координаты запроса указываются как latitude/longitude. Координаты в GeoJSON-линии
-  возвращаются как longitude/latitude. Geoapify списывает кредит за расчёт маршрута.
+  возвращаются как longitude/latitude. При наличии GEOAPIFY_API_KEY запрос делает
+  реальный платный вызов Geoapify; без ключа проверяется ответ 503 о настройке сервиса.
 }
