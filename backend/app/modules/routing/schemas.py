@@ -4,6 +4,25 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+RouteMode = Literal[
+    "drive",
+    "transit",
+    "approximated_transit",
+    "walk",
+    "bicycle",
+    "scooter",
+    "motorcycle",
+]
+SUPPORTED_ROUTE_MODES: tuple[RouteMode, ...] = (
+    "drive",
+    "transit",
+    "approximated_transit",
+    "walk",
+    "bicycle",
+    "scooter",
+    "motorcycle",
+)
+
 
 class GeoPoint(BaseModel):
     """A geographic point in the domain's latitude/longitude order."""
@@ -23,13 +42,13 @@ class RouteResult(BaseModel):
 
 
 class RouteRequest(BaseModel):
-    """An observer's request for one drivable route."""
+    """An observer's request for one route in the selected travel mode."""
 
     model_config = ConfigDict(extra="forbid")
 
     origin: GeoPoint
     destination: GeoPoint
-    mode: Literal["drive"] = "drive"
+    mode: RouteMode = "drive"
 
 
 class RouteMatrixCell(BaseModel):

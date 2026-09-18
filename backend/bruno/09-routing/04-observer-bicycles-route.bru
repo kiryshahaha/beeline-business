@@ -1,0 +1,41 @@
+meta {
+  name: Наблюдатель строит велосипедный маршрут
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/api/v1/routes
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "origin": {"latitude": 59.9156, "longitude": 30.4631},
+    "destination": {"latitude": 59.9015, "longitude": 30.4548},
+    "mode": "bicycle"
+  }
+}
+
+tests {
+  test("Наблюдатель получает велосипедный маршрут", function () {
+    const status = res.getStatus();
+    const body = res.getBody();
+
+    if (status === 503) {
+      expect(body.detail).to.equal("Сервис построения маршрутов не настроен");
+      return;
+    }
+
+    expect(status).to.equal(200);
+    expect(body.distance_meters).to.be.a("number").and.greaterThan(0);
+    expect(body.duration_seconds).to.be.a("number").and.greaterThan(0);
+    expect(body.geometry.type).to.equal("MultiLineString");
+    expect(body.geometry.coordinates).to.be.an("array").and.not.empty;
+  });
+}

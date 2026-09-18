@@ -18,7 +18,7 @@ from app.modules.routing.client import (
     GeoapifyRoutingClient,
 )
 from app.modules.routing.router import get_geoapify_routing_client
-from app.modules.routing.schemas import GeoPoint
+from app.modules.routing.schemas import SUPPORTED_ROUTE_MODES, GeoPoint, RouteResult
 from app.modules.users.enums import UserRole
 
 
@@ -320,6 +320,58 @@ class RoutesApiTests(unittest.TestCase):
                 },
             },
         )
+
+    def test_post_accepts_each_supported_route_mode(self):
+        """Pass every supported travel profile to the Geoapify boundary."""
+
+        requested_modes: list[str] = []
+
+        class StubRoutingClient:
+            def build_route(self, *, origin, destination, mode):
+                requested_modes.append(mode)
+                return RouteResult(
+                    distance_meters=1_000,
+                    duration_seconds=120,
+                    geometry={
+                        "type": "MultiLineString",
+                        "coordinates": [[[37.6173, 55.7558], [37.5312, 55.7903]]],
+                    },
+                )
+
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role=UserRole.OBSERVER)
+        app.dependency_overrides[get_geoapify_routing_client] = StubRoutingClient
+
+        with TestClient(app) as client:
+            for mode in SUPPORTED_ROUTE_MODES:
+                response = client.post(
+                    "/api/v1/routes",
+                    json={
+                        "origin": {"latitude": 55.7558, "longitude": 37.6173},
+                        "destination": {"latitude": 55.7903, "longitude": 37.5312},
+                        "mode": mode,
+                    },
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+
+        self.assertEqual(requested_modes, list(SUPPORTED_ROUTE_MODES))
+
+    def test_post_rejects_unknown_route_mode(self):
+        """Reject a mode that Geoapify and the public route contract do not define."""
+
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role=UserRole.OBSERVER)
+        app.dependency_overrides[get_geoapify_routing_client] = lambda: object()
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/routes",
+                json={
+                    "origin": {"latitude": 55.7558, "longitude": 37.6173},
+                    "destination": {"latitude": 55.7903, "longitude": 37.5312},
+                    "mode": "scoot",
+                },
+            )
+
+        self.assertEqual(response.status_code, 422, response.text)
 
     def test_post_rejects_worker_before_route_calculation(self):
         """Catch accidentally exposing a paid arbitrary-coordinate proxy to workers."""

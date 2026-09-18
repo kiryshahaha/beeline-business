@@ -46,7 +46,7 @@ def build_route(
     _current_user: CurrentObserver,
     client: RoutingClient,
 ) -> RouteResult:
-    """Построить автомобильный маршрут для наблюдателя."""
+    """Построить маршрут в выбранном режиме для наблюдателя."""
 
     try:
         return client.build_route(
