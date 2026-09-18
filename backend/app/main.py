@@ -25,7 +25,7 @@ from app.modules.locations.router import router as locations_router
 from app.modules.notifications.dispatcher import create_dispatcher
 from app.modules.notifications.router import router as notifications_router
 from app.modules.offices.router import router as offices_router
-from app.modules.routes.router import router as routes_router
+from app.modules.routing.router import router as routing_router
 from app.modules.tickets.router import router as tickets_router
 from app.modules.tickets.schemas import TICKET_CREATE_EXAMPLE, TICKET_READ_EXAMPLE
 from app.modules.users.router import router as users_router
@@ -92,6 +92,7 @@ else:
     )
 
 app.include_router(locations_router)
+app.include_router(routing_router)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(skills_router)

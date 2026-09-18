@@ -1,0 +1,37 @@
+meta {
+  name: Исполнитель не строит произвольный маршрут
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/routes
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{worker_access_token}}
+}
+
+body:json {
+  {
+    "origin": {"latitude": 59.9156, "longitude": 30.4631},
+    "destination": {"latitude": 59.9015, "longitude": 30.4548}
+  }
+}
+
+assert {
+  res.status: eq 403
+}
+
+tests {
+  test("Расчёт доступен только наблюдателю", function () {
+    expect(res.getBody().detail).to.equal("Недостаточно прав для выполнения операции");
+  });
+}
+
+docs {
+  Готовый маршрут для назначенного исполнителя появится отдельной ручкой чтения,
+  когда сервис начнёт сохранять планы маршрутов.
+}
