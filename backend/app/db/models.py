@@ -5,11 +5,13 @@ from app.modules.brigades.models import Brigade, BrigadeMember
 from app.modules.buildings.models import Building
 from app.modules.cities.models import City
 from app.modules.comments.models import TicketComment
+from app.modules.data_exchange.models import DataImport
 from app.modules.districts.models import District
 from app.modules.entrances.models import Entrance
 from app.modules.locations.models import Location
 from app.modules.notifications.models import NotificationEvent, PushSubscription
 from app.modules.offices.models import Office  # noqa: F401
+from app.modules.routing.models import Route
 from app.modules.streets.models import Street
 from app.modules.tickets.models import Ticket, TicketAssignment
 from app.modules.users.models import (
@@ -28,11 +30,13 @@ __all__ = [
     "BrigadeMember",
     "City",
     "District",
+    "DataImport",
     "Entrance",
     "Location",
     "NotificationEvent",
     "PushSubscription",
     "RefreshToken",
+    "Route",
     "Street",
     "Ticket",
     "TicketAppliance",

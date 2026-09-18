@@ -1,0 +1,27 @@
+meta {
+  name: same-data-csv-idempotent
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/api/v1/data/import?dry_run=false
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:multipart-form {
+  file: @file(fixtures/dataset.zip)
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+test("Повторная загрузка не дублирует данные", () => { expect(res.getBody().duplicate).to.equal(true); });
+}

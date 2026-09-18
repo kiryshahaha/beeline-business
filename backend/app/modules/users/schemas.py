@@ -13,7 +13,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.modules.users.enums import UserRole
+from app.modules.users.enums import TransportType, UserRole
 
 PositiveInt32 = Annotated[int, Field(strict=True, ge=1, le=2_147_483_647)]
 
@@ -21,12 +21,14 @@ WORKER_SKILL_EXAMPLE = {"id": 1, "skill": "Монтаж ВОЛС"}
 WORKER_SKILL_CREATE_EXAMPLE = {"skill": "Монтаж ВОЛС"}
 
 WORKER_PROFILE_CREATE_EXAMPLE = {
+    "transport_type": "walking",
     "workshift_start": "09:00:00",
     "workshift_end": "18:00:00",
     "skills": ["Монтаж ВОЛС", "Настройка роутеров"],
 }
 
 WORKER_PROFILE_READ_EXAMPLE = {
+    "transport_type": "walking",
     "workshift_start": "09:00:00",
     "workshift_end": "18:00:00",
     "skills": ["Монтаж ВОЛС", "Настройка роутеров"],
@@ -128,6 +130,9 @@ class WorkerProfileCreate(BaseModel):
         extra="forbid", json_schema_extra={"examples": [WORKER_PROFILE_CREATE_EXAMPLE]}
     )
 
+    transport_type: TransportType = Field(
+        default=TransportType.WALKING, description="Способ передвижения исполнителя"
+    )
     workshift_start: time = Field(description="Время начала рабочей смены, например 09:00:00")
     workshift_end: time = Field(
         description=(
@@ -167,6 +172,7 @@ class WorkerProfileRead(BaseModel):
     workshift_start: time
     workshift_end: time
     skills: list[str]
+    transport_type: TransportType = TransportType.WALKING
 
 
 class UserCreate(BaseModel):
@@ -264,6 +270,8 @@ USER_UPDATE_EXAMPLE = {
 
 class WorkerProfileUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    transport_type: TransportType = TransportType.WALKING
 
     workshift_start: time | None = None
     workshift_end: time | None = None

@@ -1,0 +1,27 @@
+meta {
+  name: worker-denied
+  type: http
+  seq: 8
+}
+
+patch {
+  url: {{base_url}}/api/v1/users/{{worker_id}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{worker_access_token}}
+}
+
+body:json {
+  {
+    "worker_profile": {
+      "transport_type": "car"
+    }
+  }
+}
+
+assert {
+  res.status: eq 403
+}

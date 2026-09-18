@@ -1,0 +1,23 @@
+meta {
+  name: get-geojson
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/v1/routes/{{saved_route_id}}/geojson
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{worker_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+test("Скачивается FeatureCollection", () => { expect(res.getBody().type).to.equal("FeatureCollection"); expect(res.getBody().features[0].geometry.type).to.equal("Point"); });
+}

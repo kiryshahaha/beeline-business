@@ -1,0 +1,27 @@
+meta {
+  name: invalid-csv
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/api/v1/data/import?entity=cities&dry_run=false
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:multipart-form {
+  file: @file(fixtures/invalid-cities.csv)
+}
+
+assert {
+  res.status: eq 422
+}
+
+tests {
+test("Ошибка содержит номер строки", () => { expect(res.getBody().detail.row).to.equal(2); expect(res.getBody().detail.column).to.equal("id"); });
+}

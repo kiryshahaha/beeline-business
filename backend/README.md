@@ -12,7 +12,18 @@
 роли (`observer`, `foreman`, `worker`), профили исполнителей, офисы, бригады, JWT-авторизация,
 назначения, комментарии, уведомления, время последнего изменения комментария,
 номенклатура оборудования, складской учет по офисам и распределение оборудования по заявкам
-(миграции `0001`–`0008`).
+(миграции `0001`–`0010`). Дополнительно реализованы тип транспорта исполнителя,
+история маршрутов в GeoJSON и единый импорт/экспорт всех предметных таблиц CSV/XLSX.
+
+Новые контракты и навигация:
+
+- [Обмен CSV/XLSX](../docs/DATA_EXCHANGE.md): `/api/v1/data/schema`, `/export`, `/import`.
+- [Сохранённые маршруты](app/modules/routing/README.md): `/api/v1/routes`, `/batch`, `/{id}/geojson`.
+- [Пользователи и транспорт](app/modules/users/README.md): `worker_profile.transport_type`.
+- [Описание модулей](app/modules/README.md), [схема БД](app/db/README.md), [миграции](migrations/README.md).
+- [Синтетические наборы](../data/synthetic/README.md): 1 500/10 000 заявок;
+  `generate_synthetic.py` создаёт файлы без БД, `seed_synthetic.py` работает только в `*_test`.
+- [Проверки](tests/README.md), [Bruno](bruno/README.md), [аудит](../docs/AUDIT_2026-09-18.md).
 
 Доступные операции HTTP API:
 

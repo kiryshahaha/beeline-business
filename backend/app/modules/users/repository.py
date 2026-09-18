@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 USER_SELECT_COLUMNS = """
     u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
     u.created_at, u.updated_at,
-    w.workshift_start, w.workshift_end,
+    w.workshift_start, w.workshift_end, w.transport_type,
     b.id AS brigade_id, b.name AS brigade_name,
     COALESCE(
         array_remove(array_agg(ws.skill ORDER BY ws.skill), NULL),
@@ -25,7 +25,8 @@ USER_SELECT_JOINS = """
 
 USER_SELECT_GROUP_BY = """
     GROUP BY u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
-             u.created_at, u.updated_at, w.workshift_start, w.workshift_end, b.id, b.name
+             u.created_at, u.updated_at, w.workshift_start, w.workshift_end,
+             w.transport_type, b.id, b.name
 """
 
 
@@ -43,10 +44,10 @@ def add_user(session: Session, values: dict[str, object]) -> int:
 def add_worker(session: Session, values: dict[str, object]) -> None:
     session.execute(
         text("""
-            INSERT INTO workers (user_id, workshift_start, workshift_end)
-            VALUES (:user_id, :workshift_start, :workshift_end)
+            INSERT INTO workers (user_id, workshift_start, workshift_end, transport_type)
+            VALUES (:user_id, :workshift_start, :workshift_end, :transport_type)
         """),
-        values,
+        {"transport_type": "walking", **values},
     )
 
 
@@ -235,11 +236,12 @@ def update_user(session: Session, user_id: int, values: dict[str, object]) -> No
 def upsert_worker(session: Session, user_id: int, values: dict[str, object]) -> None:
     session.execute(
         text("""
-            INSERT INTO workers (user_id, workshift_start, workshift_end)
-            VALUES (:user_id, :workshift_start, :workshift_end)
+            INSERT INTO workers (user_id, workshift_start, workshift_end, transport_type)
+            VALUES (:user_id, :workshift_start, :workshift_end, :transport_type)
             ON CONFLICT (user_id) DO UPDATE SET
                 workshift_start = EXCLUDED.workshift_start,
-                workshift_end = EXCLUDED.workshift_end
+                workshift_end = EXCLUDED.workshift_end,
+                transport_type = EXCLUDED.transport_type
         """),
         {"user_id": user_id, **values},
     )

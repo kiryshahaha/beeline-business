@@ -15,7 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IntegerIdMixin
-from app.modules.users.enums import UserRole
+from app.modules.users.enums import TransportType, UserRole
 
 
 class User(IntegerIdMixin, Base):
@@ -65,6 +65,17 @@ class Worker(Base):
     )
     workshift_start: Mapped[time] = mapped_column(Time)
     workshift_end: Mapped[time] = mapped_column(Time)
+    transport_type: Mapped[TransportType] = mapped_column(
+        Enum(
+            TransportType,
+            values_callable=lambda values: [value.value for value in values],
+            native_enum=False,
+            create_constraint=True,
+            name="worker_transport_type",
+        ),
+        default=TransportType.WALKING,
+        server_default=TransportType.WALKING.value,
+    )
 
     __table_args__ = (
         CheckConstraint("workshift_start <> workshift_end", name="workshift_duration_not_zero"),
