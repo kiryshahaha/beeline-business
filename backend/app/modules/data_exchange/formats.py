@@ -178,6 +178,7 @@ def normalize_dataframe(
     name: str, df: pd.DataFrame, source_row_numbers: pd.Series
 ) -> list[ParsedRow]:
     columns = {c.name: c for c in columns_for(name)}
+    converted_columns: dict[str, list] = {}
 
     for key in df.columns:
         col = columns[key]
@@ -207,7 +208,7 @@ def normalize_dataframe(
             bad_row = int(source_row_numbers.loc[bad_idx])
             raise ExchangeError("Обязательное поле не может быть пустым", name, bad_row, key)
 
-        # 4. Convert and validate column values
+        # 4. Convert and validate column values into pure Python objects
         converted = []
         for idx, val in decoded.items():
             if val is None or (val == "" and not isinstance(col.type, String)):
@@ -224,24 +225,27 @@ def normalize_dataframe(
                 ) as error:
                     bad_row = int(source_row_numbers.loc[idx])
                     raise ExchangeError(str(error), name, bad_row, key) from error
-        df[key] = converted
+        converted_columns[key] = converted
 
     # 5. Fast vectorized primary key uniqueness validation
     pk_cols = [c.name for c in TABLES[name].primary_key]
     if pk_cols:
-        dup_mask = df.duplicated(subset=pk_cols, keep="first")
+        pk_df = pd.DataFrame({col: converted_columns[col] for col in pk_cols})
+        dup_mask = pk_df.duplicated(keep="first")
         if dup_mask.any():
             first_dup_idx = dup_mask.idxmax()
-            first_dup_row = int(source_row_numbers.loc[first_dup_idx])
+            first_dup_row = int(source_row_numbers.iloc[first_dup_idx])
             raise ExchangeError("Повторяющийся первичный ключ", name, first_dup_row)
 
-    # 6. Build ParsedRow list preserving row_number for downstream error tracking
+    # 6. Build ParsedRow list preserving row_number and pure Python types
     result = []
     row_nums = source_row_numbers.to_list()
-    dict_records = df.to_dict(orient="records")
-    for row_num, rec in zip(row_nums, dict_records):
-        row = ParsedRow(row_num)
-        row.update(rec)
+    col_names = list(df.columns)
+    num_rows = len(row_nums)
+    for i in range(num_rows):
+        row = ParsedRow(row_nums[i])
+        for col_name in col_names:
+            row[col_name] = converted_columns[col_name][i]
         result.append(row)
     return result
 
@@ -338,6 +342,7 @@ def read_csv(content: bytes, name: str) -> list[dict]:
             encoding="utf-8-sig",
             skip_blank_lines=False,
             on_bad_lines="error",
+            index_col=False,
             engine="c",
         )
     except UnicodeDecodeError as error:
@@ -355,13 +360,7 @@ def read_csv(content: bytes, name: str) -> list[dict]:
         return []
 
     # Map DataFrame index to 1-based CSV line number (header is row 1, data starts at row 2)
-    source_row_numbers = pd.Series(df.index + 2, index=df.index)
-
-    # Detect rows where fields were truncated/missing in CSV
-    if df.isna().any().any():
-        nan_row_idx = df.isna().any(axis=1).idxmax()
-        bad_row = int(source_row_numbers.loc[nan_row_idx])
-        raise ExchangeError("Число ячеек не соответствует заголовку", name, bad_row)
+    source_row_numbers = pd.Series(range(2, len(df) + 2), index=df.index)
 
     # Drop blank rows (where all cells are empty string or None)
     is_blank = (df.isna() | (df == "")).all(axis=1)
@@ -371,6 +370,12 @@ def read_csv(content: bytes, name: str) -> list[dict]:
 
     if df.empty:
         return []
+
+    # Detect rows where fields were truncated/missing in CSV
+    if df.isna().any().any():
+        nan_row_idx = df.isna().any(axis=1).idxmax()
+        bad_row = int(source_row_numbers.loc[nan_row_idx])
+        raise ExchangeError("Число ячеек не соответствует заголовку", name, bad_row)
 
     if len(df) > MAX_ROWS:
         raise ExchangeError("Превышен лимит строк", name, MAX_ROWS + 2)
@@ -476,10 +481,10 @@ def write_csv(name: str, rows: list[dict]) -> bytes:
     columns = [c.name for c in columns_for(name)]
     if not rows:
         return (",".join(columns) + "\r\n").encode("utf-8-sig")
-    data = {c: [encode_cell(row.get(c)) for row in rows] for c in columns}
-    df = pd.DataFrame(data, columns=columns)
     buffer = io.StringIO(newline="")
-    df.to_csv(buffer, index=False, lineterminator="\r\n")
+    writer = csv.writer(buffer, lineterminator="\r\n")
+    writer.writerow(columns)
+    writer.writerows([encode_cell(row.get(c)) for c in columns] for row in rows)
     return buffer.getvalue().encode("utf-8-sig")
 
 
