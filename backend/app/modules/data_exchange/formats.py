@@ -1,4 +1,4 @@
-"""Bounded file parsing and reversible, formula-safe serialization."""
+"""Bounded file parsing and reversible, formula-safe serialization with Pandas."""
 
 import csv
 import io
@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation
 from xml.etree.ElementTree import ParseError
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile, ZipInfo
 
+import pandas as pd
 from defusedxml.common import DefusedXmlException
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell import WriteOnlyCell
@@ -78,31 +79,29 @@ def encode_cell(value) -> str:
     return value
 
 
-def decode_cell(value):
-    if value is None or value == NULL:
+def _decode_cell(value):
+    if value is None or value == NULL or pd.isna(value):
         return None
     if value == EMPTY:
         return ""
-    if isinstance(value, str) and value.startswith('\\T"'):
-        return json.loads(value[2:])
-    if isinstance(value, str) and value.startswith("'"):
-        rest = value[1:]
-        if rest.startswith(("'", "\\", "\t", "\r", "\n")) or rest.lstrip().startswith(
-            ("=", "+", "-", "@")
-        ):
-            return rest
+    if isinstance(value, str):
+        if value.startswith('\\T"'):
+            return json.loads(value[2:])
+        if value.startswith("'"):
+            rest = value[1:]
+            if rest.startswith(("'", "\\", "\t", "\r", "\n")) or rest.lstrip().startswith(
+                ("=", "+", "-", "@")
+            ):
+                return rest
     return value
 
 
-def convert(value, column):
-    value = decode_cell(value)
-    if value is None or (value == "" and not isinstance(column.type, String)):
-        if not column.nullable:
-            raise ValueError("Обязательное поле не может быть пустым")
-        return None
+def decode_cell(value):
+    return _decode_cell(value)
+
+
+def _convert_type(value, column):
     kind = column.type
-    if isinstance(value, str) and ("\x00" in value or len(value) > MAX_CELL_CHARS):
-        raise ValueError("Недопустимый символ или слишком длинное значение")
     if isinstance(kind, Boolean):
         if value in (True, "true", "1", 1):
             return True
@@ -164,6 +163,89 @@ def convert(value, column):
     return result
 
 
+def convert(value, column):
+    value = decode_cell(value)
+    if value is None or (value == "" and not isinstance(column.type, String)):
+        if not column.nullable:
+            raise ValueError("Обязательное поле не может быть пустым")
+        return None
+    if isinstance(value, str) and ("\x00" in value or len(value) > MAX_CELL_CHARS):
+        raise ValueError("Недопустимый символ или слишком длинное значение")
+    return _convert_type(value, column)
+
+
+def normalize_dataframe(
+    name: str, df: pd.DataFrame, source_row_numbers: pd.Series
+) -> list[ParsedRow]:
+    columns = {c.name: c for c in columns_for(name)}
+
+    for key in df.columns:
+        col = columns[key]
+        series = df[key]
+
+        # 1. Cell length and null byte validation
+        def check_cell(v):
+            return not (isinstance(v, str) and ("\x00" in v or len(v) > MAX_CELL_CHARS))
+
+        valid_chars = series.map(check_cell)
+        if not valid_chars.all():
+            bad_idx = (~valid_chars).idxmax()
+            bad_row = int(source_row_numbers.loc[bad_idx])
+            raise ExchangeError(
+                "Недопустимый символ или слишком длинное значение", name, bad_row, key
+            )
+
+        # 2. Decode cell representation
+        decoded = series.map(_decode_cell)
+
+        # 3. Check nullable constraints
+        is_empty = decoded.map(
+            lambda v: v is None or (v == "" and not isinstance(col.type, String))
+        )
+        if not col.nullable and is_empty.any():
+            bad_idx = is_empty.idxmax()
+            bad_row = int(source_row_numbers.loc[bad_idx])
+            raise ExchangeError("Обязательное поле не может быть пустым", name, bad_row, key)
+
+        # 4. Convert and validate column values
+        converted = []
+        for idx, val in decoded.items():
+            if val is None or (val == "" and not isinstance(col.type, String)):
+                converted.append(None)
+            else:
+                try:
+                    converted.append(_convert_type(val, col))
+                except (
+                    ValueError,
+                    TypeError,
+                    InvalidOperation,
+                    OverflowError,
+                    RecursionError,
+                ) as error:
+                    bad_row = int(source_row_numbers.loc[idx])
+                    raise ExchangeError(str(error), name, bad_row, key) from error
+        df[key] = converted
+
+    # 5. Fast vectorized primary key uniqueness validation
+    pk_cols = [c.name for c in TABLES[name].primary_key]
+    if pk_cols:
+        dup_mask = df.duplicated(subset=pk_cols, keep="first")
+        if dup_mask.any():
+            first_dup_idx = dup_mask.idxmax()
+            first_dup_row = int(source_row_numbers.loc[first_dup_idx])
+            raise ExchangeError("Повторяющийся первичный ключ", name, first_dup_row)
+
+    # 6. Build ParsedRow list preserving row_number for downstream error tracking
+    result = []
+    row_nums = source_row_numbers.to_list()
+    dict_records = df.to_dict(orient="records")
+    for row_num, rec in zip(row_nums, dict_records):
+        row = ParsedRow(row_num)
+        row.update(rec)
+        result.append(row)
+    return result
+
+
 def normalize_rows(name: str, rows) -> list[dict]:
     if name not in TABLES:
         raise ExchangeError("Неизвестная таблица", name)
@@ -171,7 +253,7 @@ def normalize_rows(name: str, rows) -> list[dict]:
     header = next(iterator, None)
     if not header:
         raise ExchangeError("Нет строки заголовков", name, 1)
-    if not all(isinstance(c, str) for c in header) or len(header) != len(set(header)):
+    if not all(isinstance(c, str) and c for c in header) or len(header) != len(set(header)):
         raise ExchangeError("Пустые или повторяющиеся заголовки", name, 1)
     columns = {c.name: c for c in columns_for(name)}
     if set(header) - columns.keys():
@@ -183,53 +265,117 @@ def normalize_rows(name: str, rows) -> list[dict]:
         for c in columns.values()
         if not c.nullable and c.server_default is None and c.default is None
     }
-    # IDs are source keys, not database identities, and must be present in a package.
     required |= {c.name for c in columns.values() if c.primary_key}
     if required - set(header):
         raise ExchangeError("Нет столбцов: " + ", ".join(sorted(required - set(header))), name, 1)
-    result = []
-    keys = set()
+
+    raw_data = []
+    source_row_numbers = []
+    header_len = len(header)
     for row_number, row in enumerate(iterator, 2):
         if row_number > MAX_ROWS + 1:
             raise ExchangeError("Превышен лимит строк", name, row_number)
         if all(value is None or value == "" for value in row):
             continue
-        if len(row) != len(header):
+        if len(row) != header_len:
             raise ExchangeError("Число ячеек не соответствует заголовку", name, row_number)
-        record = ParsedRow(row_number)
-        for key, value in zip(header, row):
-            try:
-                record[key] = convert(value, columns[key])
-            except (
-                ValueError,
-                TypeError,
-                InvalidOperation,
-                OverflowError,
-                RecursionError,
-            ) as error:
-                raise ExchangeError(str(error), name, row_number, key) from error
-        identity = tuple(record[c.name] for c in TABLES[name].primary_key)
-        if identity in keys:
-            raise ExchangeError("Повторяющийся первичный ключ", name, row_number)
-        keys.add(identity)
-        result.append(record)
-    return result
+        raw_data.append(row)
+        source_row_numbers.append(row_number)
+
+    if not raw_data:
+        return []
+
+    df = pd.DataFrame(raw_data, columns=header, dtype=object)
+    row_nums = pd.Series(source_row_numbers, index=df.index)
+    return normalize_dataframe(name, df, row_nums)
 
 
 def read_csv(content: bytes, name: str) -> list[dict]:
+    if name not in TABLES:
+        raise ExchangeError("Неизвестная таблица", name)
     try:
-        text = content.decode("utf-8-sig")
+        first_newline = content.find(b"\n")
+        first_line_bytes = content[:first_newline] if first_newline != -1 else content
+        first_line = first_line_bytes.decode("utf-8-sig").rstrip("\r")
     except UnicodeDecodeError as error:
         raise ExchangeError("CSV должен быть в UTF-8", name) from error
+
+    if not first_line.strip():
+        raise ExchangeError("Нет строки заголовков", name, 1)
+
+    delimiter = max((",", ";", "\t"), key=first_line.count)
+
     try:
-        first = text.splitlines()[0] if text else ""
-        delimiter = max((",", ";", "\t"), key=first.count)
-        csv.field_size_limit(MAX_CELL_CHARS)
-        return normalize_rows(
-            name, csv.reader(io.StringIO(text, newline=""), delimiter=delimiter, strict=True)
-        )
-    except csv.Error as error:
+        header = next(csv.reader([first_line], delimiter=delimiter))
+    except Exception as error:
         raise ExchangeError("Некорректный CSV: " + str(error), name) from error
+
+    if not header:
+        raise ExchangeError("Нет строки заголовков", name, 1)
+    if not all(isinstance(c, str) and c for c in header) or len(header) != len(set(header)):
+        raise ExchangeError("Пустые или повторяющиеся заголовки", name, 1)
+
+    columns = {c.name: c for c in columns_for(name)}
+    if set(header) - columns.keys():
+        raise ExchangeError(
+            "Неизвестные столбцы: " + ", ".join(sorted(set(header) - columns.keys())), name, 1
+        )
+    required = {
+        c.name
+        for c in columns.values()
+        if not c.nullable and c.server_default is None and c.default is None
+    }
+    required |= {c.name for c in columns.values() if c.primary_key}
+    if required - set(header):
+        raise ExchangeError("Нет столбцов: " + ", ".join(sorted(required - set(header))), name, 1)
+
+    try:
+        df = pd.read_csv(
+            io.BytesIO(content),
+            sep=delimiter,
+            dtype=object,
+            keep_default_na=False,
+            encoding="utf-8-sig",
+            skip_blank_lines=False,
+            on_bad_lines="error",
+            engine="c",
+        )
+    except UnicodeDecodeError as error:
+        raise ExchangeError("CSV должен быть в UTF-8", name) from error
+    except pd.errors.ParserError as error:
+        match = re.search(r"line\s+(\d+)", str(error), re.IGNORECASE)
+        row_num = int(match.group(1)) if match else None
+        raise ExchangeError("Число ячеек не соответствует заголовку", name, row_num) from error
+    except pd.errors.EmptyDataError:
+        raise ExchangeError("Нет строки заголовков", name, 1)
+    except Exception as error:
+        raise ExchangeError("Некорректный CSV: " + str(error), name) from error
+
+    if df.empty:
+        return []
+
+    # Map DataFrame index to 1-based CSV line number (header is row 1, data starts at row 2)
+    source_row_numbers = pd.Series(df.index + 2, index=df.index)
+
+    # Detect rows where fields were truncated/missing in CSV
+    if df.isna().any().any():
+        nan_row_idx = df.isna().any(axis=1).idxmax()
+        bad_row = int(source_row_numbers.loc[nan_row_idx])
+        raise ExchangeError("Число ячеек не соответствует заголовку", name, bad_row)
+
+    # Drop blank rows (where all cells are empty string or None)
+    is_blank = (df.isna() | (df == "")).all(axis=1)
+    if is_blank.any():
+        df = df[~is_blank]
+        source_row_numbers = source_row_numbers[~is_blank]
+
+    if df.empty:
+        return []
+
+    if len(df) > MAX_ROWS:
+        raise ExchangeError("Превышен лимит строк", name, MAX_ROWS + 2)
+
+    return normalize_dataframe(name, df, source_row_numbers)
 
 
 def inspect_archive(content: bytes) -> None:
@@ -327,11 +473,13 @@ def parse_file(content: bytes, filename: str, entity: str | None = None) -> dict
 
 
 def write_csv(name: str, rows: list[dict]) -> bytes:
-    buffer = io.StringIO(newline="")
-    writer = csv.writer(buffer)
     columns = [c.name for c in columns_for(name)]
-    writer.writerow(columns)
-    writer.writerows([encode_cell(row.get(c)) for c in columns] for row in rows)
+    if not rows:
+        return (",".join(columns) + "\r\n").encode("utf-8-sig")
+    data = {c: [encode_cell(row.get(c)) for row in rows] for c in columns}
+    df = pd.DataFrame(data, columns=columns)
+    buffer = io.StringIO(newline="")
+    df.to_csv(buffer, index=False, lineterminator="\r\n")
     return buffer.getvalue().encode("utf-8-sig")
 
 
