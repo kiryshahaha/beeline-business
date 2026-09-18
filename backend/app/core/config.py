@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     notification_poll_interval_seconds: float = 1.0
     firebase_enabled: bool = False
     firebase_project_id: str | None = None
+    geoapify_api_key: str | None = None
+    geoapify_timeout_seconds: float = 10.0
     cors_origins: str = (
         "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000"
     )

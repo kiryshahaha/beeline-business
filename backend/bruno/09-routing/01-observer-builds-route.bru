@@ -1,0 +1,41 @@
+meta {
+  name: Наблюдатель строит маршрут
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/v1/routes
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "origin": {"latitude": 59.9156, "longitude": 30.4631},
+    "destination": {"latitude": 59.9015, "longitude": 30.4548}
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Вернулись расстояние, время и линия маршрута", function () {
+    const route = res.getBody();
+    expect(route.distance_meters).to.be.a("number").and.greaterThan(0);
+    expect(route.duration_seconds).to.be.a("number").and.greaterThan(0);
+    expect(route.geometry.type).to.equal("MultiLineString");
+    expect(route.geometry.coordinates).to.be.an("array").and.not.empty;
+  });
+}
+
+docs {
+  Координаты запроса указываются как latitude/longitude. Координаты в GeoJSON-линии
+  возвращаются как longitude/latitude. Geoapify списывает кредит за расчёт маршрута.
+}
