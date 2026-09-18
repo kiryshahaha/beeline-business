@@ -295,92 +295,20 @@ def normalize_rows(name: str, rows) -> list[dict]:
 
 
 def read_csv(content: bytes, name: str) -> list[dict]:
-    if name not in TABLES:
-        raise ExchangeError("Неизвестная таблица", name)
     try:
-        first_newline = content.find(b"\n")
-        first_line_bytes = content[:first_newline] if first_newline != -1 else content
-        first_line = first_line_bytes.decode("utf-8-sig").rstrip("\r")
+        text = content.decode("utf-8-sig")
     except UnicodeDecodeError as error:
         raise ExchangeError("CSV должен быть в UTF-8", name) from error
 
-    if not first_line.strip():
-        raise ExchangeError("Нет строки заголовков", name, 1)
-
-    delimiter = max((",", ";", "\t"), key=first_line.count)
-
     try:
-        header = next(csv.reader([first_line], delimiter=delimiter))
-    except Exception as error:
-        raise ExchangeError("Некорректный CSV: " + str(error), name) from error
-
-    if not header:
-        raise ExchangeError("Нет строки заголовков", name, 1)
-    if not all(isinstance(c, str) and c for c in header) or len(header) != len(set(header)):
-        raise ExchangeError("Пустые или повторяющиеся заголовки", name, 1)
-
-    columns = {c.name: c for c in columns_for(name)}
-    if set(header) - columns.keys():
-        raise ExchangeError(
-            "Неизвестные столбцы: " + ", ".join(sorted(set(header) - columns.keys())), name, 1
+        first = text.splitlines()[0] if text else ""
+        delimiter = max((",", ";", "\t"), key=first.count)
+        csv.field_size_limit(MAX_CELL_CHARS)
+        return normalize_rows(
+            name, csv.reader(io.StringIO(text, newline=""), delimiter=delimiter, strict=True)
         )
-    required = {
-        c.name
-        for c in columns.values()
-        if not c.nullable and c.server_default is None and c.default is None
-    }
-    required |= {c.name for c in columns.values() if c.primary_key}
-    if required - set(header):
-        raise ExchangeError("Нет столбцов: " + ", ".join(sorted(required - set(header))), name, 1)
-
-    try:
-        df = pd.read_csv(
-            io.BytesIO(content),
-            sep=delimiter,
-            dtype=object,
-            keep_default_na=False,
-            encoding="utf-8-sig",
-            skip_blank_lines=False,
-            on_bad_lines="error",
-            index_col=False,
-            engine="c",
-        )
-    except UnicodeDecodeError as error:
-        raise ExchangeError("CSV должен быть в UTF-8", name) from error
-    except pd.errors.ParserError as error:
-        match = re.search(r"line\s+(\d+)", str(error), re.IGNORECASE)
-        row_num = int(match.group(1)) if match else None
-        raise ExchangeError("Число ячеек не соответствует заголовку", name, row_num) from error
-    except pd.errors.EmptyDataError:
-        raise ExchangeError("Нет строки заголовков", name, 1)
-    except Exception as error:
+    except csv.Error as error:
         raise ExchangeError("Некорректный CSV: " + str(error), name) from error
-
-    if df.empty:
-        return []
-
-    # Map DataFrame index to 1-based CSV line number (header is row 1, data starts at row 2)
-    source_row_numbers = pd.Series(range(2, len(df) + 2), index=df.index)
-
-    # Drop blank rows (where all cells are empty string or None)
-    is_blank = (df.isna() | (df == "")).all(axis=1)
-    if is_blank.any():
-        df = df[~is_blank]
-        source_row_numbers = source_row_numbers[~is_blank]
-
-    if df.empty:
-        return []
-
-    # Detect rows where fields were truncated/missing in CSV
-    if df.isna().any().any():
-        nan_row_idx = df.isna().any(axis=1).idxmax()
-        bad_row = int(source_row_numbers.loc[nan_row_idx])
-        raise ExchangeError("Число ячеек не соответствует заголовку", name, bad_row)
-
-    if len(df) > MAX_ROWS:
-        raise ExchangeError("Превышен лимит строк", name, MAX_ROWS + 2)
-
-    return normalize_dataframe(name, df, source_row_numbers)
 
 
 def inspect_archive(content: bytes) -> None:
