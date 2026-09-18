@@ -39,6 +39,7 @@ from app.modules.users.schemas import (
     WORKER_SKILL_CREATE_EXAMPLE,
     WORKER_SKILL_EXAMPLE,
 )
+from app.modules.work_types.router import router as work_types_router
 
 
 @asynccontextmanager
@@ -99,6 +100,7 @@ app.include_router(offices_router)
 app.include_router(office_stock_router)
 app.include_router(appliances_router)
 app.include_router(brigades_router)
+app.include_router(work_types_router)
 app.include_router(tickets_router)
 app.include_router(ticket_appliances_router)
 app.include_router(comments_router)

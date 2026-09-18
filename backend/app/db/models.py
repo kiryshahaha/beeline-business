@@ -19,6 +19,7 @@ from app.modules.users.models import (
     WorkerSkill,
     WorkerSkillAssignment,
 )
+from app.modules.work_types.models import WorkType
 
 __all__ = [
     "Appliance",
@@ -42,4 +43,5 @@ __all__ = [
     "Worker",
     "WorkerSkill",
     "WorkerSkillAssignment",
+    "WorkType",
 ]
