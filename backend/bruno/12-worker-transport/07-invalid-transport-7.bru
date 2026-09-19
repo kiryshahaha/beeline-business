@@ -1,0 +1,27 @@
+meta {
+  name: invalid-transport-7
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{base_url}}/api/v1/users/{{worker_id}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "worker_profile": {
+      "transport_type": null
+    }
+  }
+}
+
+assert {
+  res.status: eq 422
+}

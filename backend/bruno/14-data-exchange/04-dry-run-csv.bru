@@ -1,0 +1,27 @@
+meta {
+  name: dry-run-csv
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/api/v1/data/import?dry_run=true
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:multipart-form {
+  file: @file(fixtures/dataset.zip)
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+test("Проверены все таблицы", () => { expect(res.getBody().dry_run).to.equal(true); expect(res.getBody().counts.tickets).to.equal(24); });
+}

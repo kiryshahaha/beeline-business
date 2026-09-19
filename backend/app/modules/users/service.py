@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.modules.users import repository
-from app.modules.users.enums import UserRole
+from app.modules.users.enums import TransportType, UserRole
 from app.modules.users.schemas import (
     UserCreate,
     UserRead,
@@ -51,6 +51,7 @@ def _build_user_read(row: RowMapping) -> UserRead:
             workshift_start=row["workshift_start"],
             workshift_end=row["workshift_end"],
             skills=list(row["skills"]),
+            transport_type=row["transport_type"],
         )
     return UserRead(
         id=row["id"],
@@ -121,6 +122,7 @@ def create_user(session: Session, data: UserCreate) -> UserRead:
                     "user_id": user_id,
                     "workshift_start": profile.workshift_start,
                     "workshift_end": profile.workshift_end,
+                    "transport_type": profile.transport_type.value,
                 },
             )
             for skill_name in profile.skills:
@@ -208,7 +210,13 @@ def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:
                 repository.upsert_worker(
                     session,
                     user_id,
-                    {"workshift_start": shift_start, "workshift_end": shift_end},
+                    {
+                        "workshift_start": shift_start,
+                        "workshift_end": shift_end,
+                        "transport_type": worker_dump.get("transport_type")
+                        or existing_user["transport_type"]
+                        or TransportType.WALKING.value,
+                    },
                 )
 
             if "skills" in worker_dump and worker_dump["skills"] is not None:

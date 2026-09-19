@@ -1,0 +1,27 @@
+meta {
+  name: import-xlsx
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/api/v1/data/import?dry_run=false
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:multipart-form {
+  file: @file(fixtures/dataset.xlsx)
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+test("Пакет сохранён", () => { expect(res.getBody().dry_run).to.equal(false); expect(res.getBody().duplicate).to.equal(false); expect(res.getBody().counts.workers).to.equal(4); });
+}

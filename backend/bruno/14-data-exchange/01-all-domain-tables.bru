@@ -1,0 +1,23 @@
+meta {
+  name: all-domain-tables
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/data/schema
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+test("Полная схема без секретов", () => { const schema = res.getBody(); expect(Object.keys(schema.tables)).to.have.lengthOf(21); expect(schema.tables.routes).to.be.an("array"); expect(schema.tables.users.map(c => c.name)).not.to.include("password_hash"); });
+}

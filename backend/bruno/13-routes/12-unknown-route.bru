@@ -1,0 +1,19 @@
+meta {
+  name: unknown-route
+  type: http
+  seq: 12
+}
+
+get {
+  url: {{base_url}}/api/v1/routes/2147483647
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 404
+}

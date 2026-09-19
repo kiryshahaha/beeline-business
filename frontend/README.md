@@ -1,5 +1,11 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+Описание текущих файлов на русском: [src/README.md](src/README.md).
+Сейчас здесь стартовая страница Next.js, без готового интерфейса диспетчера.
+`package.json` задаёт команды dev/build/start/lint; `package-lock.json` фиксирует
+зависимости; `next.config.mjs` и `eslint.config.mjs` содержат настройки;
+`public/` — статические файлы. CI проверяет `npm ci`, `npm run lint`, `npm run build`.
+
 ## Getting Started
 
 First, run the development server:
