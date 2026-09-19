@@ -1,0 +1,48 @@
+meta {
+  name: Таймлайн офиса на сутки
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/schedule?date=2026-09-17&office_id={{office_id}}
+  body: none
+  auth: bearer
+}
+
+params:query {
+  date: 2026-09-17
+  office_id: {{office_id}}
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.date: eq "2026-09-17"
+  res.body.day_start: eq "2026-09-17T00:00:00+03:00"
+  res.body.day_end: eq "2026-09-18T00:00:00+03:00"
+  res.body.unassigned_workers: isArray
+}
+
+tests {
+  const body = res.getBody();
+
+  test("Все бригады относятся к выбранному офису", function () {
+    body.brigades.forEach(function (brigade) {
+      expect(brigade.office_id).to.equal(Number(bru.getVar("office_id")));
+    });
+  });
+
+  test("Каждая смена и заявка — непустой интервал", function () {
+    body.brigades.forEach(function (brigade) {
+      brigade.workers.forEach(function (worker) {
+        worker.shifts.concat(worker.tickets).forEach(function (item) {
+          expect(new Date(item.end) > new Date(item.start)).to.equal(true);
+        });
+      });
+    });
+  });
+}
