@@ -54,5 +54,11 @@ def describe_tables() -> dict:
             ]
             for name in TABLES
         },
-        "excluded": ["users.password_hash", "refresh_tokens", "push_subscriptions", "data_imports"],
+        "excluded": [
+            "users.password_hash",
+            "refresh_tokens",
+            "calendar_tokens",
+            "push_subscriptions",
+            "data_imports",
+        ],
     }

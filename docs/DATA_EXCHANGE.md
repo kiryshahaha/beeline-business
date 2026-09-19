@@ -39,8 +39,8 @@ curl.exe -H "Authorization: Bearer $token" -F 'file=@all-data.xlsx' `
 Оборудование: `appliances`, `appliance_stocks`, `ticket_appliances`.
 История: `notification_events`, `routes`.
 
-`users.password_hash`, `refresh_tokens`, `push_subscriptions` и `data_imports`
-исключены. Импортированные пользователи получают случайный неизвестный пароль;
+`users.password_hash`, `refresh_tokens`, `calendar_tokens`, `push_subscriptions`
+и `data_imports` исключены. Импортированные пользователи получают случайный неизвестный пароль;
 диспетчер задаёт пароль через существующий PATCH пользователя. Для тестовых схем
 `seed_synthetic.py` отдельно устанавливает документированный тестовый пароль.
 

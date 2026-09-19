@@ -1,0 +1,31 @@
+meta {
+  name: Исполнитель выпускает ссылку на календарь
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/v1/schedule/calendar/token
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{worker_access_token}}
+}
+
+assert {
+  res.status: eq 201
+  res.body.url: contains /api/v1/schedule/calendar.ics?token=
+  res.body.created_at: isString
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("calendar_token", res.getBody().url.split("token=")[1]);
+  }
+}
+
+docs {
+  Токен показывается только в этой ссылке; в БД хранится его SHA-256.
+}

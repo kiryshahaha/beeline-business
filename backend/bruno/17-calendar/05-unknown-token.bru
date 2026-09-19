@@ -1,0 +1,20 @@
+meta {
+  name: Неизвестный токен — 404
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/schedule/calendar.ics?token=unknown-token
+  body: none
+  auth: none
+}
+
+params:query {
+  token: unknown-token
+}
+
+assert {
+  res.status: eq 404
+  res.body.detail: eq "Календарь не найден"
+}

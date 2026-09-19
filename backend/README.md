@@ -77,6 +77,11 @@
   - `GET /api/v1/notifications` — личная история событий;
   - `POST, DELETE /api/v1/notifications/push-subscriptions` — зарегистрировать или удалить Firebase-токен браузера;
   - `WS /api/v1/notifications/ws` — получить личные события через WebSocket.
+- **Календарь исполнителя:**
+  - `POST, GET, DELETE /api/v1/schedule/calendar/token` — выпустить, проверить или отозвать
+    личную ссылку на календарь (только `worker`);
+  - `GET /api/v1/schedule/calendar.ics?token=…` — файл iCalendar с заявками для Google/Apple
+    Calendar; авторизация — секретный токен в ссылке. Подробнее — [calendar_feed](app/modules/calendar_feed/README.md).
 - **Маршрутизация:**
   - `POST /api/v1/routes` — рассчитать маршрут между двумя координатами в выбранном режиме; доступно роли `observer`.
 Принятые совместно решения:

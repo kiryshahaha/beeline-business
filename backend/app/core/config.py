@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     firebase_project_id: str | None = None
     geoapify_api_key: str | None = None
     geoapify_timeout_seconds: float = 10.0
+    # Public addresses for links inside calendar feeds; empty values fall back or omit links.
+    public_api_url: str | None = None
+    frontend_url: str | None = None
     cors_origins: str = (
         "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000"
     )

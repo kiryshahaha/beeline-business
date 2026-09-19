@@ -48,7 +48,7 @@ class DataFormatTests(unittest.TestCase):
     def test_all_domain_tables_are_exported_and_seeding_rejects_work_databases(self):
         self.assertEqual(
             set(Base.metadata.tables) - set(TABLES),
-            {"refresh_tokens", "push_subscriptions", "data_imports"},
+            {"refresh_tokens", "calendar_tokens", "push_subscriptions", "data_imports"},
         )
         for url in ("postgresql://localhost/production", "sqlite:///example_test"):
             with self.subTest(url=url), self.assertRaises(ValueError):

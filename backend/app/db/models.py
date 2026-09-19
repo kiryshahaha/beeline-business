@@ -3,6 +3,7 @@
 from app.modules.appliances.models import Appliance, ApplianceStock, TicketAppliance
 from app.modules.brigades.models import Brigade, BrigadeMember
 from app.modules.buildings.models import Building
+from app.modules.calendar_feed.models import CalendarToken
 from app.modules.cities.models import City
 from app.modules.comments.models import TicketComment
 from app.modules.data_exchange.models import DataImport
@@ -28,6 +29,7 @@ __all__ = [
     "Building",
     "Brigade",
     "BrigadeMember",
+    "CalendarToken",
     "City",
     "District",
     "DataImport",
