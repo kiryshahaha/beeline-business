@@ -1,0 +1,28 @@
+meta {
+  name: Наблюдатель меняет часть норматива
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{base_url}}/api/v1/work-types/{{created_work_type_id}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "work_minutes": 100
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.work_minutes: eq 100
+  res.body.travel_minutes: eq 20
+  res.body.norm_minutes: eq 135
+}
