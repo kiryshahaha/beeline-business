@@ -1,0 +1,28 @@
+meta {
+  name: Исполнитель не добавляет виды работ — 403
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{base_url}}/api/v1/work-types
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{worker_access_token}}
+}
+
+body:json {
+  {
+    "name": "Bruno: запрещённый вид работ",
+    "travel_minutes": 10,
+    "work_minutes": 10,
+    "documents_minutes": 10
+  }
+}
+
+assert {
+  res.status: eq 403
+}

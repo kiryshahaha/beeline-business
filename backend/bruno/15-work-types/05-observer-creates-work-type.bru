@@ -1,0 +1,36 @@
+meta {
+  name: Наблюдатель добавляет вид работ
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/api/v1/work-types
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "name": "Bruno: монтаж СКС",
+    "travel_minutes": 20,
+    "work_minutes": 120,
+    "documents_minutes": 15
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.name: eq "Bruno: монтаж СКС"
+  res.body.norm_minutes: eq 155
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("created_work_type_id", res.getBody().id);
+  }
+}
