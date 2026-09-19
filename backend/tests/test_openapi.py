@@ -31,6 +31,7 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/brigades/{id}/members",
             "/api/v1/work-types",
             "/api/v1/work-types/{id}",
+            "/api/v1/reports/tickets/export",
         ]
         for path in expected_paths:
             self.assertIn(path, paths, f"Path {path} missing in OpenAPI schema")
@@ -61,6 +62,17 @@ class OpenApiTests(unittest.TestCase):
             paths["/api/v1/notifications/push-subscriptions"]["delete"],
         )
         self.assertTrue(all(operation.get("security") for operation in protected_operations))
+        self.assertIn(
+            {"BearerAuth": []},
+            paths["/api/v1/reports/tickets/export"]["get"]["security"],
+        )
+        report_content = paths["/api/v1/reports/tickets/export"]["get"]["responses"]["200"][
+            "content"
+        ]
+        self.assertIn("text/csv", report_content)
+        self.assertIn(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", report_content
+        )
 
     def test_openapi_exposes_brigade_filter_and_foreman_example(self):
         schema = app.openapi()
