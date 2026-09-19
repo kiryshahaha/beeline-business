@@ -19,6 +19,7 @@
 
 - [Обмен CSV/XLSX](../docs/DATA_EXCHANGE.md): `/api/v1/data/schema`, `/export`, `/import`.
 - [Сохранённые маршруты](app/modules/routing/README.md): `/api/v1/routes`, `/batch`, `/{id}/geojson`.
+- [Расписание смен](app/modules/schedule/README.md): `/api/v1/schedule?date=&office_id=` для таймлайна.
 - [Пользователи и транспорт](app/modules/users/README.md): `worker_profile.transport_type`.
 - [Описание модулей](app/modules/README.md), [схема БД](app/db/README.md), [миграции](migrations/README.md).
 - [Синтетические наборы](../data/synthetic/README.md): 1 500/10 000 заявок;
@@ -79,6 +80,9 @@
   - `WS /api/v1/notifications/ws` — получить личные события через WebSocket.
 - **Маршрутизация:**
   - `POST /api/v1/routes` — рассчитать маршрут между двумя координатами в выбранном режиме; доступно роли `observer`.
+- **Расписание:**
+  - `GET /api/v1/schedule?date=2026-09-17&office_id=1` — бригады и исполнители со сменами
+    и заявками на сутки по Москве; `observer` видит все бригады, `foreman` — только свою.
 Принятые совместно решения:
 
 - Пароли хешируются алгоритмом **Argon2** (`argon2-cffi`).
