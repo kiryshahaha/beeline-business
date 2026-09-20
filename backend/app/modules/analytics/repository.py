@@ -85,3 +85,43 @@ def find_tickets_summary(
         """
     )
     return session.execute(query, parameters).mappings().one()
+
+
+def find_brigades_workload(
+    session: Session,
+    *,
+    brigade_id: int | None = None,
+) -> list[RowMapping]:
+    """Return active and completed-today ticket counts for visible brigades."""
+    conditions: list[str] = []
+    parameters: dict[str, object] = {
+        "planned_status": "planned",
+        "in_progress_status": "in_progress",
+        "completed_status": "completed",
+    }
+    if brigade_id is not None:
+        conditions.append("b.id = :brigade_id")
+        parameters["brigade_id"] = brigade_id
+
+    where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+    query = text(
+        f"""
+        SELECT
+            b.name AS brigade_name,
+            COUNT(DISTINCT t.id) FILTER (
+                WHERE t.status IN (:planned_status, :in_progress_status)
+            ) AS active_tickets,
+            COUNT(DISTINCT t.id) FILTER (
+                WHERE t.status = :completed_status
+                  AND t.updated_at >= date_trunc('day', CURRENT_TIMESTAMP)
+            ) AS completed_today
+        FROM brigades AS b
+        LEFT JOIN brigade_members AS bm ON bm.brigade_id = b.id
+        LEFT JOIN ticket_assignments AS ta ON ta.worker_id = bm.worker_id
+        LEFT JOIN tickets AS t ON t.id = ta.ticket_id
+        {where_clause}
+        GROUP BY b.id, b.name
+        ORDER BY b.id ASC
+        """
+    )
+    return list(session.execute(query, parameters).mappings().all())

@@ -25,7 +25,8 @@
 - [Синтетические наборы](../data/synthetic/README.md): 1 500/10 000 заявок;
   `generate_synthetic.py` создаёт файлы без БД, `seed_synthetic.py` работает только в `*_test`.
 - [Проверки](tests/README.md), [Bruno](bruno/README.md), [аудит](../docs/AUDIT_2026-09-18.md).
-- [Сводка заявок](#сводка-заявок): `/api/v1/analytics/tickets-summary`.
+- [Аналитика](#сводка-заявок): `/api/v1/analytics/tickets-summary`,
+  `/api/v1/analytics/brigades-workload`.
 
 Доступные операции HTTP API:
 
@@ -83,6 +84,8 @@
 - **Аналитика заявок:**
   - `GET /api/v1/analytics/tickets-summary` — количество заявок по статусам за `today`, `week` или `month`;
     доступно ролям `observer` и `foreman`.
+  - `GET /api/v1/analytics/brigades-workload` — активные заявки и завершённые сегодня по бригадам;
+    `observer` видит все бригады, `foreman` — только свою.
 - **Уведомления:**
   - `GET /api/v1/notifications` — личная история событий;
   - `POST, DELETE /api/v1/notifications/push-subscriptions` — зарегистрировать или удалить Firebase-токен браузера;
@@ -182,9 +185,9 @@ backend/
 │   │   └── session.py         # подключение к PostgreSQL, сессия запроса
 │   └── modules/
 │       ├── analytics/
-│       │   ├── repository.py   # SQL-подсчёт сводки заявок
-│       │   ├── router.py       # GET /api/v1/analytics/tickets-summary
-│       │   ├── schemas.py      # период и ответ со счётчиками
+│       │   ├── repository.py   # SQL-подсчёт аналитики
+│       │   ├── router.py       # GET для сводки и загруженности бригад
+│       │   ├── schemas.py      # период, счётчики и workload-ответ
 │       │   └── service.py      # область видимости observer/foreman
 │       ├── auth/
 │       │   ├── dependencies.py # get_current_user, require_roles
@@ -777,6 +780,33 @@ Authorization: Bearer <access token>
 Для `foreman` сервер находит `brigades.id` по `brigades.foreman_id` текущего пользователя,
 игнорирует переданный `office_id` и считает только назначенные заявки своей бригады.
 Если бригада не найдена, API возвращает четыре нулевых счётчика. Роль `worker` получает `403`.
+
+## Загруженность бригад
+
+`GET /api/v1/analytics/brigades-workload` возвращает список бригад с двумя счётчиками:
+
+```http
+GET /api/v1/analytics/brigades-workload
+Authorization: Bearer <access token>
+```
+
+```json
+[
+  {
+    "brigade_name": "Альфа",
+    "active_tickets": 3,
+    "completed_today": 10
+  }
+]
+```
+
+`active_tickets` включает назначенные бригаде заявки со статусами `planned` и `in_progress`.
+`completed_today` включает заявки со статусом `completed`, у которых `updated_at` попадает
+в текущий календарный день. Бригады без заявок возвращаются с нулевыми значениями.
+
+`observer` получает все бригады. `foreman` получает только собственную бригаду;
+если бригада не найдена, API возвращает `[]`. Роль `worker` и запрос без токена получают
+`403` и `401` соответственно.
 
 ## Маршрутизация Geoapify
 

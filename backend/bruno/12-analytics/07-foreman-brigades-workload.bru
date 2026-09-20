@@ -1,0 +1,35 @@
+meta {
+  name: Бригадир получает загруженность своей бригады
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/api/v1/analytics/brigades-workload
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{foreman_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Бригадир получает список с числовыми счётчиками", function () {
+    const body = res.getBody();
+    expect(body).to.be.an("array");
+    body.forEach(function (brigade) {
+      expect(brigade.brigade_name).to.be.a("string").and.not.empty;
+      expect(brigade.active_tickets).to.be.a("number").and.at.least(0);
+      expect(brigade.completed_today).to.be.a("number").and.at.least(0);
+    });
+  });
+}
+
+docs {
+  Для роли foreman сервер возвращает только его бригаду.
+}

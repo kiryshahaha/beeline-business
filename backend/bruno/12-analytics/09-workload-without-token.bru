@@ -1,0 +1,15 @@
+meta {
+  name: Загруженность бригад недоступна без токена
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{base_url}}/api/v1/analytics/brigades-workload
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 401
+}
