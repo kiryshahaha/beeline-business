@@ -27,11 +27,6 @@ tests {
     const status = res.getStatus();
     const body = res.getBody();
 
-    if (status === 503) {
-      expect(body.detail).to.equal("Сервис построения маршрутов не настроен");
-      return;
-    }
-
     expect(status).to.equal(200);
     expect(body.distance_meters).to.be.a("number").and.greaterThan(0);
     expect(body.duration_seconds).to.be.a("number").and.greaterThan(0);

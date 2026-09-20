@@ -1,6 +1,8 @@
 """Work types and their time norms; tickets do not reference this table yet."""
 
-from sqlalchemy import CheckConstraint, Computed, Index, String, func
+from datetime import datetime
+
+from sqlalchemy import CheckConstraint, Computed, DateTime, ForeignKey, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IntegerIdMixin
@@ -26,3 +28,45 @@ class WorkType(IntegerIdMixin, Base):
         CheckConstraint("norm_minutes > 0", name="norm_minutes_positive"),
         Index("uq_work_types_name", func.lower(name), unique=True),
     )
+
+
+class WorkTypePlanningRule(Base):
+    __tablename__ = "work_type_planning_rules"
+
+    work_type_id: Mapped[int] = mapped_column(
+        ForeignKey("work_types.id", ondelete="CASCADE"), primary_key=True
+    )
+    service_duration_source: Mapped[str] = mapped_column(String(20))
+    configured_by: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "service_duration_source IN ('ticket_estimate', 'work_norm')", name="duration_source"
+        ),
+    )
+
+
+class WorkTypeRequiredSkill(Base):
+    __tablename__ = "work_type_required_skills"
+
+    work_type_id: Mapped[int] = mapped_column(
+        ForeignKey("work_type_planning_rules.work_type_id", ondelete="CASCADE"), primary_key=True
+    )
+    skill_id: Mapped[int] = mapped_column(
+        ForeignKey("worker_skills.id", ondelete="RESTRICT"), primary_key=True
+    )
+
+
+class WorkTypeRequiredAppliance(Base):
+    __tablename__ = "work_type_required_appliances"
+
+    work_type_id: Mapped[int] = mapped_column(
+        ForeignKey("work_type_planning_rules.work_type_id", ondelete="CASCADE"), primary_key=True
+    )
+    appliance_id: Mapped[int] = mapped_column(
+        ForeignKey("appliances.id", ondelete="RESTRICT"), primary_key=True
+    )
+    quantity: Mapped[int]
+    __table_args__ = (CheckConstraint("quantity > 0", name="quantity_positive"),)

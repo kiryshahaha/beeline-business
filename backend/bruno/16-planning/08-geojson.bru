@@ -1,0 +1,31 @@
+meta {
+  name: GeoJSON содержит дороги и время прибытия
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/api/v1/routes/{{planning_route_id}}/geojson
+
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Сохранены реальные сегменты ответа провайдера", () => {
+    const features = res.getBody().features;
+    const path = features.find(f => f.properties.kind === "path");
+    expect(path.geometry.type).to.equal("MultiLineString");
+    expect(path.properties.source).to.equal("geoapify");
+    const stops = features.filter(f => f.geometry.type === "Point");
+    expect(path.properties.legs).to.have.lengthOf(stops.length-1);
+    for (const stop of stops) expect(Number.isFinite(Date.parse(stop.properties.arrival_at))).to.equal(true);
+  });
+}
