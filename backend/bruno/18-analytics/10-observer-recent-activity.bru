@@ -1,0 +1,64 @@
+meta {
+  name: Наблюдатель получает ленту последних действий
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{base_url}}/api/v1/analytics/recent-activity?limit=10
+  body: none
+  auth: bearer
+}
+
+params:query {
+  limit: 10
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  const kinds = [
+    "ticket_created",
+    "ticket_assigned",
+    "ticket_status_changed",
+    "comment_added",
+    "comment_edited"
+  ];
+
+  test("Лента содержит события известных видов, новые сверху", function () {
+    const body = res.getBody();
+    expect(body).to.be.an("array");
+    expect(body.length).to.be.at.most(10);
+    let previous = null;
+    body.forEach(function (item) {
+      expect(kinds).to.include(item.kind);
+      expect(item.ticket.id).to.be.a("number");
+      expect(item.ticket.title).to.be.a("string").and.not.empty;
+      const moment = new Date(item.occurred_at).getTime();
+      if (previous !== null) {
+        expect(moment).to.be.at.most(previous);
+      }
+      previous = moment;
+    });
+  });
+
+  test("Событие смены статуса называет новый статус", function () {
+    const changes = res.getBody().filter(function (item) {
+      return item.kind === "ticket_status_changed";
+    });
+    changes.forEach(function (item) {
+      expect(item.details.status).to.be.a("string").and.not.empty;
+    });
+  });
+}
+
+docs {
+  Лента собирается из заявок, событий уведомлений и комментариев.
+  Одна смена статуса показывается один раз, даже если диспетчеров несколько.
+}

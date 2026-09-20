@@ -28,7 +28,7 @@
   `generate_synthetic.py` создаёт файлы без БД, `seed_synthetic.py` работает только в `*_test`.
 - [Проверки](tests/README.md), [Bruno](bruno/README.md), [аудит](../docs/AUDIT_2026-09-18.md).
 - [Аналитика](#сводка-заявок): `/api/v1/analytics/tickets-summary`,
-  `/api/v1/analytics/brigades-workload`.
+  `/api/v1/analytics/brigades-workload`, `/api/v1/analytics/recent-activity`.
 
 Доступные операции HTTP API:
 
@@ -90,6 +90,8 @@
     доступно ролям `observer` и `foreman`.
   - `GET /api/v1/analytics/brigades-workload` — активные заявки и завершённые сегодня по бригадам;
     `observer` видит все бригады, `foreman` — только свою.
+  - `GET /api/v1/analytics/recent-activity` — общая лента последних изменений по заявкам;
+    `observer` видит все заявки, `foreman` — только заявки своей бригады.
 - **Уведомления:**
   - `GET /api/v1/notifications` — личная история событий;
   - `POST, DELETE /api/v1/notifications/push-subscriptions` — зарегистрировать или удалить Firebase-токен браузера;
@@ -859,6 +861,55 @@ Authorization: Bearer <access token>
 `observer` получает все бригады. `foreman` получает только собственную бригаду;
 если бригада не найдена, API возвращает `[]`. Роль `worker` и запрос без токена получают
 `403` и `401` соответственно.
+
+## Лента последних действий
+
+`GET /api/v1/analytics/recent-activity` возвращает общую ленту изменений по заявкам,
+новые события сверху. Параметры `limit` (1–100, по умолчанию 20) и `offset` листают ленту.
+
+```http
+GET /api/v1/analytics/recent-activity?limit=20
+Authorization: Bearer <access token>
+```
+
+```json
+[
+  {
+    "kind": "ticket_status_changed",
+    "occurred_at": "2026-09-20T09:05:00Z",
+    "ticket": {"id": 42, "title": "Монтаж оборудования", "status": "in_progress"},
+    "actor": {"id": 7, "full_name": "Кузнецов Дмитрий", "role": "worker"},
+    "details": {
+      "previous_status": "planned",
+      "status": "in_progress",
+      "worker": null,
+      "comment_id": null,
+      "comment_excerpt": null
+    }
+  }
+]
+```
+
+Отдельной таблицы журнала в системе нет, поэтому лента собирается из уже существующих
+данных одним запросом:
+
+| `kind` | Источник | Автор в `actor` |
+| --- | --- | --- |
+| `ticket_created` | `tickets.created_at` | Нет: создание заявки не требует токена и автор не сохраняется |
+| `ticket_assigned` | `notification_events` | Нет; назначенный исполнитель приходит в `details.worker` |
+| `ticket_status_changed` | `notification_events` | Да, из `data.actor_id` |
+| `comment_added` | `ticket_comments.created_at` | Да, автор комментария |
+| `comment_edited` | `ticket_comments.updated_at` | Да, автор комментария |
+
+Событие смены статуса сохраняется отдельной строкой для каждого диспетчера, поэтому
+одинаковые строки группируются и показываются одним событием. `ticket.status` — текущий
+статус заявки, а не статус на момент события; сам переход виден в `details`.
+`comment_excerpt` содержит начало комментария, длинный текст обрезается многоточием.
+Правки комментария видны последней версией: история текста в базе не хранится.
+
+`observer` получает ленту по всем заявкам. `foreman` получает события только по заявкам,
+назначенным исполнителям его бригады; без бригады — `[]`. Роль `worker` получает `403`,
+запрос без токена — `401`.
 
 ## Маршрутизация Geoapify
 

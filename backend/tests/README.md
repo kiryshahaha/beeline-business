@@ -17,6 +17,7 @@
 | `test_tickets*`, `test_ticket_*` | Заявки, назначения, статусы, комментарии и транзакции |
 | `test_brigades*`, `test_brigade_*`, `test_offices_api.py` | Организация и видимость |
 | `test_appliances_api.py` | Номенклатура и склад |
+| `test_analytics_*` | Сводка заявок, загруженность бригад и лента последних действий |
 | `test_schedule_api.py` | Интервалы смен, включая ночные, заявки на сутки, фильтр офиса и доступ ролей |
 | `test_notifications*`, `test_firebase_gateway.py` | Очередь, WebSocket, токены и граница SDK Firebase |
 | `test_calendar_feed_api.py` | Файл iCalendar, хранение хеша токена, перевыпуск, отзыв и роли |

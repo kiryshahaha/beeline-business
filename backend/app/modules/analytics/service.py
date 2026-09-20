@@ -1,9 +1,18 @@
 """Business rules for ticket analytics."""
 
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
 from app.modules.analytics import repository
-from app.modules.analytics.schemas import AnalyticsPeriod, BrigadeWorkloadItem, TicketsSummary
+from app.modules.analytics.schemas import (
+    ActivityDetails,
+    ActivityItem,
+    ActivityPerson,
+    ActivityTicket,
+    AnalyticsPeriod,
+    BrigadeWorkloadItem,
+    TicketsSummary,
+)
 from app.modules.brigades.repository import find_brigade_by_foreman
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
@@ -59,3 +68,54 @@ def get_brigades_workload(
         )
         for row in rows
     ]
+
+
+def _person(row: RowMapping, prefix: str) -> ActivityPerson | None:
+    if row[f"{prefix}_id"] is None:
+        return None
+    return ActivityPerson(
+        id=row[f"{prefix}_id"],
+        full_name=f"{row[f'{prefix}_surname']} {row[f'{prefix}_name']}",
+        role=row[f"{prefix}_role"],
+    )
+
+
+def _activity_item(row: RowMapping) -> ActivityItem:
+    excerpt = row["comment_excerpt"]
+    if excerpt is not None and row["comment_truncated"]:
+        excerpt += "…"
+    return ActivityItem(
+        kind=row["kind"],
+        occurred_at=row["occurred_at"],
+        ticket=ActivityTicket(
+            id=row["ticket_id"], title=row["ticket_title"], status=row["ticket_status"]
+        ),
+        actor=_person(row, "actor"),
+        details=ActivityDetails(
+            previous_status=row["previous_status"],
+            status=row["new_status"],
+            worker=_person(row, "assignee"),
+            comment_id=row["comment_id"],
+            comment_excerpt=excerpt,
+        ),
+    )
+
+
+def get_recent_activity(
+    session: Session,
+    *,
+    limit: int,
+    offset: int,
+    current_user: UserRead,
+) -> list[ActivityItem]:
+    brigade_id = None
+    if current_user.role == UserRole.FOREMAN:
+        brigade = find_brigade_by_foreman(session, current_user.id)
+        if brigade is None:
+            return []
+        brigade_id = brigade["id"]
+
+    rows = repository.find_recent_activity(
+        session, limit=limit, offset=offset, brigade_id=brigade_id
+    )
+    return [_activity_item(row) for row in rows]

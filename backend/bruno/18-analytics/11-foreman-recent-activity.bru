@@ -1,0 +1,25 @@
+meta {
+  name: Бригадир видит ленту своей бригады
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{base_url}}/api/v1/analytics/recent-activity
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{foreman_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Ответ — массив событий", function () {
+    expect(res.getBody()).to.be.an("array");
+  });
+}

@@ -1,0 +1,23 @@
+meta {
+  name: Неверный limit — 422
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{base_url}}/api/v1/analytics/recent-activity?limit=0
+  body: none
+  auth: bearer
+}
+
+params:query {
+  limit: 0
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 422
+}

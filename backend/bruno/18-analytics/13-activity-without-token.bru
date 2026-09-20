@@ -1,0 +1,15 @@
+meta {
+  name: Лента недоступна без токена — 401
+  type: http
+  seq: 13
+}
+
+get {
+  url: {{base_url}}/api/v1/analytics/recent-activity
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 401
+}
