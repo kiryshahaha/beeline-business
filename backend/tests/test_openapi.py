@@ -29,11 +29,13 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/brigades",
             "/api/v1/brigades/{id}",
             "/api/v1/brigades/{id}/members",
+            "/api/v1/schedule",
             "/api/v1/work-types",
             "/api/v1/work-types/{id}",
             "/api/v1/analytics/tickets-summary",
             "/api/v1/analytics/brigades-workload",
             "/api/v1/analytics/recent-activity",
+            "/api/v1/reports/tickets/export",
         ]
         for path in expected_paths:
             self.assertIn(path, paths, f"Path {path} missing in OpenAPI schema")
@@ -69,6 +71,17 @@ class OpenApiTests(unittest.TestCase):
         self.assertEqual(
             {parameter["name"] for parameter in activity_operation["parameters"]},
             {"limit", "offset"},
+        )
+        self.assertIn(
+            {"BearerAuth": []},
+            paths["/api/v1/reports/tickets/export"]["get"]["security"],
+        )
+        report_content = paths["/api/v1/reports/tickets/export"]["get"]["responses"]["200"][
+            "content"
+        ]
+        self.assertIn("text/csv", report_content)
+        self.assertIn(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", report_content
         )
         workload_operation = paths["/api/v1/analytics/brigades-workload"]["get"]
         self.assertIn({"BearerAuth": []}, workload_operation["security"])

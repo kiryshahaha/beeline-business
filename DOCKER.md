@@ -16,6 +16,13 @@
    ```
    *(В Windows PowerShell: `Copy-Item .env.docker.example .env`)*
 
+   Для планирования задайте в `.env` `PLANNING_ENABLED=true`, непустой
+   `PLANNER_SERVICE_TOKEN` и действующий `GEOAPIFY_API_KEY`. Compose передаст один
+   внутренний token backend и planner. Внутри сети Docker адрес решателя —
+   `http://planner:8001`; `localhost` в контейнере backend указывает на сам backend.
+   Срок действия preview и лимиты времени задаются `PLANNING_PREVIEW_TTL_SECONDS`,
+   `PLANNING_SOLVE_TIME_LIMIT_SECONDS`, `PLANNING_TOTAL_TIMEOUT_SECONDS`.
+
 2. **Запустите сборку и старт всех сервисов:**
    ```bash
    docker compose up --build
@@ -30,6 +37,14 @@
    - Основной API Swagger: [http://localhost:8000/docs](http://localhost:8000/docs)
    - Planner API Swagger: [http://localhost:8001/docs](http://localhost:8001/docs)
    - Healthcheck бэкенда: [http://localhost:8000/health](http://localhost:8000/health)
+
+   Успешный healthcheck подтверждает запуск процесса. Для расчёта нужны также
+   координаты офисов и заявок, будущие смены, транспорт, навыки, резерв оборудования
+   и явно настроенные правила видов работ через
+   `PUT /api/v1/work-types/{id}/planning-rules`. Расчёт запускается через
+   `POST /api/v1/planning/preview`, подтверждение — через
+   `POST /api/v1/planning/plans/{plan_id}/apply` от имени observer.
+   Подробнее: [контракт и ограничения планирования](backend/app/modules/planning/README.md).
 
 ---
 

@@ -1,0 +1,25 @@
+meta {
+  name: Формат XLSX используется по умолчанию
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/reports/tickets/export?status=planned
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Ответ по умолчанию является XLSX-файлом", function () {
+    expect(res.getHeader("content-type")).to.include("spreadsheetml.sheet");
+  });
+}

@@ -2,6 +2,7 @@
 
 from sqlalchemy.orm import Session
 
+from app.core.planning_guard import lock_planning_mutation
 from app.modules.locations import repository
 from app.modules.locations.schemas import LocationCreate, LocationRead
 
@@ -9,6 +10,7 @@ from app.modules.locations.schemas import LocationCreate, LocationRead
 def get_or_create_location(session: Session, data: LocationCreate) -> LocationRead:
     """Create or resolve the full address hierarchy."""
     with session.begin():
+        lock_planning_mutation(session)
         city_id = repository.get_or_create_id(
             session,
             "SELECT id FROM cities WHERE lower(name) = lower(:name)",

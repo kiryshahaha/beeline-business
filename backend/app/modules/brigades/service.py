@@ -4,6 +4,7 @@ from sqlalchemy import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.planning_guard import lock_planning_mutation
 from app.modules.brigades import repository
 from app.modules.brigades.schemas import BrigadeCreate, BrigadeMembersUpdate, BrigadeRead
 from app.modules.users.enums import UserRole
@@ -70,6 +71,7 @@ def _validate_workers(
 def create_brigade(session: Session, data: BrigadeCreate) -> BrigadeRead:
     try:
         with session.begin():
+            lock_planning_mutation(session)
             if repository.find_brigade_by_name(session, data.name) is not None:
                 raise BrigadeNameAlreadyExistsError
             _validate_foreman(session, data.foreman_id)
@@ -89,6 +91,7 @@ def replace_brigade_members(
 ) -> BrigadeRead:
     try:
         with session.begin():
+            lock_planning_mutation(session)
             existing = repository.lock_brigade_by_id(session, brigade_id)
             if existing is None:
                 raise BrigadeNotFoundError

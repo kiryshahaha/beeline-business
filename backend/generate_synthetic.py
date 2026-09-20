@@ -139,6 +139,25 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
                 appliance_id=i,
                 stock=0 if i == 26 else tickets * 3,
             )
+    # Explicit fictional requirements, scoped by seed to keep packages independent.
+    for i, skill in enumerate(SKILLS, 1):
+        add(
+            "work_types",
+            id=i,
+            name=f"{skill} [synthetic {seed}]",
+            travel_minutes=15,
+            work_minutes=30,
+            documents_minutes=10,
+            norm_minutes=55,
+        )
+        add(
+            "work_type_planning_rules",
+            work_type_id=i,
+            service_duration_source="ticket_estimate",
+            configured_by=1,
+        )
+        add("work_type_required_skills", work_type_id=i, skill_id=i)
+        add("work_type_required_appliances", work_type_id=i, appliance_id=i, quantity=1)
     for i in range(1, tickets + 1):
         scenario = SCENARIOS[(i - 1) % len(SCENARIOS)]
         day = start_date + timedelta(days=(i - 1) % days)
@@ -166,7 +185,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             ),
             work_type="Редкий отсутствующий навык"
             if scenario == "missing_skill"
-            else SKILLS[i % 3],
+            else f"{SKILLS[i % 3]} [synthetic {seed}]",
             status=status,
             visit_window_start=start,
             visit_window_end=start
