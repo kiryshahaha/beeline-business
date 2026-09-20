@@ -1,0 +1,25 @@
+meta {
+  name: Аналитика отклоняет неизвестный период
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/analytics/tickets-summary?period=year
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 422
+}
+
+tests {
+  test("Неизвестный период возвращает 422", function () {
+    expect(res.getStatus()).to.equal(422);
+  });
+}

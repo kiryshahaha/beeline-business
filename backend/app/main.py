@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.body_limit import BodyLimitMiddleware
 from app.core.config import get_settings
+from app.modules.analytics.router import router as analytics_router
 from app.modules.appliances.router import (
     appliances_router,
     office_stock_router,
@@ -98,6 +99,7 @@ else:
 app.add_middleware(BodyLimitMiddleware, prefix="/api/v1/planning", max_bytes=64 * 1024)
 app.include_router(locations_router)
 app.include_router(routing_router)
+app.include_router(analytics_router)
 app.include_router(planning_router)
 app.include_router(auth_router)
 app.include_router(users_router)
