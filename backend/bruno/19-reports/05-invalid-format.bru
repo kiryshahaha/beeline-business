@@ -1,0 +1,19 @@
+meta {
+  name: Отчёт отклоняет неподдерживаемый формат
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/reports/tickets/export?format=pdf
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 422
+}

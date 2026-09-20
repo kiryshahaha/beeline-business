@@ -1,0 +1,26 @@
+meta {
+  name: Наблюдатель скачивает CSV заявок
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/reports/tickets/export?format=csv&status=completed&city_id={{city_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("CSV имеет имя файла и тип содержимого", function () {
+    expect(res.getHeader("content-type")).to.include("text/csv");
+    expect(res.getHeader("content-disposition")).to.include("tickets.csv");
+  });
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Отчёт недоступен без токена
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/api/v1/reports/tickets/export?format=csv
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 401
+}
