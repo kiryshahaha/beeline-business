@@ -22,13 +22,15 @@
 
 ```text
 Клиент / Swagger / Bruno -> backend -> PostgreSQL
-Клиент расчёта           -> planner -> OR-Tools
+                        -> planner -> OR-Tools
+                        -> Geoapify (матрицы и дороги)
 ```
 
-Планировщик пока не вызывается автоматически из backend. Сохранить уже построенный
-план можно через `POST /api/v1/routes` или `/routes/batch`, передав инженера, дату,
-упорядоченные точки с временем прибытия и, при наличии, готовую линию маршрута.
-Алгоритм оптимизации и существующие операции с заявками эта операция не изменяет.
+Backend вызывает существующий /api/v1/solve через модуль planning: preview рассчитывает
+предложение, apply одной транзакцией сохраняет назначения, расписание и GeoJSON.
+Цель — выполнить больше заявок в сменах, затем сократить время в пути.
+[Контракт и ограничения](backend/app/modules/planning/README.md).
+Ручное сохранение ранее построенных маршрутов через /api/v1/routes остаётся доступным.
 
 ## Запуск
 
@@ -60,12 +62,15 @@ npm run dev
 ```
 
 Для planner создайте отдельное окружение, установите `planner/requirements.txt`
-и запустите из `planner`: `python -m uvicorn app.main:app --port 8001`.
+и запустите из planner: python -m uvicorn app.main:app --port 8001.
+Оба сервиса требуют одинаковый PLANNER_SERVICE_TOKEN. Backend также нужны
+PLANNING_ENABLED=true и GEOAPIFY_API_KEY; настройка требований видов работ
+описана в [README модуля](backend/app/modules/planning/README.md).
 
 ## Три дополнения
 
 1. **Обмен всеми предметными данными.** `GET /api/v1/data/export?format=xlsx`
-   возвращает книгу из 21 предметного листа; `format=csv` — ZIP с CSV для каждой
+   возвращает книгу из 25 предметных листов; `format=csv` — ZIP с CSV для каждой
    таблицы. Импорт: `POST /api/v1/data/import`, файл в multipart-поле `file`.
    По умолчанию выполняется только проверка (`dry_run=true`). Запись включается
    параметром `dry_run=false`. Подробности — [контракт обмена](docs/DATA_EXCHANGE.md).
@@ -100,7 +105,7 @@ $env:NOTIFICATION_DISPATCHER_ENABLED='false'
 ```
 
 Тесты БД используют случайные схемы и удаляют только собственные схемы. Без
-`TEST_DATABASE_URL` интеграционные тесты пропускаются: это не считается полным прогоном.
+`TEST_DATABASE_URL` интеграционные тесты завершаются ошибкой.
 Как запускать всю коллекцию на чистой тестовой БД — [Bruno README](backend/bruno/README.md).
 
 ```powershell
@@ -108,7 +113,7 @@ $env:NOTIFICATION_DISPATCHER_ENABLED='false'
 npm run lint
 npm run build
 # Из planner, в его окружении
-python -m unittest discover -s tests -p test_api_contract.py -v
+python -m unittest discover -s tests -v
 ```
 
 ## Синтетические данные

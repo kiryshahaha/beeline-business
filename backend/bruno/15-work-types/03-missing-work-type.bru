@@ -1,0 +1,25 @@
+meta {
+  name: Несуществующий вид работ — 404
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/work-types/2147483647
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 404
+}
+
+tests {
+  test("Понятное сообщение об отсутствующем виде работ", function () {
+    expect(res.getBody().detail).to.equal("Вид работ не найден");
+  });
+}

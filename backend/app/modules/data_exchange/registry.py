@@ -5,6 +5,10 @@ from app.db.base import Base
 
 TABLE_NAMES = frozenset(
     {
+        "work_types",
+        "work_type_planning_rules",
+        "work_type_required_skills",
+        "work_type_required_appliances",
         "cities",
         "districts",
         "streets",
@@ -31,7 +35,7 @@ TABLE_NAMES = frozenset(
 TABLES = {table.name: table for table in Base.metadata.sorted_tables if table.name in TABLE_NAMES}
 TABLES["routes"] = TABLES.pop("routes")  # GeoJSON also refers to tickets and locations.
 EXCLUDED_COLUMNS = {"users": {"password_hash"}}
-FORMAT_VERSION = "1"
+FORMAT_VERSION = "2"
 
 
 def columns_for(name: str):
@@ -60,5 +64,9 @@ def describe_tables() -> dict:
             "calendar_tokens",
             "push_subscriptions",
             "data_imports",
+            "push_subscriptions",
+            "data_imports",
+            "planning_plans",
+            "planning_plan_routes",
         ],
     }

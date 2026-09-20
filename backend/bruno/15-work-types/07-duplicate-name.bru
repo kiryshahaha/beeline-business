@@ -1,0 +1,29 @@
+meta {
+  name: Занятое название без учёта регистра — 409
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/api/v1/work-types
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "name": "аварий на ткд",
+    "travel_minutes": 20,
+    "work_minutes": 80,
+    "documents_minutes": 0
+  }
+}
+
+assert {
+  res.status: eq 409
+  res.body.detail: eq "Вид работ с таким названием уже существует"
+}

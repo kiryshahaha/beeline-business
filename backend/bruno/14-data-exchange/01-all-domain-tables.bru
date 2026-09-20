@@ -19,5 +19,5 @@ assert {
 }
 
 tests {
-test("Полная схема без секретов", () => { const schema = res.getBody(); expect(Object.keys(schema.tables)).to.have.lengthOf(21); expect(schema.tables.routes).to.be.an("array"); expect(schema.tables.users.map(c => c.name)).not.to.include("password_hash"); });
+test("Полная схема без секретов", () => { const schema = res.getBody(); expect(Object.keys(schema.tables)).to.have.lengthOf(25); expect(schema.tables.routes).to.be.an("array"); expect(schema.tables.users.map(c => c.name)).not.to.include("password_hash"); });
 }
