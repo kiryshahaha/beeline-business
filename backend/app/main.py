@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.body_limit import BodyLimitMiddleware
 from app.core.config import get_settings
+from app.modules.analytics.router import router as analytics_router
 from app.modules.appliances.router import (
     appliances_router,
     office_stock_router,
@@ -26,8 +27,8 @@ from app.modules.locations.router import router as locations_router
 from app.modules.notifications.dispatcher import create_dispatcher
 from app.modules.notifications.router import router as notifications_router
 from app.modules.offices.router import router as offices_router
-from app.modules.reports.router import router as reports_router
 from app.modules.planning.router import router as planning_router
+from app.modules.reports.router import router as reports_router
 from app.modules.routing.router import router as routing_router
 from app.modules.schedule.router import router as schedule_router
 from app.modules.tickets.router import router as tickets_router
@@ -99,6 +100,7 @@ else:
 app.add_middleware(BodyLimitMiddleware, prefix="/api/v1/planning", max_bytes=64 * 1024)
 app.include_router(locations_router)
 app.include_router(routing_router)
+app.include_router(analytics_router)
 app.include_router(reports_router)
 app.include_router(planning_router)
 app.include_router(auth_router)

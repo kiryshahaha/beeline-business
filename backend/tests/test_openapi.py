@@ -32,6 +32,8 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/schedule",
             "/api/v1/work-types",
             "/api/v1/work-types/{id}",
+            "/api/v1/analytics/tickets-summary",
+            "/api/v1/analytics/brigades-workload",
             "/api/v1/reports/tickets/export",
         ]
         for path in expected_paths:
@@ -73,6 +75,12 @@ class OpenApiTests(unittest.TestCase):
         self.assertIn("text/csv", report_content)
         self.assertIn(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", report_content
+        )
+        workload_operation = paths["/api/v1/analytics/brigades-workload"]["get"]
+        self.assertIn({"BearerAuth": []}, workload_operation["security"])
+        self.assertEqual(
+            workload_operation["responses"]["200"]["content"]["application/json"]["schema"]["type"],
+            "array",
         )
 
     def test_openapi_exposes_brigade_filter_and_foreman_example(self):

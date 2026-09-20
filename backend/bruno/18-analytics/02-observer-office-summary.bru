@@ -1,0 +1,29 @@
+meta {
+  name: Наблюдатель фильтрует сводку по офису
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/analytics/tickets-summary?period=month&office_id={{office_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Фильтр офиса возвращает сводку", function () {
+    const body = res.getBody();
+    expect(body.open).to.be.a("number").and.at.least(0);
+    expect(body.assigned).to.be.a("number").and.at.least(0);
+    expect(body.in_progress).to.be.a("number").and.at.least(0);
+    expect(body.completed).to.be.a("number").and.at.least(0);
+  });
+}
