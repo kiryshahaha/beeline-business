@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.planning_guard import lock_planning_mutation
 from app.db.session import get_session
 from app.modules.appliances import service
 from app.modules.appliances.enums import ApplianceType
@@ -75,6 +76,7 @@ def create_appliance(
 ) -> ApplianceRead:
     try:
         with session.begin():
+            lock_planning_mutation(session)
             return service.create_appliance(session, data)
     except Exception as err:
         _handle_service_error(err)
@@ -133,6 +135,7 @@ def update_appliance(
 ) -> ApplianceRead:
     try:
         with session.begin():
+            lock_planning_mutation(session)
             return service.update_appliance(session, id, data)
     except Exception as err:
         _handle_service_error(err)
@@ -150,6 +153,7 @@ def delete_appliance(
 ) -> None:
     try:
         with session.begin():
+            lock_planning_mutation(session)
             service.delete_appliance(session, id)
     except Exception as err:
         _handle_service_error(err)
@@ -188,6 +192,7 @@ def set_office_stock(
 ) -> OfficeStockItemRead:
     try:
         with session.begin():
+            lock_planning_mutation(session)
             return service.set_office_stock(session, office_id, appliance_id, data.stock)
     except Exception as err:
         _handle_service_error(err)
@@ -226,6 +231,7 @@ def add_ticket_appliance(
 ) -> TicketApplianceRead:
     try:
         with session.begin():
+            lock_planning_mutation(session)
             return service.add_ticket_appliance(session, id, data, current_user)
     except Exception as err:
         _handle_service_error(err)
@@ -245,6 +251,7 @@ def update_ticket_appliance(
 ) -> TicketApplianceRead:
     try:
         with session.begin():
+            lock_planning_mutation(session)
             return service.update_ticket_appliance(session, id, appliance_id, data, current_user)
     except Exception as err:
         _handle_service_error(err)
@@ -263,6 +270,7 @@ def remove_ticket_appliance(
 ) -> None:
     try:
         with session.begin():
+            lock_planning_mutation(session)
             service.remove_ticket_appliance(session, id, appliance_id, current_user)
     except Exception as err:
         _handle_service_error(err)

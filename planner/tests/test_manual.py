@@ -1,33 +1,51 @@
-import json
-from fastapi.testclient import TestClient
-from app.main import app
+"""Transport profiles, eligibility, null arcs and waiting constraints."""
 
-payload = {
-  "num_vehicles": 2,
-  "starts": [0, 1],
-  "ends": [0, 1],
-  "time_matrix": [
-    [0, 50, 20, 50, 300],
-    [50, 0, 50, 20, 300],
-    [20, 50, 0, 50, 300],
-    [50, 20, 50, 0, 300],
-    [300, 300, 300, 300, 0]
-  ],
-  "time_windows": [
-    [540, 1080], 
-    [600, 1140], 
-    [600, 720],  
-    [780, 840],  
-    [540, 1200]  
-  ],
-  "service_times": [0, 0, 60, 60, 60],
-  "allowed_vehicles": {
-    "2": [0],
-    "3": [1]
-  },
-  "penalties": [0, 0, 10000, 10000, 1000]
-}
+import copy
+import unittest
 
-client = TestClient(app)
-response = client.post("/api/v1/solve", json=payload)
-print(json.dumps(response.json(), indent=2))
+from fixtures import problem
+
+from app.modules.solver.schemas import SolveRequest
+from app.modules.solver.service import solve
+
+
+class SolverConstraintTests(unittest.TestCase):
+    def test_mixed_transport_uses_correct_matrix(self):
+        data = problem(n=4, vehicles=2)
+        data["vehicle_profiles"] = ["drive", "walk"]
+        data["matrices"]["walk"] = copy.deepcopy(data["matrices"]["drive"])
+        for i in range(4):
+            for j in range(4):
+                if i != j:
+                    data["matrices"]["walk"]["time_minutes"][i][j] = 20
+        data["allowed_vehicles"] = {"2": [0], "3": [1]}
+        result = solve(SolveRequest.model_validate(data))
+        self.assertEqual(result.dropped_nodes, [])
+        self.assertEqual([r.travel_minutes for r in result.routes], [10, 40])
+
+    def test_empty_eligibility_and_unreachable_return_drop_jobs(self):
+        data = problem(n=4)
+        data["allowed_vehicles"]["1"] = []
+        for matrix in data["matrices"]["drive"].values():
+            for j in range(4):
+                if j != 2:
+                    matrix[2][j] = None
+        result = solve(SolveRequest.model_validate(data))
+        self.assertEqual(result.dropped_nodes, [1, 2])
+
+    def test_zero_waiting_can_delay_departure(self):
+        data = problem(n=2)
+        data["slack_max"] = 0
+        data["time_windows"][1] = [50, 50]
+        result = solve(SolveRequest.model_validate(data))
+        self.assertEqual(result.dropped_nodes, [])
+        self.assertEqual(result.routes[0].steps[0].arrival_time, 45)
+        self.assertEqual(result.routes[0].waiting_minutes, 0)
+
+    def test_night_shift_extends_beyond_midnight(self):
+        data = problem(n=2, horizon=1800)
+        data["vehicle_time_windows"] = [[1320, 1800]]
+        data["time_windows"][1] = [1500, 1600]
+        result = solve(SolveRequest.model_validate(data))
+        self.assertEqual(result.dropped_nodes, [])
+        self.assertGreaterEqual(result.routes[0].steps[1].arrival_time, 1500)

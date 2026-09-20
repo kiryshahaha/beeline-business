@@ -18,7 +18,7 @@ class DatabaseTestCase(unittest.TestCase):
     def setUpClass(cls):
         database_url = os.getenv("TEST_DATABASE_URL")
         if not database_url:
-            raise unittest.SkipTest("Set TEST_DATABASE_URL for PostgreSQL integration tests")
+            raise RuntimeError("TEST_DATABASE_URL is required for PostgreSQL integration tests")
         parsed_url = make_url(database_url)
         if parsed_url.get_backend_name() != "postgresql" or not (
             parsed_url.database or ""
@@ -72,7 +72,9 @@ class CommittedDatabaseTestCase(DatabaseTestCase):
                 raise RuntimeError("Refusing to reset tables outside the isolated test schema")
             connection.execute(
                 text(
-                    "TRUNCATE data_imports, routes, ticket_appliances, "
+                    "TRUNCATE planning_plan_routes, planning_plans, work_type_required_skills, "
+                    "work_type_required_appliances, work_type_planning_rules, "
+                    "data_imports, routes, ticket_appliances, "
                     "appliance_stocks, appliances, "
                     "brigade_members, brigades, offices, notification_events, "
                     "push_subscriptions, ticket_comments, ticket_assignments, "

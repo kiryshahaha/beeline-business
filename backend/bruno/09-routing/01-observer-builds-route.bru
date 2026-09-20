@@ -26,11 +26,6 @@ tests {
     const status = res.getStatus();
     const body = res.getBody();
 
-    if (status === 503) {
-      expect(body.detail).to.equal("Сервис построения маршрутов не настроен");
-      return;
-    }
-
     expect(status).to.equal(200);
     expect(body.distance_meters).to.be.a("number").and.greaterThan(0);
     expect(body.duration_seconds).to.be.a("number").and.greaterThan(0);
@@ -42,5 +37,5 @@ tests {
 docs {
   Координаты запроса указываются как latitude/longitude. Координаты в GeoJSON-линии
   возвращаются как longitude/latitude. При наличии GEOAPIFY_API_KEY запрос делает
-  реальный платный вызов Geoapify; без ключа проверяется ответ 503 о настройке сервиса.
+  реальный платный вызов Geoapify. В CI run_planning_e2e.py подставляет HTTP-фикстуру.
 }

@@ -1,0 +1,27 @@
+meta {
+  name: Применённый план актуален
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/api/v1/planning/plans/{{planning_plan_id}}
+
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Состояние сверено с базой", () => {
+    expect(res.getBody().state).to.equal("applied");
+    expect(res.getBody().is_current).to.equal(true);
+    expect(res.getBody().input_snapshot).to.equal(undefined);
+  });
+}
