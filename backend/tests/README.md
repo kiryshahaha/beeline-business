@@ -19,6 +19,7 @@
 | `test_appliances_api.py` | Номенклатура и склад |
 | `test_schedule_api.py` | Интервалы смен, включая ночные, заявки на сутки, фильтр офиса и доступ ролей |
 | `test_notifications*`, `test_firebase_gateway.py` | Очередь, WebSocket, токены и граница SDK Firebase |
+| `test_calendar_feed_api.py` | Файл iCalendar, хранение хеша токена, перевыпуск, отзыв и роли |
 | `test_database.py`, `test_locations_api.py`, `test_*migration.py` | Ограничения БД и миграции |
 | `test_seed_demo.py`, `test_openapi.py`, `test_enum_types.py`, `test_health.py` | Демонстрационные данные и публичные контракты |
 

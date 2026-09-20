@@ -50,6 +50,7 @@ class DataFormatTests(unittest.TestCase):
             set(Base.metadata.tables) - set(TABLES),
             {
                 "refresh_tokens",
+                "calendar_tokens",
                 "push_subscriptions",
                 "data_imports",
                 "planning_plans",

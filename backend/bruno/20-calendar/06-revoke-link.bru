@@ -1,0 +1,19 @@
+meta {
+  name: Исполнитель отзывает ссылку
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{base_url}}/api/v1/schedule/calendar/token
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{worker_access_token}}
+}
+
+assert {
+  res.status: eq 204
+}

@@ -21,6 +21,7 @@ from app.modules.auth.schemas import (
     TOKEN_RESPONSE_EXAMPLE,
 )
 from app.modules.brigades.router import router as brigades_router
+from app.modules.calendar_feed.router import router as calendar_router
 from app.modules.comments.router import router as comments_router
 from app.modules.data_exchange.router import router as data_exchange_router
 from app.modules.locations.router import router as locations_router
@@ -113,6 +114,7 @@ app.include_router(brigades_router)
 app.include_router(work_types_router)
 app.include_router(tickets_router)
 app.include_router(ticket_appliances_router)
+app.include_router(calendar_router)
 app.include_router(comments_router)
 app.include_router(notifications_router)
 app.include_router(data_exchange_router)

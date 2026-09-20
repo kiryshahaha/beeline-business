@@ -61,6 +61,8 @@ services:
       GEOAPIFY_TIMEOUT_SECONDS: ${GEOAPIFY_TIMEOUT_SECONDS:-10}
       AUTO_SEED: ${AUTO_SEED:-false}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:

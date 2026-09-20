@@ -61,6 +61,7 @@ def describe_tables() -> dict:
         "excluded": [
             "users.password_hash",
             "refresh_tokens",
+            "calendar_tokens",
             "push_subscriptions",
             "data_imports",
             "planning_plans",
