@@ -33,6 +33,7 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/work-types/{id}",
             "/api/v1/analytics/tickets-summary",
             "/api/v1/analytics/brigades-workload",
+            "/api/v1/analytics/recent-activity",
         ]
         for path in expected_paths:
             self.assertIn(path, paths, f"Path {path} missing in OpenAPI schema")
@@ -63,6 +64,12 @@ class OpenApiTests(unittest.TestCase):
             paths["/api/v1/notifications/push-subscriptions"]["delete"],
         )
         self.assertTrue(all(operation.get("security") for operation in protected_operations))
+        activity_operation = paths["/api/v1/analytics/recent-activity"]["get"]
+        self.assertIn({"BearerAuth": []}, activity_operation["security"])
+        self.assertEqual(
+            {parameter["name"] for parameter in activity_operation["parameters"]},
+            {"limit", "offset"},
+        )
         workload_operation = paths["/api/v1/analytics/brigades-workload"]["get"]
         self.assertIn({"BearerAuth": []}, workload_operation["security"])
         self.assertEqual(

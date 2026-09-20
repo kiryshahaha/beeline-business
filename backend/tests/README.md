@@ -17,6 +17,7 @@
 | `test_tickets*`, `test_ticket_*` | Заявки, назначения, статусы, комментарии и транзакции |
 | `test_brigades*`, `test_brigade_*`, `test_offices_api.py` | Организация и видимость |
 | `test_appliances_api.py` | Номенклатура и склад |
+| `test_analytics_*` | Сводка заявок, загруженность бригад и лента последних действий |
 | `test_notifications*`, `test_firebase_gateway.py` | Очередь, WebSocket, токены и граница SDK Firebase |
 | `test_database.py`, `test_locations_api.py`, `test_*migration.py` | Ограничения БД и миграции |
 | `test_seed_demo.py`, `test_openapi.py`, `test_enum_types.py`, `test_health.py` | Демонстрационные данные и публичные контракты |
