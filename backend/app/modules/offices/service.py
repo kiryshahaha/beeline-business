@@ -3,6 +3,7 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.planning_guard import lock_planning_mutation
 from app.modules.offices import repository
 from app.modules.offices.schemas import OfficeCreate, OfficeRead
 
@@ -11,6 +12,7 @@ def create_office(session: Session, office_in: OfficeCreate) -> OfficeRead:
     # Optional: could check if location_id exists in locations,
     # but Postgres foreign key will enforce it.
     try:
+        lock_planning_mutation(session)
         office_id = repository.add_office(session, office_in.name, office_in.location_id)
         session.commit()
     except Exception as e:

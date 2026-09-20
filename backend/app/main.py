@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.body_limit import BodyLimitMiddleware
 from app.core.config import get_settings
 from app.modules.appliances.router import (
     appliances_router,
@@ -25,6 +26,7 @@ from app.modules.locations.router import router as locations_router
 from app.modules.notifications.dispatcher import create_dispatcher
 from app.modules.notifications.router import router as notifications_router
 from app.modules.offices.router import router as offices_router
+from app.modules.planning.router import router as planning_router
 from app.modules.routing.router import router as routing_router
 from app.modules.schedule.router import router as schedule_router
 from app.modules.tickets.router import router as tickets_router
@@ -41,6 +43,7 @@ from app.modules.users.schemas import (
     WORKER_SKILL_CREATE_EXAMPLE,
     WORKER_SKILL_EXAMPLE,
 )
+from app.modules.work_types.router import router as work_types_router
 
 
 @asynccontextmanager
@@ -92,8 +95,10 @@ else:
         allow_headers=["*"],
     )
 
+app.add_middleware(BodyLimitMiddleware, prefix="/api/v1/planning", max_bytes=64 * 1024)
 app.include_router(locations_router)
 app.include_router(routing_router)
+app.include_router(planning_router)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(skills_router)
@@ -101,6 +106,7 @@ app.include_router(offices_router)
 app.include_router(office_stock_router)
 app.include_router(appliances_router)
 app.include_router(brigades_router)
+app.include_router(work_types_router)
 app.include_router(tickets_router)
 app.include_router(ticket_appliances_router)
 app.include_router(comments_router)

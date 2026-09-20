@@ -1,0 +1,51 @@
+meta {
+  name: Справочник видов работ
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/work-types
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body: isArray
+}
+
+script:post-response {
+  if (res.getStatus() === 200 && res.getBody().length > 0) {
+    bru.setVar("work_type_id", res.getBody()[0].id);
+  }
+}
+
+tests {
+  test("Есть все виды работ из нормативов организаторов", function () {
+    const names = res.getBody().map(function (item) { return item.name; });
+    expect(names).to.include.members([
+      "Подключение клиентов Базовая",
+      "Аварий на ТКД",
+      "Дозаказ оборудования",
+      "Локальная заявка/ремонт у клиента"
+    ]);
+  });
+
+  test("Норматив равен сумме дороги, работ и документов", function () {
+    res.getBody().forEach(function (item) {
+      expect(item.norm_minutes).to.equal(
+        item.travel_minutes + item.work_minutes + item.documents_minutes
+      );
+    });
+  });
+}
+
+docs {
+  Стартовые строки создаёт миграция 0011; добавляет и меняет виды работ наблюдатель.
+  ID первого вида работ сохраняется в work_type_id для следующего запроса.
+}

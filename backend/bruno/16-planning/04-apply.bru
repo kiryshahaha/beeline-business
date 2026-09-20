@@ -1,0 +1,34 @@
+meta {
+  name: Применить назначения и маршруты
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/api/v1/planning/plans/{{planning_plan_id}}/apply
+
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    bru.setVar("planning_route_id", res.getBody().routes[0].id);
+    bru.setVar("planning_saved_ids", JSON.stringify(res.getBody().routes.map(r => r.id)));
+  }
+}
+
+tests {
+  test("Одна транзакция назначила 24 заявки", () => {
+    expect(res.getBody().already_applied).to.equal(false);
+    expect(res.getBody().assigned_ticket_ids).to.have.lengthOf(24);
+    for (const r of res.getBody().routes) expect(r.route_number).to.equal(1);
+  });
+}

@@ -1,5 +1,6 @@
 """Provider-neutral contracts for route calculation and persisted route snapshots."""
 
+import math
 from datetime import date, timedelta, timezone
 from typing import Annotated, Any, Literal, Self
 
@@ -90,14 +91,58 @@ class LineString(StrictModel):
     coordinates: list[Position] = Field(min_length=2, max_length=20000)
 
 
+class MultiLineString(StrictModel):
+    type: Literal["MultiLineString"] = "MultiLineString"
+    coordinates: list[list[Position]] = Field(min_length=1, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_lines(self) -> Self:
+        if any(len(line) < 2 for line in self.coordinates):
+            raise ValueError("Каждая линия должна содержать минимум две точки")
+        if sum(map(len, self.coordinates)) > 20000:
+            raise ValueError("Слишком много координат маршрута")
+        return self
+
+
+class RouteLeg(StrictModel):
+    from_sequence: PositiveInt32
+    to_sequence: PositiveInt32
+    distance_meters: float = Field(ge=0, allow_inf_nan=False)
+    duration_seconds: float = Field(ge=0, allow_inf_nan=False)
+    geometry_start: int = Field(ge=0, strict=True)
+    geometry_end: int = Field(ge=0, strict=True)
+
+
+class GeoapifyPathProperties(StrictModel):
+    kind: Literal["path"] = "path"
+    source: Literal["geoapify"] = "geoapify"
+    mode: RouteMode
+    traffic: Literal["free_flow"] = "free_flow"
+    route_type: Literal["balanced"] = "balanced"
+    snap_limit_meters: float = Field(default=100, gt=0, le=1000, allow_inf_nan=False)
+    legs: list[RouteLeg] = Field(min_length=1, max_length=999)
+
+
+def position_distance(a, b) -> float:
+    lon1, lat1, lon2, lat2 = map(math.radians, (*a, *b))
+    h = (
+        math.sin((lat2 - lat1) / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    )
+    return 6_371_000 * 2 * math.asin(min(1, math.sqrt(h)))
+
+
 class RouteCreate(StrictModel):
     worker_id: PositiveInt32
     route_date: date
     stops: list[RouteStop] = Field(min_length=1, max_length=1000)
-    geometry: LineString | None = None
+    geometry: LineString | MultiLineString | None = None
+    path_properties: GeoapifyPathProperties | None = None
 
     @model_validator(mode="after")
     def validate_schedule(self) -> Self:
+        if isinstance(self.geometry, MultiLineString) != (self.path_properties is not None):
+            raise ValueError("Geoapify geometry requires its leg metadata")
         if self.stops[0].arrival_at.astimezone(MOSCOW).date() != self.route_date:
             raise ValueError("Первая точка должна относиться к дате маршрута (Europe/Moscow)")
         if any(b.arrival_at < a.arrival_at for a, b in zip(self.stops, self.stops[1:])):
@@ -132,8 +177,8 @@ class PathProperties(StrictModel):
 
 class PathFeature(StrictModel):
     type: Literal["Feature"] = "Feature"
-    geometry: LineString
-    properties: PathProperties
+    geometry: LineString | MultiLineString
+    properties: PathProperties | GeoapifyPathProperties
 
 
 class RouteProperties(StrictModel):
@@ -161,6 +206,40 @@ class RouteGeoJSON(StrictModel):
             stops=[RouteStop(**f.properties.model_dump(exclude={"sequence"})) for f in stops],
         )
         if paths:
+            if isinstance(paths[0].properties, GeoapifyPathProperties):
+                path = paths[0]
+                if not isinstance(path.geometry, MultiLineString):
+                    raise ValueError("Geoapify path must be MultiLineString")
+                lines, legs = path.geometry.coordinates, path.properties.legs
+                if len(legs) != len(stops) - 1:
+                    raise ValueError("Неверное число переходов")
+                cursor = 0
+                for index, leg in enumerate(legs):
+                    if (leg.from_sequence, leg.to_sequence) != (index + 1, index + 2):
+                        raise ValueError("Неверный порядок переходов")
+                    if leg.geometry_start != cursor or not cursor <= leg.geometry_end <= len(lines):
+                        raise ValueError("Неверные индексы геометрии перехода")
+                    start, end = (
+                        stops[index].geometry.coordinates,
+                        stops[index + 1].geometry.coordinates,
+                    )
+                    if leg.geometry_end == cursor:
+                        if start != end or leg.distance_meters != 0 or leg.duration_seconds != 0:
+                            raise ValueError("Пустая линия только для совпадающих точек")
+                    elif any(
+                        position_distance(a, b) > path.properties.snap_limit_meters
+                        for a, b in (
+                            (start, lines[cursor][0]),
+                            (end, lines[leg.geometry_end - 1][-1]),
+                        )
+                    ):
+                        raise ValueError("Геометрия слишком далеко от точки визита")
+                    cursor = leg.geometry_end
+                if cursor != len(lines):
+                    raise ValueError("Неучтённые линии маршрута")
+                return self
+            if not isinstance(paths[0].geometry, LineString):
+                raise ValueError("Обычный маршрут должен быть LineString")
             line = paths[0].geometry.coordinates
             if (
                 line[0] != stops[0].geometry.coordinates

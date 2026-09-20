@@ -11,6 +11,7 @@ from app.modules.entrances.models import Entrance
 from app.modules.locations.models import Location
 from app.modules.notifications.models import NotificationEvent, PushSubscription
 from app.modules.offices.models import Office  # noqa: F401
+from app.modules.planning.models import PlanningPlan, PlanningPlanRoute
 from app.modules.routing.models import Route
 from app.modules.streets.models import Street
 from app.modules.tickets.models import Ticket, TicketAssignment
@@ -20,6 +21,12 @@ from app.modules.users.models import (
     Worker,
     WorkerSkill,
     WorkerSkillAssignment,
+)
+from app.modules.work_types.models import (
+    WorkType,
+    WorkTypePlanningRule,
+    WorkTypeRequiredAppliance,
+    WorkTypeRequiredSkill,
 )
 
 __all__ = [
@@ -46,4 +53,10 @@ __all__ = [
     "Worker",
     "WorkerSkill",
     "WorkerSkillAssignment",
+    "WorkType",
+    "WorkTypePlanningRule",
+    "WorkTypeRequiredSkill",
+    "WorkTypeRequiredAppliance",
+    "PlanningPlan",
+    "PlanningPlanRoute",
 ]

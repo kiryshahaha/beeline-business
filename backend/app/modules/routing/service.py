@@ -5,6 +5,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.planning_guard import lock_planning_mutation
 from app.db.models import Brigade, BrigadeMember, Location, Ticket, Worker
 from app.modules.routing.models import Route
 from app.modules.routing.schemas import RouteCreate, RouteGeoJSON, RouteRead
@@ -97,7 +98,9 @@ def build_geojson(session: Session, data: RouteCreate, number: int) -> dict:
                     "type": "LineString",
                     "coordinates": positions,
                 },
-                "properties": {
+                "properties": data.path_properties.model_dump(mode="json")
+                if data.path_properties
+                else {
                     "kind": "path",
                     "source": "provided" if data.geometry else "straight_lines",
                 },
@@ -118,35 +121,40 @@ def build_geojson(session: Session, data: RouteCreate, number: int) -> dict:
 
 def save_routes(session: Session, data: list[RouteCreate]) -> list[RouteRead]:
     with session.begin():
-        # Lock workers in a stable order: prevents duplicate numbers and batch deadlocks.
-        ids = sorted({route.worker_id for route in data})
-        workers = list(
-            session.scalars(
-                select(Worker.user_id)
-                .where(Worker.user_id.in_(ids))
-                .order_by(Worker.user_id)
-                .with_for_update()
-            )
+        lock_planning_mutation(session)
+        return save_routes_in_transaction(session, data)
+
+
+def save_routes_in_transaction(session: Session, data: list[RouteCreate]) -> list[RouteRead]:
+    # Lock workers in a stable order: prevents duplicate numbers and batch deadlocks.
+    ids = sorted({route.worker_id for route in data})
+    workers = list(
+        session.scalars(
+            select(Worker.user_id)
+            .where(Worker.user_id.in_(ids))
+            .order_by(Worker.user_id)
+            .with_for_update()
         )
-        if workers != ids:
-            raise RouteValidationError("Исполнитель не найден")
-        result = []
-        for item in data:
-            number = (
-                session.scalar(
-                    select(func.max(Route.route_number)).where(
-                        Route.worker_id == item.worker_id, Route.route_date == item.route_date
-                    )
+    )
+    if workers != ids:
+        raise RouteValidationError("Исполнитель не найден")
+    result = []
+    for item in data:
+        number = (
+            session.scalar(
+                select(func.max(Route.route_number)).where(
+                    Route.worker_id == item.worker_id, Route.route_date == item.route_date
                 )
-                or 0
-            ) + 1
-            route = Route(
-                worker_id=item.worker_id,
-                route_date=item.route_date,
-                route_number=number,
-                geojson=build_geojson(session, item, number),
             )
-            session.add(route)
-            session.flush()
-            result.append(RouteRead.model_validate(route))
-        return result
+            or 0
+        ) + 1
+        route = Route(
+            worker_id=item.worker_id,
+            route_date=item.route_date,
+            route_number=number,
+            geojson=build_geojson(session, item, number),
+        )
+        session.add(route)
+        session.flush()
+        result.append(RouteRead.model_validate(route))
+    return result

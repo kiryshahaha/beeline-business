@@ -11,11 +11,15 @@
     "appliances": 27,
     "cities": 3,
     "users": 248,
+    "work_types": 3,
     "worker_skills": 3,
     "districts": 12,
     "streets": 12,
+    "work_type_planning_rules": 3,
     "workers": 240,
     "buildings": 3334,
+    "work_type_required_appliances": 3,
+    "work_type_required_skills": 3,
     "worker_skill_assignments": 480,
     "entrances": 3334,
     "locations": 3334,
@@ -42,12 +46,12 @@
   ],
   "files": {
     "dataset.zip": {
-      "bytes": 471049,
-      "sha256": "f9b445525686efb611a95b63cbc49e6cdca7d2fa39972e178a8f8faa434193d9"
+      "bytes": 474337,
+      "sha256": "36bc205a98055320a857edbe43dd67eb834c41f70b05fd43bd6b60585b649a05"
     },
     "dataset.xlsx": {
-      "bytes": 1637515,
-      "sha256": "673412ea4e641650a8b8c9ebd0c24f98d11b8bd79147110f25bd6fc7f22b54f4"
+      "bytes": 1643105,
+      "sha256": "2b9483af94d81967ea6519a69b62ed4fe4c7f491f775aa3d55cbfa5177500b12"
     }
   },
   "notes": [

@@ -4,7 +4,8 @@
 | --- | --- |
 | [DATA_EXCHANGE.md](DATA_EXCHANGE.md) | Структура CSV/XLSX, импорт, экспорт, ID, безопасность и примеры |
 | [AUDIT_2026-09-18.md](AUDIT_2026-09-18.md) | Области проверки, подтверждённые проблемы и результаты тестов |
-| [superpowers](superpowers) | Существующие проектные заметки о фильтрации бригад; не контракт API |
+| [PLANNING_VERIFICATION.md](PLANNING_VERIFICATION.md) | Реализованная интеграция planner, результаты проверок и ограничения окружения |
+| [PLANNER_INTEGRATION.md](PLANNER_INTEGRATION.md) | Исходный технический аудит и проект интеграции; актуальный контракт — в README модуля planning |
 
 Контракт работающего API также доступен в `/docs` и `/openapi.json` backend.
 Локальные README внутри модулей объясняют соседние файлы и ограничения моделей.

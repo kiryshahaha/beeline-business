@@ -1,9 +1,11 @@
 """HTTP boundary for Geoapify Routing API."""
 
+import math
 from typing import Any
 
 import httpx
 
+from app.core.http_limits import bounded_request
 from app.modules.routing.schemas import GeoPoint, RouteMatrixCell, RouteMatrixResult, RouteResult
 
 ROUTING_URL = "https://api.geoapify.com/v1/routing"
@@ -175,9 +177,14 @@ class GeoapifyRoutingClient:
             raise GeoapifyMalformedResponseError("Geoapify matrix response is malformed")
 
         cells: list[list[RouteMatrixCell]] = []
-        for row in rows:
+        for i, row in enumerate(rows):
             if not isinstance(row, list) or len(row) != target_count:
                 raise GeoapifyMalformedResponseError("Geoapify matrix response is malformed")
+            for j, cell in enumerate(row):
+                if isinstance(cell, dict) and (
+                    cell.get("source_index", i) != i or cell.get("target_index", j) != j
+                ):
+                    raise GeoapifyMalformedResponseError("Matrix index does not match its position")
             cells.append([GeoapifyRoutingClient._parse_matrix_cell(cell) for cell in row])
         return RouteMatrixResult(cells=cells)
 
@@ -188,6 +195,8 @@ class GeoapifyRoutingClient:
 
         distance = cell.get("distance")
         duration = cell.get("time")
+        if (distance is None) != (duration is None):
+            raise GeoapifyMalformedResponseError("Incomplete unreachable matrix cell")
         if not (
             GeoapifyRoutingClient._is_optional_number(distance)
             and GeoapifyRoutingClient._is_optional_number(duration)
@@ -200,4 +209,86 @@ class GeoapifyRoutingClient:
 
     @staticmethod
     def _is_optional_number(value: Any) -> bool:
-        return value is None or (isinstance(value, (int, float)) and not isinstance(value, bool))
+        return value is None or (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            and value >= 0
+        )
+
+
+class AsyncGeoapifyRoutingClient:
+    """Pooled async variant using the same provider parsing as the existing routing API."""
+
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        timeout: float = 10,
+        transport=None,
+        base_url: str = "https://api.geoapify.com/v1",
+    ):
+        self._key = api_key
+        self._client = httpx.AsyncClient(
+            base_url=base_url.rstrip("/") + "/",
+            timeout=timeout,
+            transport=transport,
+            follow_redirects=False,
+        )
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        await self._client.aclose()
+
+    async def _request(self, method: str, path: str, **kwargs):
+        from app.modules.planning.errors import PlanningError
+
+        try:
+            response = await bounded_request(self._client, method, path, **kwargs)
+        except ValueError as error:
+            raise PlanningError("routing_invalid_response", 502) from error
+        except httpx.TimeoutException as error:
+            raise PlanningError("routing_timeout", 504) from error
+        except httpx.RequestError as error:
+            raise PlanningError("routing_unavailable", 502) from error
+        if response.status_code != 200:
+            raise PlanningError("routing_unavailable", 502)
+        return response
+
+    async def build_route_matrix(self, *, sources, targets, mode):
+        if not sources or not targets or len(sources) * len(targets) > MAX_ROUTE_MATRIX_CELLS:
+            raise GeoapifyMatrixSizeError("Invalid matrix dimensions")
+        response = await self._request(
+            "POST",
+            "routematrix",
+            params={"apiKey": self._key},
+            json={
+                "mode": mode,
+                "units": "metric",
+                "type": "balanced",
+                "traffic": "free_flow",
+                "sources": [{"location": list(p)} for p in sources],
+                "targets": [{"location": list(p)} for p in targets],
+            },
+        )
+        return GeoapifyRoutingClient._parse_matrix(
+            response, source_count=len(sources), target_count=len(targets)
+        )
+
+    async def build_route(self, *, origin, destination, mode):
+        response = await self._request(
+            "GET",
+            "routing",
+            params={
+                "apiKey": self._key,
+                "waypoints": f"{origin[1]},{origin[0]}|{destination[1]},{destination[0]}",
+                "mode": mode,
+                "format": "geojson",
+                "units": "metric",
+                "type": "balanced",
+                "traffic": "free_flow",
+            },
+        )
+        return GeoapifyRoutingClient._parse_route(response)

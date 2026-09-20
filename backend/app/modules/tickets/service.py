@@ -3,6 +3,7 @@
 from sqlalchemy import RowMapping
 from sqlalchemy.orm import Session
 
+from app.core.planning_guard import lock_planning_mutation
 from app.modules.locations.schemas import LocationRead
 from app.modules.notifications.enums import NotificationKind
 from app.modules.tickets import repository
@@ -96,6 +97,7 @@ def _ticket_from_row(details: RowMapping) -> TicketRead:
 
 def create_ticket(session: Session, data: TicketCreate) -> TicketRead:
     with session.begin():
+        lock_planning_mutation(session)
         if repository.find_location_id(session, data.location_id) is None:
             raise LocationNotFoundError
         values = data.model_dump()
@@ -107,21 +109,28 @@ def create_ticket(session: Session, data: TicketCreate) -> TicketRead:
 
 def replace_assignees(session: Session, ticket_id: int, worker_ids: list[int]) -> TicketRead:
     with session.begin():
-        ticket = repository.lock_ticket(session, ticket_id)
-        if ticket is None:
-            raise TicketNotFoundError
-        if repository.find_worker_ids(session, worker_ids) != set(worker_ids):
-            raise WorkerNotFoundError
-        new_worker_ids = repository.replace_assignees(session, ticket_id, worker_ids)
-        for worker_id in new_worker_ids:
-            repository.add_notification_events(
-                session,
-                [worker_id],
-                kind=NotificationKind.TICKET_ASSIGNED,
-                ticket_id=ticket_id,
-                data={"title": ticket["title"], "worker_id": worker_id},
-            )
-        return get_ticket(session, ticket_id)
+        lock_planning_mutation(session)
+        return replace_assignees_in_transaction(session, ticket_id, worker_ids)
+
+
+def replace_assignees_in_transaction(
+    session: Session, ticket_id: int, worker_ids: list[int]
+) -> TicketRead:
+    ticket = repository.lock_ticket(session, ticket_id)
+    if ticket is None:
+        raise TicketNotFoundError
+    if repository.find_worker_ids(session, worker_ids) != set(worker_ids):
+        raise WorkerNotFoundError
+    new_worker_ids = repository.replace_assignees(session, ticket_id, worker_ids)
+    for worker_id in new_worker_ids:
+        repository.add_notification_events(
+            session,
+            [worker_id],
+            kind=NotificationKind.TICKET_ASSIGNED,
+            ticket_id=ticket_id,
+            data={"title": ticket["title"], "worker_id": worker_id},
+        )
+    return get_ticket(session, ticket_id)
 
 
 def update_ticket_status(
@@ -133,6 +142,7 @@ def update_ticket_status(
     if current_user.role == UserRole.FOREMAN:
         raise PermissionDeniedError
     with session.begin():
+        lock_planning_mutation(session)
         ticket = repository.lock_ticket(session, ticket_id)
         if ticket is None:
             raise TicketNotFoundError
