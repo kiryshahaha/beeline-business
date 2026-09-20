@@ -3,6 +3,7 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.planning_guard import lock_planning_mutation
 from app.modules.work_types import repository
 from app.modules.work_types.schemas import (
     NORM_PARTS,
@@ -38,6 +39,7 @@ def get_work_type(session: Session, work_type_id: int) -> WorkTypeRead:
 def create_work_type(session: Session, data: WorkTypeCreate) -> WorkTypeRead:
     try:
         with session.begin():
+            lock_planning_mutation(session)
             if repository.find_id_by_name(session, data.name) is not None:
                 raise WorkTypeNameAlreadyExistsError
             work_type_id = repository.add_work_type(session, data.model_dump())
@@ -51,6 +53,7 @@ def update_work_type(session: Session, work_type_id: int, data: WorkTypeUpdate) 
     changes = data.model_dump(exclude_unset=True)
     try:
         with session.begin():
+            lock_planning_mutation(session)
             current = repository.lock_work_type(session, work_type_id)
             if current is None:
                 raise WorkTypeNotFoundError

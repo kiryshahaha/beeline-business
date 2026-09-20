@@ -1,15 +1,9 @@
 """Round trips across migrated databases, including historical schema upgrades."""
 
-from contextlib import contextmanager
-from pathlib import Path
-from uuid import uuid4
-
 from alembic import command
-from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
-from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.core.security import create_access_token
 from app.db.session import get_session
@@ -20,26 +14,8 @@ from app.modules.data_exchange.service import export_data, import_data
 from app.modules.routing.schemas import RouteCreate
 from app.modules.routing.service import save_routes
 from generate_synthetic import generate_dataset
+from testing.database import migrated_schema
 from tests.support import DatabaseTestCase
-
-
-@contextmanager
-def migrated_schema(admin_engine, revision="head"):
-    """Create/drop only a newly generated schema in the already verified test database."""
-    name = "beeline_exchange_" + uuid4().hex
-    with admin_engine.begin() as connection:
-        connection.execute(CreateSchema(name))
-    engine = create_engine(admin_engine.url, connect_args={"options": f"-csearch_path={name}"})
-    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
-    try:
-        with engine.connect() as connection:
-            config.attributes["connection"] = connection
-            command.upgrade(config, revision)
-        yield engine, config
-    finally:
-        engine.dispose()
-        with admin_engine.begin() as connection:
-            connection.execute(DropSchema(name, cascade=True))
 
 
 class ExchangeRoundtripTests(DatabaseTestCase):

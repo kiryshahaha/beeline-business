@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI
 
+from app.body_limit import BodyLimitMiddleware
 from app.modules.solver.router import router as solver_router
 
 app = FastAPI(
@@ -10,6 +11,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
+app.add_middleware(BodyLimitMiddleware, prefix="/api/v1/solve", max_bytes=4 * 1024 * 1024)
 app.include_router(solver_router)
 
 

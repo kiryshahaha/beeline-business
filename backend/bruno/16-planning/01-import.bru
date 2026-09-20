@@ -1,0 +1,42 @@
+meta {
+  name: Импорт полного набора планирования
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/v1/data/import?dry_run=false
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:multipart-form {
+  file: @file(fixtures/planning-mixed.zip)
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    const ids = res.getBody().id_map;
+    bru.setVar("planning_work_type_id", ids.work_types["1"]);
+    bru.setVar("planning_rule_payload", JSON.stringify({service_duration_source: "ticket_estimate", required_skill_ids: [ids.worker_skills["1"]], required_appliances: [{appliance_id: ids.appliances["1"], quantity: 1}]}));
+    bru.setVar("planning_ticket_ids", JSON.stringify(Object.values(ids.tickets)));
+    bru.setVar("planning_worker_ids", JSON.stringify(Object.values(ids.workers)));
+  }
+}
+
+tests {
+  test("24 заявки и 4 вида транспорта готовы", () => {
+    expect(res.getBody().dry_run).to.equal(false);
+    expect(res.getBody().counts.tickets).to.equal(24);
+    expect(res.getBody().counts.workers).to.equal(4);
+    expect(res.getBody().counts.work_type_planning_rules).to.equal(3);
+  });
+}

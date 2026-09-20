@@ -1,17 +1,21 @@
 # Автоматические проверки
 
-`backend-tests.yml` запускается на push, pull_request и вручную. Три независимых job:
+backend-tests.yml запускается на push, pull_request и workflow_dispatch.
 
-1. Backend: PostgreSQL 17, Python 3.12, проверка зависимостей, Ruff, unittest,
-   генерация синтетики, повторный seed, миграции и вся коллекция Bruno 4.1.0.
-2. Frontend: Node.js 22, npm ci, ESLint и production build Next.js.
-3. Planner: Python 3.12, зависимости и unittest с реальными assertions API солвера.
+- Backend: Python 3.12, PostgreSQL 17, полные зависимости backend и planner,
+  Ruff, все unittest, генерация синтетики и повторный seed.
+- HTTP E2E в том же job: run_planning_e2e.py создаёт уникальную схему, запускает
+  backend, настоящий OR-Tools planner и контролируемый Geoapify, затем всю Bruno 4.1.0.
+- Planner: все unittest, Ruff и сверка контракта с backend. Нативный OR-Tools обязателен.
+- Frontend: Node.js 22, npm ci, ESLint и production build.
 
-Тестовые подключения задаются только к временному контейнеру. Интеграционные тесты
-используют отдельные схемы, а synthetic seed — synthetic_42. Bruno использует
-public с отдельными демонстрационными данными. Поэтому большие синтетические наборы
-не меняют старые ожидания пагинации Bruno.
+Отсутствие TEST_DATABASE_URL приводит к ошибке. Платные Geoapify-вызовы не нужны:
+тестовый провайдер возвращает искусственные предсказуемые дороги и матрицы.
+В обязательном E2E сам решатель не подменяется.
 
-У workflow только contents:read. Checkout не сохраняет Git credentials.
-Повторные запуски одной ветки отменяют предыдущий. Отчёт Bruno и лог API сохраняются
-как artifact даже при ошибке. Workflow не публикует и не развёртывает приложение.
+Синтетический seed использует synthetic_42; E2E — новую временную схему.
+Процессы завершаются и схема удаляется в finally, в том числе при ошибке.
+Логи и JUnit сохраняются как artifact из backend/.local/planning-e2e.
+
+У workflow только contents:read; checkout не сохраняет Git credentials.
+Workflow не развёртывает приложение и не публикует код.

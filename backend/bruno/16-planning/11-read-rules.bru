@@ -1,0 +1,22 @@
+meta {
+  name: Читать требования вида работ
+  type: http
+  seq: 11
+}
+get {
+  url: {{base_url}}/api/v1/work-types/{{planning_work_type_id}}/planning-rules
+  auth: bearer
+}
+auth:bearer {
+  token: {{observer_access_token}}
+}
+assert {
+  res.status: eq 200
+  res.body.configured: eq true
+}
+tests {
+  test("Требования явно настроены", () => {
+    expect(res.getBody().service_duration_source).to.equal("ticket_estimate");
+    expect(res.getBody().required_skill_ids).to.have.lengthOf(1);
+  });
+}
