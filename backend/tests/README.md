@@ -2,7 +2,7 @@
 
 Из backend: `python -m unittest discover -s tests -v`.
 Нужны установленные requirements и TEST_DATABASE_URL на отдельную PostgreSQL БД
-с именем `*_test`. Без переменной интеграционные классы пропускаются.
+с именем `*_test`. Без переменной интеграционные классы завершаются ошибкой; обязательные проверки не пропускаются.
 
 `support.py` создаёт случайную схему для каждого интеграционного класса,
 применяет/откатывает миграции и сверяет metadata через Alembic. Обычные тесты
@@ -17,6 +17,7 @@
 | `test_tickets*`, `test_ticket_*` | Заявки, назначения, статусы, комментарии и транзакции |
 | `test_brigades*`, `test_brigade_*`, `test_offices_api.py` | Организация и видимость |
 | `test_appliances_api.py` | Номенклатура и склад |
+| `test_schedule_api.py` | Интервалы смен, включая ночные, заявки на сутки, фильтр офиса и доступ ролей |
 | `test_notifications*`, `test_firebase_gateway.py` | Очередь, WebSocket, токены и граница SDK Firebase |
 | `test_database.py`, `test_locations_api.py`, `test_*migration.py` | Ограничения БД и миграции |
 | `test_seed_demo.py`, `test_openapi.py`, `test_enum_types.py`, `test_health.py` | Демонстрационные данные и публичные контракты |
@@ -27,3 +28,9 @@
 
 Для проверки файлов вручную есть [готовые наборы](../../data/synthetic/README.md),
 для проверок по HTTP — [Bruno](../bruno/README.md).
+
+Планирование: test_planning_api.py проверяет транзакции, конкуренцию, актуальность и права;
+test_planning_boundaries.py — HTTP, матрицы, геометрию и ограничения;
+test_planning_datasets.py — шесть наборов в обоих форматах и PostgreSQL.
+Эти backend-тесты используют явно названную FeasiblePlanner-фикстуру, а не оптимизатор.
+Реальный OR-Tools проверяется в planner/tests и run_planning_e2e.py; фикстура туда не подставляется.

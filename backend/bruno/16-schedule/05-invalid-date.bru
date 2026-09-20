@@ -1,0 +1,23 @@
+meta {
+  name: Неверная дата — 422
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/schedule?date=2026-13-01
+  body: none
+  auth: bearer
+}
+
+params:query {
+  date: 2026-13-01
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 422
+}

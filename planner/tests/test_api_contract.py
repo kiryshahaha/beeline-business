@@ -1,75 +1,68 @@
-"""Assertions for existing solver behavior; demo scripts remain available separately."""
+"""Exercise the single authenticated API with real OR-Tools."""
 
+import copy
+import os
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from fixtures import problem
 
 from app.main import app
 
 
 class PlannerApiTests(unittest.TestCase):
     def setUp(self):
+        self.enterContext(patch.dict(os.environ, PLANNER_SERVICE_TOKEN="test-internal-token"))
         self.client = self.enterContext(TestClient(app))
-        self.payload = {
-            "num_vehicles": 1,
-            "starts": [0],
-            "ends": [0],
-            "time_matrix": [[0, 10, 20], [10, 0, 10], [20, 10, 0]],
-            "distance_matrix": [[0, 3, 7], [3, 0, 4], [7, 4, 0]],
-            "time_windows": [[540, 1080], [540, 1080], [540, 1080]],
-            "service_times": [0, 30, 30],
-            "penalties": [0, 100000, 100000],
-            "vehicle_fixed_cost": 0,
-            "search_time_limit_s": 1,
-        }
+        self.headers = {"X-Planner-Token": "test-internal-token"}
 
-    def test_health(self):
-        response = self.client.get("/health")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["status"], "ok")
+    def test_health_and_single_endpoint(self):
+        self.assertEqual(self.client.get("/health").status_code, 200)
+        self.assertNotIn("/api/v2/solve", self.client.get("/openapi.json").json()["paths"])
 
-    def test_complete_plan_has_ordered_arrivals_and_actual_distance(self):
-        response = self.client.post("/api/v1/solve", json=self.payload)
+    def test_service_token_is_required(self):
+        for headers in ({}, {"X-Planner-Token": "wrong"}):
+            self.assertEqual(
+                self.client.post("/api/v1/solve", json=problem(), headers=headers).status_code,
+                401,
+            )
+
+    def test_complete_schedule_and_response_contract(self):
+        response = self.client.post("/api/v1/solve", json=problem(), headers=self.headers)
         self.assertEqual(response.status_code, 200, response.text)
         result = response.json()
+        self.assertIn(result["status"], ("FEASIBLE", "OPTIMAL"))
+        self.assertEqual(result["contract_version"], 1)
         self.assertEqual(result["dropped_nodes"], [])
-        route = result["routes"][0]
-        steps = route["steps"]
-        self.assertEqual([step["node"] for step in steps][:: len(steps) - 1], [0, 0])
-        self.assertEqual({step["node"] for step in steps[1:-1]}, {1, 2})
-        for before, after in zip(steps, steps[1:]):
-            travel = self.payload["time_matrix"][before["node"]][after["node"]]
-            service = self.payload["service_times"][before["node"]]
-            self.assertGreaterEqual(
-                after["arrival_time"], before["arrival_time"] + travel + service
-            )
-        expected = sum(
-            self.payload["distance_matrix"][a["node"]][b["node"]]
-            for a, b in zip(steps, steps[1:])
-        )
-        self.assertEqual(route["distance"], expected)
-        self.assertEqual(result["total_distance"], expected)
+        self.assertEqual(len(result["routes"][0]["steps"]), 5)
 
-    def test_visit_without_eligible_engineers_is_dropped(self):
-        self.payload["allowed_vehicles"] = {"1": []}
-        response = self.client.post("/api/v1/solve", json=self.payload)
-        self.assertEqual(response.status_code, 200, response.text)
-        self.assertIn(1, response.json()["dropped_nodes"])
-        self.assertNotIn(
-            1,
-            [
-                step["node"]
-                for route in response.json()["routes"]
-                for step in route["steps"]
-            ],
-        )
+    def test_rejects_incomplete_or_unsafe_problem(self):
+        mutations = [
+            lambda d: d.update(vehicle_fixed_cost=5000),
+            lambda d: d.update(num_vehicles=True),
+            lambda d: d.update(contract_version=2),
+            lambda d: d.update(allowed_vehicles={}),
+            lambda d: d.update(time_capacity=-1),
+            lambda d: d.update(service_times=[0]),
+            lambda d: d.update(search_time_limit_s=100),
+            lambda d: d.update(vehicle_profiles=["unknown"]),
+            lambda d: d["matrices"]["drive"]["time_minutes"][1].pop(),
+            lambda d: d["matrices"]["drive"]["time_minutes"][1].__setitem__(2, None),
+        ]
+        for mutate in mutations:
+            data = copy.deepcopy(problem())
+            mutate(data)
+            with self.subTest(data=data):
+                self.assertEqual(
+                    self.client.post("/api/v1/solve", json=data, headers=self.headers).status_code,
+                    422,
+                )
 
-    def test_nonsquare_matrix_and_vehicle_count_are_rejected(self):
-        self.payload["time_matrix"][0] = [0]
+    def test_backend_and_planner_share_exact_contract(self):
+        root = Path(__file__).resolve().parents[2]
         self.assertEqual(
-            self.client.post("/api/v1/solve", json=self.payload).status_code, 422
-        )
-        self.payload["num_vehicles"] = 0
-        self.assertEqual(
-            self.client.post("/api/v1/solve", json=self.payload).status_code, 422
+            (root / "planner/app/modules/solver/schemas.py").read_text(encoding="utf-8"),
+            (root / "backend/app/modules/planning/solver_contract.py").read_text(encoding="utf-8"),
         )

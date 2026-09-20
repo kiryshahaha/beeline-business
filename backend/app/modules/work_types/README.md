@@ -24,3 +24,26 @@
 
 Общий API описан в [backend README](../../../README.md). Миграции находятся
 в [migrations](../../../migrations/README.md), проверки — в [tests](../../../tests/README.md).
+
+## Требования для планирования
+
+GET /api/v1/work-types/{id}/planning-rules доступен авторизованным пользователям;
+PUT — observer. Тело полной замены:
+
+```json
+{
+  "service_duration_source": "ticket_estimate",
+  "required_skill_ids": [],
+  "required_appliances": []
+}
+```
+
+Элемент required_appliances: {"appliance_id": 1, "quantity": 1}.
+Пустые требования — осознанная настройка. Пока строки нет, GET возвращает configured=false
+и planner исключает такие заявки. Правила хранятся в work_type_planning_rules,
+work_type_required_skills и work_type_required_appliances (миграция 0012).
+planning_rules.py проверяет справочники и заменяет требования одной транзакцией.
+
+work_norm использует только work_minutes + documents_minutes. Норматив дороги
+не добавляется к матрице поездок. Сопоставление строкового tickets.work_type
+со справочником выполняется по имени без учёта регистра.

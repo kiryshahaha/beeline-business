@@ -10,6 +10,7 @@
 | Адреса | [cities](cities/README.md), [districts](districts/README.md), [streets](streets/README.md), [buildings](buildings/README.md), [entrances](entrances/README.md), [locations](locations/README.md) |
 | Люди и организация | [users](users/README.md), [auth](auth/README.md), [offices](offices/README.md), [brigades](brigades/README.md) |
 | Работы | [tickets](tickets/README.md), [work_types](work_types/README.md), [comments](comments/README.md), [appliances](appliances/README.md), [notifications](notifications/README.md) |
+| Планирование | [planning](planning/README.md) |
 | Дополнения | [routing](routing/README.md), [data_exchange](data_exchange/README.md) |
 
 Общий реестр ORM находится в `../db/models.py`: Alembic должен увидеть каждую модель.

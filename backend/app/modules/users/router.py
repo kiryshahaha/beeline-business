@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session
@@ -165,6 +166,12 @@ def delete_user(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Нельзя удалить бригадира, пока он руководит бригадой",
+        ) from error
+    except IntegrityError as error:
+        if getattr(error.orig, "sqlstate", None) != "23503":
+            raise
+        raise HTTPException(
+            409, "Пользователь связан с историей маршрутов или правилами работ"
         ) from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

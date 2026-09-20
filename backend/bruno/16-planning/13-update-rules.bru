@@ -1,0 +1,20 @@
+meta {
+  name: Наблюдатель подтверждает требования
+  type: http
+  seq: 13
+}
+put {
+  url: {{base_url}}/api/v1/work-types/{{planning_work_type_id}}/planning-rules
+  body: json
+  auth: bearer
+}
+auth:bearer {
+  token: {{observer_access_token}}
+}
+body:json {
+  {{planning_rule_payload}}
+}
+assert {
+  res.status: eq 200
+  res.body.configured: eq true
+}

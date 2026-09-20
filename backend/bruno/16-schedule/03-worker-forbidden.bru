@@ -1,0 +1,19 @@
+meta {
+  name: Исполнителю таймлайн недоступен — 403
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/schedule
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{worker_access_token}}
+}
+
+assert {
+  res.status: eq 403
+}
