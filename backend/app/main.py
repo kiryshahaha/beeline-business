@@ -28,6 +28,7 @@ from app.modules.notifications.router import router as notifications_router
 from app.modules.offices.router import router as offices_router
 from app.modules.planning.router import router as planning_router
 from app.modules.routing.router import router as routing_router
+from app.modules.schedule.router import router as schedule_router
 from app.modules.tickets.router import router as tickets_router
 from app.modules.tickets.schemas import TICKET_CREATE_EXAMPLE, TICKET_READ_EXAMPLE
 from app.modules.users.router import router as users_router
@@ -111,6 +112,7 @@ app.include_router(ticket_appliances_router)
 app.include_router(comments_router)
 app.include_router(notifications_router)
 app.include_router(data_exchange_router)
+app.include_router(schedule_router)
 
 
 @app.get("/health", tags=["system"])

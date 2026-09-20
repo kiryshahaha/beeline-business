@@ -1,0 +1,47 @@
+meta {
+  name: Таймлайн всех офисов
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/schedule?date=2026-09-17
+  body: none
+  auth: bearer
+}
+
+params:query {
+  date: 2026-09-17
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.office_id: isNull
+  res.body.brigades: isArray
+  res.body.unassigned_workers: isArray
+}
+
+tests {
+  test("Ночная смена демо-исполнителя даёт утренний хвост и вечернее начало", function () {
+    const body = res.getBody();
+    const workers = body.brigades
+      .flatMap(function (brigade) { return brigade.workers; })
+      .concat(body.unassigned_workers);
+    const night = workers.find(function (worker) {
+      return worker.id === Number(bru.getVar("worker_two_id"));
+    });
+    expect(night, "demo_worker_2 в ответе").to.be.an("object");
+    expect(night.shifts).to.have.length(2);
+    expect(night.shifts[0].end).to.equal("2026-09-17T06:00:00+03:00");
+    expect(night.shifts[1].start).to.equal("2026-09-17T22:00:00+03:00");
+  });
+}
+
+docs {
+  demo_worker_2 работает с 22:00 до 06:00. Папка 10-brigades очищает состав «Альфы»,
+  поэтому исполнитель ищется и в бригадах, и среди исполнителей без бригады.
+}

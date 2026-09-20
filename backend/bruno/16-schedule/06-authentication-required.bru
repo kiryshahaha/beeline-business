@@ -1,0 +1,15 @@
+meta {
+  name: Без токена — 401
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/api/v1/schedule
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 401
+}
