@@ -18,3 +18,11 @@ class TicketsSummary(BaseModel):
     assigned: int
     in_progress: int
     completed: int
+
+
+class BrigadeWorkloadItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    brigade_name: str
+    active_tickets: int
+    completed_today: int

@@ -26,7 +26,8 @@
 - [Синтетические наборы](../data/synthetic/README.md): 1 500/10 000 заявок;
   `generate_synthetic.py` создаёт файлы без БД, `seed_synthetic.py` работает только в `*_test`.
 - [Проверки](tests/README.md), [Bruno](bruno/README.md), [аудит](../docs/AUDIT_2026-09-18.md).
-- [Сводка заявок](#сводка-заявок): `/api/v1/analytics/tickets-summary`.
+- [Аналитика](#сводка-заявок): `/api/v1/analytics/tickets-summary`,
+  `/api/v1/analytics/brigades-workload`.
 
 Доступные операции HTTP API:
 
@@ -84,6 +85,8 @@
 - **Аналитика заявок:**
   - `GET /api/v1/analytics/tickets-summary` — количество заявок по статусам за `today`, `week` или `month`;
     доступно ролям `observer` и `foreman`.
+  - `GET /api/v1/analytics/brigades-workload` — активные заявки и завершённые сегодня по бригадам;
+    `observer` видит все бригады, `foreman` — только свою.
 - **Уведомления:**
   - `GET /api/v1/notifications` — личная история событий;
   - `POST, DELETE /api/v1/notifications/push-subscriptions` — зарегистрировать или удалить Firebase-токен браузера;
@@ -186,9 +189,9 @@ backend/
 │   │   └── session.py         # подключение к PostgreSQL, сессия запроса
 │   └── modules/
 │       ├── analytics/
-│       │   ├── repository.py   # SQL-подсчёт сводки заявок
-│       │   ├── router.py       # GET /api/v1/analytics/tickets-summary
-│       │   ├── schemas.py      # период и ответ со счётчиками
+│       │   ├── repository.py   # SQL-подсчёт аналитики
+│       │   ├── router.py       # GET для сводки и загруженности бригад
+│       │   ├── schemas.py      # период, счётчики и workload-ответ
 │       │   └── service.py      # область видимости observer/foreman
 │       ├── auth/
 │       │   ├── dependencies.py # get_current_user, require_roles
@@ -782,6 +785,33 @@ Authorization: Bearer <access token>
 игнорирует переданный `office_id` и считает только назначенные заявки своей бригады.
 Если бригада не найдена, API возвращает четыре нулевых счётчика. Роль `worker` получает `403`.
 
+## Загруженность бригад
+
+`GET /api/v1/analytics/brigades-workload` возвращает список бригад с двумя счётчиками:
+
+```http
+GET /api/v1/analytics/brigades-workload
+Authorization: Bearer <access token>
+```
+
+```json
+[
+  {
+    "brigade_name": "Альфа",
+    "active_tickets": 3,
+    "completed_today": 10
+  }
+]
+```
+
+`active_tickets` включает назначенные бригаде заявки со статусами `planned` и `in_progress`.
+`completed_today` включает заявки со статусом `completed`, у которых `updated_at` попадает
+в текущий календарный день. Бригады без заявок возвращаются с нулевыми значениями.
+
+`observer` получает все бригады. `foreman` получает только собственную бригаду;
+если бригада не найдена, API возвращает `[]`. Роль `worker` и запрос без токена получают
+`403` и `401` соответственно.
+
 ## Маршрутизация Geoapify
 
 `POST /api/v1/routes` строит один маршрут через Geoapify Routing API в выбранном режиме.
@@ -911,7 +941,9 @@ ID — примеры для новой базы после `seed_demo.py`, а �
 | `13-routes` | Сохранённые маршруты, GeoJSON, фильтры по дате, нумерация и ограничения доступа |
 | `14-data-exchange` | Экспорт и импорт CSV/XLSX, dry-run, идемпотентность и ограничения доступа |
 | `15-work-types` | Справочник видов работ: список с проверкой суммы норматива, чтение исполнителем по ID, создание и изменение наблюдателем, `403`, `404`, `409` и `401` без токена |
-| `12-analytics` | Сводка заявок наблюдателя, фильтр по офису, область бригадира, запрет исполнителю и неверный период |
+| `16-planning` | Планирование маршрутов через решатель |
+| `17-schedule` | Таймлайн офиса на сутки, ночная смена, все офисы, `403` исполнителю, `404`, `422`, `401` |
+| `18-analytics` | Сводка заявок и загруженность бригад: фильтр по офису, область бригадира, запрет исполнителю и неверный период |
 
 В `02-ticket-list/folder.bru` находятся общие проверки
 массива, адреса и сортировки; Bruno выполняет их для каждого запроса этой папки.
@@ -1688,7 +1720,7 @@ Content-Type: application/json
 канал push пропущенным. В тестах задаётся `NOTIFICATION_DISPATCHER_ENABLED=false`,
 чтобы фоновый цикл не вмешивался в транзакции тестового процесса.
 
-Bruno покрывает все новые HTTP-маршруты в папках `05-auth`–`12-analytics`.
+Bruno покрывает все новые HTTP-маршруты в папках `05-auth`–`18-analytics`.
 Папки нужно запускать по порядку после миграций и `seed_demo.py`. Bruno Runner не
 исполняет WebSocket-запросы, поэтому WebSocket проверяют автоматические Python-тесты
 и приведённый выше ручной сценарий.
