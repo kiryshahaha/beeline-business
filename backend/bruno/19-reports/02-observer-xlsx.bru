@@ -1,0 +1,26 @@
+meta {
+  name: Наблюдатель скачивает XLSX заявок
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/reports/tickets/export?format=xlsx&district_id={{district_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("XLSX имеет имя файла и тип содержимого", function () {
+    expect(res.getHeader("content-type")).to.include("spreadsheetml.sheet");
+    expect(res.getHeader("content-disposition")).to.include("tickets.xlsx");
+  });
+}

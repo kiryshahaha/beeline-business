@@ -1,7 +1,7 @@
 """Add personal calendar feed tokens
 
-Revision ID: 0011
-Revises: 0010
+Revision ID: 0014
+Revises: 0013
 Create Date: 2026-09-19 12:00:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "0011"
-down_revision = "0010"
+revision = "0014"
+down_revision = "0013"
 branch_labels = None
 depends_on = None
 

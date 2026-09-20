@@ -1,0 +1,32 @@
+meta {
+  name: Наблюдатель получает сводку заявок
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/analytics/tickets-summary?period=month
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Сводка содержит четыре числовых счётчика", function () {
+    const body = res.getBody();
+    ["open", "assigned", "in_progress", "completed"].forEach(function (field) {
+      expect(body[field]).to.be.a("number").and.at.least(0);
+    });
+  });
+}
+
+docs {
+  Период month означает текущий календарный месяц по created_at заявки.
+}

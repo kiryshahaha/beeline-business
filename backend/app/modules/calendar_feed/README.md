@@ -54,4 +54,4 @@
 | `service.py` | Выпуск токена, статус, отзыв, окно истории |
 | `router.py` | HTTP, роли и заголовки ответа |
 
-Проверки — [tests](../../../tests/README.md) и папка Bruno `17-calendar`.
+Проверки — [tests](../../../tests/README.md) и папка Bruno `20-calendar`.

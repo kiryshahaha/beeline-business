@@ -64,8 +64,6 @@ def describe_tables() -> dict:
             "calendar_tokens",
             "push_subscriptions",
             "data_imports",
-            "push_subscriptions",
-            "data_imports",
             "planning_plans",
             "planning_plan_routes",
         ],
