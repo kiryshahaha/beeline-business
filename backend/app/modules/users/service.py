@@ -3,6 +3,7 @@
 from sqlalchemy import RowMapping
 from sqlalchemy.orm import Session
 
+from app.core.planning_guard import lock_planning_mutation
 from app.core.security import hash_password
 from app.modules.users import repository
 from app.modules.users.enums import TransportType, UserRole
@@ -98,6 +99,7 @@ def list_users(
 
 def create_user(session: Session, data: UserCreate) -> UserRead:
     with session.begin():
+        lock_planning_mutation(session)
         if repository.find_user_by_username(session, data.username) is not None:
             raise UsernameAlreadyExistsError
 
@@ -134,6 +136,7 @@ def create_user(session: Session, data: UserCreate) -> UserRead:
 
 def create_skill(session: Session, data: WorkerSkillCreate) -> WorkerSkillRead:
     with session.begin():
+        lock_planning_mutation(session)
         if repository.find_skill_by_name(session, data.skill) is not None:
             raise SkillAlreadyExistsError
         skill_id = repository.add_skill(session, data.skill)
@@ -147,6 +150,7 @@ def get_all_skills(session: Session) -> list[WorkerSkillRead]:
 
 def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:
     with session.begin():
+        lock_planning_mutation(session)
         existing_user = repository.find_user_by_id(session, user_id)
         if existing_user is None:
             raise UserNotFoundError
@@ -233,6 +237,7 @@ def delete_user(session: Session, user_id: int, current_user_id: int | None = No
         raise CannotDeleteSelfError
 
     with session.begin():
+        lock_planning_mutation(session)
         if repository.foreman_manages_brigade(session, user_id):
             raise ActiveForemanError
         deleted = repository.delete_user(session, user_id)

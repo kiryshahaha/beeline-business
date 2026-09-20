@@ -1,0 +1,22 @@
+meta {
+  name: История сохраняется после изменения исходных правил
+  type: http
+  seq: 14
+}
+get {
+  url: {{base_url}}/api/v1/planning/plans/{{planning_plan_id}}
+  auth: bearer
+}
+auth:bearer {
+  token: {{observer_access_token}}
+}
+assert {
+  res.status: eq 200
+  res.body.state: eq applied
+  res.body.is_current: eq false
+}
+tests {
+  test("Маршруты остались теми же", () => {
+    expect(JSON.stringify(res.getBody().apply_result.routes.map(r => r.id))).to.equal(bru.getVar("planning_saved_ids"));
+  });
+}

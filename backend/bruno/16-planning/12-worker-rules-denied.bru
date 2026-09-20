@@ -1,0 +1,19 @@
+meta {
+  name: Исполнитель не меняет требования
+  type: http
+  seq: 12
+}
+put {
+  url: {{base_url}}/api/v1/work-types/{{planning_work_type_id}}/planning-rules
+  body: json
+  auth: bearer
+}
+auth:bearer {
+  token: {{worker_access_token}}
+}
+body:json {
+  {{planning_rule_payload}}
+}
+assert {
+  res.status: eq 403
+}

@@ -6,10 +6,11 @@ import json
 import secrets
 from datetime import UTC, datetime
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.planning_guard import lock_planning_mutation
 from app.core.security import hash_password
 from app.modules.data_exchange.formats import ExchangeError, json_default
 from app.modules.data_exchange.models import DataImport
@@ -132,6 +133,7 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
     name, row_number = None, None
     try:
         with session.begin():
+            lock_planning_mutation(session)
             # Serialize identical packages, including concurrent HTTP uploads.
             session.execute(
                 text("SELECT pg_advisory_xact_lock(:key)"),
@@ -173,8 +175,9 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                         for column in table.columns:
                             for foreign in column.foreign_keys:
                                 if foreign.column.name == "id" or (
-                                    foreign.column.table.name == "workers"
-                                    and foreign.column.name == "user_id"
+                                    foreign.column.table.name
+                                    in ("workers", "work_type_planning_rules")
+                                    and foreign.column.name in ("user_id", "work_type_id")
                                 ):
                                     if column.name in values:
                                         values[column.name] = _remap(
@@ -184,6 +187,31 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                                             ids,
                                         )
                         source_id = values.pop("id", None)
+                        if name == "work_types":
+                            norm = values.pop("norm_minutes", None)
+                            if norm is not None and norm != sum(
+                                values[k]
+                                for k in ("travel_minutes", "work_minutes", "documents_minutes")
+                            ):
+                                raise ValueError("Computed work norm does not match its parts")
+                            existing = (
+                                session.execute(
+                                    select(table).where(
+                                        func.lower(table.c.name) == values["name"].lower()
+                                    )
+                                )
+                                .mappings()
+                                .one_or_none()
+                            )
+                            if existing is not None:
+                                if any(
+                                    existing[k] != values[k]
+                                    for k in ("travel_minutes", "work_minutes", "documents_minutes")
+                                ):
+                                    raise ValueError("Existing work type has different norms")
+                                ids[name][source_id] = existing["id"]
+                                inserted[name].append(dict(existing))
+                                continue
                         if name == "users":
                             # Imported accounts need a dispatcher to set a known password.
                             values["password_hash"] = hash_password(secrets.token_urlsafe(48))
@@ -215,6 +243,8 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                         inserted[name].append(record)
                         if source_id is not None:
                             ids[name][source_id] = record["id"]
+                        elif name == "work_type_planning_rules":
+                            ids[name][source["work_type_id"]] = record["work_type_id"]
                         elif name == "workers":
                             ids[name][source["user_id"]] = record["user_id"]
                 _validate_business_rules(session, tables, ids, inserted)

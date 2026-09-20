@@ -10,6 +10,7 @@ from app.modules.auth.dependencies import get_current_user, require_roles
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
 from app.modules.work_types import service
+from app.modules.work_types.planning_rules import PlanningRulesWrite, read_rules, replace_rules
 from app.modules.work_types.schemas import WorkTypeCreate, WorkTypeRead, WorkTypeUpdate
 
 router = APIRouter(prefix="/api/v1/work-types", tags=["work-types"])
@@ -19,6 +20,29 @@ CurrentObserver = Annotated[UserRead, Depends(require_roles(UserRole.OBSERVER))]
 WorkTypeId = Annotated[int, Path(ge=1, le=2_147_483_647)]
 
 NAME_CONFLICT_DETAIL = "Вид работ с таким названием уже существует"
+
+
+@router.get("/{id}/planning-rules")
+def get_planning_rules(id: WorkTypeId, session: DatabaseSession, _: CurrentUser):
+    try:
+        return read_rules(session, id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+
+
+@router.put("/{id}/planning-rules")
+def put_planning_rules(
+    id: WorkTypeId,
+    data: PlanningRulesWrite,
+    session: DatabaseSession,
+    actor: CurrentObserver,
+):
+    try:
+        return replace_rules(session, id, data, actor.id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
 
 
 @router.get("", response_model=list[WorkTypeRead])

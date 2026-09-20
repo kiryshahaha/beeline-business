@@ -1,0 +1,23 @@
+meta {
+  name: Конкурирующий план устарел
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/api/v1/planning/plans/{{planning_stale_id}}/apply
+
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 409
+}
+
+tests {
+  test("Повторное назначение запрещено", () => expect(res.getBody().detail.code).to.equal("plan_stale"));
+}
