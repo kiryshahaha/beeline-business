@@ -12,9 +12,17 @@ from app.core.config import get_settings
 from app.db.session import get_engine
 from app.modules.auth.dependencies import require_roles
 from app.modules.planning import service
+from app.modules.planning.case_policy import case_policy
 from app.modules.planning.errors import PlanningError
 from app.modules.planning.planner_client import PlannerClient
-from app.modules.planning.schemas import ApplyRequest, ApplyResult, PlanRead, PreviewRequest
+from app.modules.planning.policy import execution_policy
+from app.modules.planning.schemas import (
+    ApplyRequest,
+    ApplyResult,
+    PlanRead,
+    PolicyRead,
+    PreviewRequest,
+)
 from app.modules.routing.client import AsyncGeoapifyRoutingClient
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
@@ -58,6 +66,11 @@ def fail(error):
     if isinstance(error, PlanningError):
         raise HTTPException(error.status, detail={"code": error.code, **error.details}) from error
     raise HTTPException(503, detail={"code": "planning_database_unavailable"}) from error
+
+
+@router.get("/policy", response_model=PolicyRead)
+def read_policy(_: Observer):
+    return PolicyRead(execution=execution_policy(get_settings()), case_contract=case_policy())
 
 
 @router.post(

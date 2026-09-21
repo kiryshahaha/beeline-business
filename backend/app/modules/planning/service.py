@@ -13,6 +13,7 @@ from app.modules.planning.errors import PlanningError
 from app.modules.planning.geometry import build_routes
 from app.modules.planning.matrices import build_problem
 from app.modules.planning.models import PlanningPlan, PlanningPlanRoute
+from app.modules.planning.policy import execution_policy, snapshot_policy
 from app.modules.planning.repository import load_snapshot
 from app.modules.planning.schemas import PreviewRequest
 from app.modules.planning.snapshot import fingerprint, normalize
@@ -28,10 +29,22 @@ def utc_now():
     return datetime.now(UTC)
 
 
-def read_snapshot(engine, request):
+def read_snapshot(engine, request, policy):
     with Session(engine) as session, session.begin():
         session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
-        return load_snapshot(session, request)
+        return load_snapshot(
+            session,
+            request,
+            policy_snapshot={
+                "policy_version": policy.policy_version,
+                "planning_policy": policy.model_dump(mode="json"),
+            },
+        )
+
+
+def recorded_policy(snapshot):
+    """Copy historical metadata verbatim, including the absence of pre-T01 parameters."""
+    return {key: snapshot[key] for key in ("policy_version", "planning_policy") if key in snapshot}
 
 
 async def preview(engine, request, actor, settings, provider_factory, planner, clock=utc_now):
@@ -40,7 +53,7 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
         or len(request.worker_ids) > settings.planning_max_workers
     ):
         raise PlanningError("planning_limit_exceeded")
-    snapshot = await asyncio.to_thread(read_snapshot, engine, request)
+    snapshot = await asyncio.to_thread(read_snapshot, engine, request, execution_policy(settings))
     prepared = prepare(snapshot, clock())
     if not request.allow_partial and prepared["unassigned"]:
         raise PlanningError("incomplete_plan", unassigned=prepared["unassigned"])
@@ -81,6 +94,7 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
     public = normalize(
         {
             "plan_id": str(plan_id),
+            "planning_policy": snapshot["planning_policy"],
             "state": "ready",
             "route_date": request.route_date,
             "timezone": "Europe/Moscow",
@@ -127,12 +141,18 @@ def read_plan(engine, plan_id: UUID, clock=utc_now):
         if plan is None:
             raise PlanningError("plan_not_found", 404)
         result = {**plan.result_snapshot["public"], "state": plan.state}
+        result["planning_policy"] = plan.input_snapshot.get("planning_policy")
         if plan.state == "ready" and plan.expires_at <= clock():
             result["state"] = "expired"
         if plan.state == "applied":
             request = PreviewRequest.model_validate(plan.input_snapshot["request"])
             result["is_current"] = (
-                fingerprint(load_snapshot(session, request)) == plan.applied_fingerprint
+                fingerprint(
+                    load_snapshot(
+                        session, request, policy_snapshot=recorded_policy(plan.input_snapshot)
+                    )
+                )
+                == plan.applied_fingerprint
             )
             result["apply_result"] = plan.apply_result
         return result
@@ -149,8 +169,11 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
             raise PlanningError("plan_not_found", 404)
         if plan.state == "applied":
             return {**plan.apply_result, "already_applied": True}
+        snapshot_policy(plan.input_snapshot)
         request = PreviewRequest.model_validate(plan.input_snapshot["request"])
-        current = load_snapshot(session, request)
+        current = load_snapshot(
+            session, request, policy_snapshot=recorded_policy(plan.input_snapshot)
+        )
         if plan.state == "expired" or plan.expires_at <= clock():
             plan.state = "expired"
             error = PlanningError("plan_expired", 409)
@@ -205,7 +228,11 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                 ],
                 "assigned_ticket_ids": ticket_ids,
             }
-            applied_fingerprint = fingerprint(load_snapshot(session, request))
+            applied_fingerprint = fingerprint(
+                load_snapshot(
+                    session, request, policy_snapshot=recorded_policy(plan.input_snapshot)
+                )
+            )
             plan.applied_at = clock()
             plan.applied_fingerprint = applied_fingerprint
             plan.apply_result = result

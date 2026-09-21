@@ -5,6 +5,7 @@ from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from app.modules.planning.errors import PlanningError
+from app.modules.planning.policy import snapshot_policy
 
 MOSCOW = ZoneInfo("Europe/Moscow")
 PROFILES = {
@@ -20,6 +21,7 @@ def dt(value: str) -> datetime:
 
 
 def prepare(snapshot: dict, now: datetime) -> dict:
+    policy = snapshot_policy(snapshot)
     request = snapshot["request"]
     epoch = datetime.combine(datetime.fromisoformat(request["route_date"]).date(), time(), MOSCOW)
     missing = {
@@ -120,14 +122,13 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 if rule["service_duration_source"] == "ticket_estimate"
                 else work_type["work_minutes"] + work_type["documents_minutes"]
             )
-            window = [
-                max(0, math.ceil((dt(ticket["visit_window_start"]) - epoch).total_seconds() / 60)),
-                min(
-                    horizon,
-                    math.floor((dt(ticket["visit_window_end"]) - epoch).total_seconds() / 60)
-                    - duration,
-                ),
-            ]
+            window = policy.start_window(
+                dt(ticket["visit_window_start"]),
+                dt(ticket["visit_window_end"]),
+                epoch,
+                duration,
+                horizon,
+            )
             required = [
                 a for a in snapshot["required_appliances"] if a["work_type_id"] == work_type["id"]
             ]
@@ -171,6 +172,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         else:
             tickets.append(ticket)
     return {
+        "policy": policy,
         "epoch": epoch,
         "horizon": horizon,
         "workers": workers,

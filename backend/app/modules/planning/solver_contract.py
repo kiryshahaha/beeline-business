@@ -20,6 +20,7 @@ class Matrix(StrictModel):
 
 class SolveRequest(StrictModel):
     contract_version: Literal[1] = 1
+    policy_version: Literal[1] = 1
     num_vehicles: Annotated[int, Field(strict=True, ge=1, le=20)]
     starts: list[Index]
     ends: list[Index]

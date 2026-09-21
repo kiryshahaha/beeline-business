@@ -27,6 +27,7 @@ from app.modules.data_exchange.service import import_data
 from app.modules.planning import router as api
 from app.modules.planning import service
 from app.modules.planning.errors import PlanningError
+from app.modules.planning.snapshot import fingerprint
 from planning_scenarios import NOW, generate_planning_dataset, preview_request
 from tests.planning_fakes import FeasiblePlanner, provider_factory
 from tests.support import CommittedDatabaseTestCase
@@ -116,6 +117,84 @@ class PlanningApiTests(CommittedDatabaseTestCase):
                 )
             for route in session.scalars(select(Route)):
                 self.assertEqual(route.geojson["features"][-1]["properties"]["source"], "geoapify")
+
+    def test_policy_is_saved_with_actual_search_parameters_and_survives_settings_change(self):
+        self.settings.planning_solve_time_limit_seconds = 2
+        plan = self.preview()
+        recorded = plan["planning_policy"]
+        self.assertEqual(recorded["search_time_limit_seconds"], 2)
+        with Session(self.engine) as session:
+            stored = session.get(PlanningPlan, UUID(plan["plan_id"]))
+            self.assertEqual(stored.input_snapshot["planning_policy"], recorded)
+            self.assertEqual(stored.result_snapshot["problem"]["search_time_limit_s"], 2)
+            self.assertEqual(stored.result_snapshot["problem"]["policy_version"], 1)
+        self.settings.planning_solve_time_limit_seconds = 7
+        self.assertEqual(self.apply(plan).status_code, 200)
+        read = self.client.get(f"/api/v1/planning/plans/{plan['plan_id']}", headers=self.headers)
+        self.assertEqual(read.json()["planning_policy"], recorded)
+        self.assertTrue(read.json()["is_current"])
+        self.assertTrue(self.apply(plan).json()["already_applied"])
+
+    def test_legacy_preview_applies_without_inventing_missing_historical_parameters(self):
+        plan = self.preview()
+        with Session(self.engine) as session, session.begin():
+            stored = session.get(PlanningPlan, UUID(plan["plan_id"]))
+            legacy = {k: v for k, v in stored.input_snapshot.items() if k != "planning_policy"}
+            stored.input_snapshot = legacy
+            stored.input_fingerprint = fingerprint(legacy)
+            result = dict(stored.result_snapshot)
+            result["public"] = {k: v for k, v in result["public"].items() if k != "planning_policy"}
+            result["problem"] = {
+                k: v for k, v in result["problem"].items() if k != "policy_version"
+            }
+            stored.result_snapshot = result
+        self.assertEqual(self.apply(plan).status_code, 200)
+        read = self.client.get(f"/api/v1/planning/plans/{plan['plan_id']}", headers=self.headers)
+        self.assertIsNone(read.json()["planning_policy"])
+        self.assertTrue(read.json()["is_current"])
+        with Session(self.engine) as session:
+            stored = session.get(PlanningPlan, UUID(plan["plan_id"]))
+            self.assertNotIn("planning_policy", stored.input_snapshot)
+
+    def test_unknown_policy_cannot_apply_or_write_routes(self):
+        plan = self.preview()
+        with Session(self.engine) as session, session.begin():
+            stored = session.get(PlanningPlan, UUID(plan["plan_id"]))
+            stored.input_snapshot = stored.input_snapshot | {"policy_version": 999}
+        response = self.apply(plan)
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["detail"]["code"], "planning_policy_unsupported")
+        self.assertEqual(self.counts(), (0, 0, 0))
+
+    def test_incomplete_policy_cannot_acquire_defaults_during_apply(self):
+        plan = self.preview()
+        with Session(self.engine) as session, session.begin():
+            stored = session.get(PlanningPlan, UUID(plan["plan_id"]))
+            stored.input_snapshot = stored.input_snapshot | {
+                "planning_policy": {"policy_version": 1}
+            }
+        response = self.apply(plan)
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["detail"]["code"], "planning_policy_unsupported")
+        self.assertEqual(self.counts(), (0, 0, 0))
+
+    def test_policy_read_requires_observer_and_distinguishes_contract_from_execution(self):
+        url = "/api/v1/planning/policy"
+        for headers, status in (({}, 401), (self.auth(9), 403), (self.auth(3), 403)):
+            self.assertEqual(self.client.get(url, headers=headers).status_code, status)
+        response = self.client.get(url, headers=self.headers)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["case_contract"]["activation"], "contract_only")
+        self.assertEqual(response.json()["execution"]["priority"], "equal_ticket_penalties")
+
+    def test_preview_cannot_silently_activate_case_policy(self):
+        response = self.client.post(
+            "/api/v1/planning/preview",
+            headers=self.headers,
+            json=self.payload | {"planning_policy": {"route_end": "open"}},
+        )
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(self.counts(), (0, 0, 0))
 
     def test_concurrent_apply_creates_exactly_one_receipt(self):
         plan = self.preview()

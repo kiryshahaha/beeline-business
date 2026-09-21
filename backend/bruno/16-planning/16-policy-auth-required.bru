@@ -1,0 +1,12 @@
+meta {
+  name: Политика требует авторизации
+  type: http
+  seq: 16
+}
+get {
+  url: {{base_url}}/api/v1/planning/policy
+  auth: none
+}
+assert {
+  res.status: eq 401
+}

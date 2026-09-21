@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.modules.planning.case_policy import CasePolicy
+from app.modules.planning.policy import ExecutionPolicy
 from app.modules.routing.schemas import MultiLineString, RouteLeg
 from app.modules.users.schemas import PositiveInt32
 
@@ -82,6 +84,7 @@ class ApplyResult(BaseModel):
 
 
 class PlanRead(BaseModel):
+    planning_policy: ExecutionPolicy | None = None
     plan_id: UUID
     state: Literal["ready", "applied", "expired", "stale"]
     route_date: date
@@ -98,3 +101,8 @@ class PlanRead(BaseModel):
 
 class ApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class PolicyRead(BaseModel):
+    execution: ExecutionPolicy
+    case_contract: CasePolicy

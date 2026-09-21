@@ -36,6 +36,7 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/analytics/brigades-workload",
             "/api/v1/analytics/recent-activity",
             "/api/v1/reports/tickets/export",
+            "/api/v1/planning/policy",
         ]
         for path in expected_paths:
             self.assertIn(path, paths, f"Path {path} missing in OpenAPI schema")
