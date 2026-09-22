@@ -2,6 +2,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { QueryProvider } from "@/providers/QueryProvider";
+import LayoutBar from "@/components/LayoutBar/LayoutBar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -23,8 +24,11 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body>
-        {/* Кастомный профайдер без него не сделать запросы TQ */}
-        <QueryProvider>{children}</QueryProvider>
+        {/* Кастомный провайдер без него не сделать запросы TQ */}
+        <QueryProvider>
+          {children}
+          <LayoutBar />
+        </QueryProvider>
       </body>
     </html>
   );
