@@ -14,16 +14,40 @@ from app.modules.users.schemas import (
     UserCreate,
     UserRead,
     UserUpdate,
+    WorkerLineStatusRead,
+    WorkerLineStatusUpdate,
     WorkerSkillCreate,
     WorkerSkillRead,
 )
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 skills_router = APIRouter(prefix="/api/v1/worker/skills", tags=["skills"])
+workers_router = APIRouter(prefix="/api/v1/workers", tags=["workers"])
 
 DatabaseSession = Annotated[Session, Depends(get_session)]
 CurrentUser = Annotated[UserRead, Depends(get_current_user)]
 RequireObserver = Annotated[UserRead, Depends(require_roles(UserRole.OBSERVER))]
+
+
+@workers_router.put(
+    "/{worker_id}/line-status",
+    response_model=WorkerLineStatusRead,
+    responses={404: {"description": "Исполнитель не найден"}},
+)
+def update_worker_line_status(
+    worker_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    data: WorkerLineStatusUpdate,
+    session: DatabaseSession,
+    _: RequireObserver,
+) -> WorkerLineStatusRead:
+    """Снять исполнителя с линии либо вручную вернуть его в доступные."""
+    try:
+        return service.update_worker_line_status(session, worker_id, data.is_on_line)
+    except service.WorkerNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Исполнитель не найден",
+        ) from error
 
 
 @router.get("/me", response_model=UserRead)

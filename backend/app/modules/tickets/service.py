@@ -25,6 +25,10 @@ class WorkerNotFoundError(Exception):
     pass
 
 
+class WorkerOffLineError(Exception):
+    pass
+
+
 class PermissionDeniedError(Exception):
     pass
 
@@ -119,8 +123,11 @@ def replace_assignees_in_transaction(
     ticket = repository.lock_ticket(session, ticket_id)
     if ticket is None:
         raise TicketNotFoundError
-    if repository.find_worker_ids(session, worker_ids) != set(worker_ids):
+    worker_line_statuses = repository.find_worker_line_statuses(session, worker_ids)
+    if set(worker_line_statuses) != set(worker_ids):
         raise WorkerNotFoundError
+    if not all(worker_line_statuses.values()):
+        raise WorkerOffLineError
     new_worker_ids = repository.replace_assignees(session, ticket_id, worker_ids)
     for worker_id in new_worker_ids:
         repository.add_notification_events(

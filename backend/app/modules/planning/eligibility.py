@@ -52,6 +52,8 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         reason = None
         if roles.get(wid) != "worker":
             reason = "invalid_worker_role"
+        elif not worker["is_on_line"]:
+            reason = "worker_offline"
         elif not office:
             reason = "missing_office"
         elif not location or location["latitude"] is None or location["longitude"] is None:

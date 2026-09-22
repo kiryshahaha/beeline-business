@@ -32,6 +32,14 @@ WORKER_PROFILE_READ_EXAMPLE = {
     "workshift_start": "09:00:00",
     "workshift_end": "18:00:00",
     "skills": ["Монтаж ВОЛС", "Настройка роутеров"],
+    "is_on_line": True,
+}
+
+WORKER_LINE_STATUS_UPDATE_EXAMPLE = {"is_on_line": False}
+WORKER_LINE_STATUS_READ_EXAMPLE = {
+    "worker_id": 2,
+    "is_on_line": False,
+    "released_ticket_ids": [17, 21],
 }
 
 USER_CREATE_WORKER_EXAMPLE = {
@@ -173,6 +181,27 @@ class WorkerProfileRead(BaseModel):
     workshift_end: time
     skills: list[str]
     transport_type: TransportType = TransportType.WALKING
+    is_on_line: bool
+
+
+class WorkerLineStatusUpdate(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [WORKER_LINE_STATUS_UPDATE_EXAMPLE]},
+    )
+
+    is_on_line: bool = Field(
+        strict=True,
+        description="Доступен ли исполнитель для новых назначений и планирования.",
+    )
+
+
+class WorkerLineStatusRead(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [WORKER_LINE_STATUS_READ_EXAMPLE]})
+
+    worker_id: PositiveInt32
+    is_on_line: bool
+    released_ticket_ids: list[PositiveInt32]
 
 
 class UserCreate(BaseModel):
