@@ -1,0 +1,67 @@
+.container {
+    background-color: rgba(118, 118, 128, 0.18);
+    backdrop-filter: blur(4px);
+    display: inline-flex;
+    flex-direction: column;
+    padding: 12px;
+    border-radius: 16px;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    overflow: hidden;
+    height: 60px;
+    /* Изначальная высота таблетки */
+    box-sizing: border-box;
+}
+
+.container.expanded {
+    height: 50vh;
+    /* border-radius: 28px; */
+    cursor: default;
+}
+
+.pillsWrapper {
+    display: inline-flex;
+    flex-direction: row;
+    gap: 4px;
+    align-items: center;
+}
+
+.content {
+    margin-top: 20px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    visibility: hidden;
+    color: #fff;
+    flex: 1;
+}
+
+.container.expanded .content {
+    opacity: 1;
+    visibility: visible;
+    transition-delay: 0.2s;
+}
+
+.statusContainer {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 16px;
+    border-radius: 100px;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.all {
+    background-color: var(--beeline);
+    color: #FFFFFF;
+}
+
+.urgent {
+    background-color: transparent;
+    color: #FF4245;
+}
+
+.completed {
+    background-color: #ECFDF5;
+    color: #047857;
+}

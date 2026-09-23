@@ -1,6 +1,7 @@
 "use client"
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
+import { useClickOutside } from "@/hooks/useClickOutside";
 import styles from "./Search.module.css";
 import Image from "next/image";
 import ExpandableMenu from "@/components/ui/ExpandableMenu/ExpandableMenu";
@@ -20,15 +21,7 @@ const Search = () => {
   const { users = [] } = useUsers();
   const { tickets = [] } = useTickets();
 
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (containerRef.current && !containerRef.current.contains(event.target)) {
-        setIsFocused(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  useClickOutside(containerRef, () => setIsFocused(false));
 
   const allData = [];
   if (activeFilters.length === 0 || activeFilters.includes('бригады')) {
