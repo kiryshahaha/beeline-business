@@ -1,6 +1,6 @@
 """Bounded input selection directly from PostgreSQL, independent of paginated public APIs."""
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (

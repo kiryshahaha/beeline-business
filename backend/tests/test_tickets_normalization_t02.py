@@ -36,7 +36,7 @@ from app.modules.tickets.enums import TicketCategory
 from app.modules.tickets.schemas import TicketCreate
 from app.modules.tickets.service import create_ticket, get_ticket
 from app.modules.users.enums import TransportType, UserRole
-from app.modules.users.schemas import WorkerProfileCreate
+from app.modules.users.schemas import UserCreate, WorkerProfileCreate
 from app.modules.users.service import create_user
 from app.modules.work_types.schemas import WorkTypeUpdate
 from app.modules.work_types.service import update_work_type

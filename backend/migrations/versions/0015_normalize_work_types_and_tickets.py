@@ -116,6 +116,7 @@ def upgrade() -> None:
             nullable=True,
             server_default=sa.text("now()"),
         ),
+    )
     op.add_column(
         "tickets", sa.Column("sla_deadline_at", sa.DateTime(timezone=True), nullable=True)
     )
