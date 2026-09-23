@@ -207,7 +207,9 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                         continue
                     replace_assignees_in_transaction(session, stop.ticket_id, [route.worker_id])
                     ticket = session.get(Ticket, stop.ticket_id)
-                    ticket.planned_start_at = stop.arrival_at
+                    ticket.planned_start_at = datetime.fromisoformat(
+                        visits[stop.ticket_id]["service_start_at"]
+                    )
                     ticket.planned_end_at = datetime.fromisoformat(
                         visits[stop.ticket_id]["service_end_at"]
                     )

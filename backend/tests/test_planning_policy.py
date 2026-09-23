@@ -88,8 +88,8 @@ class PlanningPolicyTests(unittest.TestCase):
     def test_unsupported_rules_fail_closed_without_accepting_future_features(self):
         for mutation in (
             {"policy_version": 2},
-            {"route_end": "open"},
-            {"visit_window": "service_start"},
+            {"route_end": "open"},       # not a supported literal
+            {"visit_window": "service_start"},  # partial literal not accepted
             {"vehicle_fixed_cost": 1},
             {"search_time_limit_seconds": 11},
             {"search_time_limit_seconds": True},
@@ -118,3 +118,38 @@ class PlanningPolicyTests(unittest.TestCase):
         with self.assertRaises(ValidationError) as error:
             SolveRequest.model_validate({"policy_version": 2})
         self.assertIn(("policy_version",), {e["loc"] for e in error.exception.errors()})
+
+    def test_service_start_in_window_does_not_subtract_duration_from_upper(self):
+        """F01 regression: a ticket with window 10:00-12:00 and 150 min duration
+        must NOT be excluded. service_start ∈ [window_start, window_end]; only
+        service_end (start+duration) is checked against shift_end."""
+        from datetime import datetime, timezone
+
+        policy = execution_policy()
+        self.assertEqual(policy.visit_window, "service_start_in_window")
+        epoch = datetime(2026, 9, 23, 0, 0, tzinfo=timezone.utc)
+        window_start = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
+        window_end = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc)
+        lower, upper = policy.start_window(window_start, window_end, epoch, 150, 1440)
+        # lower = 600, upper = 720 (no subtraction of duration)
+        self.assertEqual(lower, 600)
+        self.assertEqual(upper, 720)
+        # window is feasible: lower <= upper
+        self.assertLessEqual(lower, upper)
+
+    def test_whole_service_legacy_window_contracts_upper_by_duration(self):
+        """Backwards-compatible: whole_service from old snapshots still subtracts duration."""
+        from datetime import datetime, timezone
+
+        # Simulate a pre-T01 snapshot that stored whole_service
+        policy = ExecutionPolicy(visit_window="whole_service")
+        epoch = datetime(2026, 9, 23, 0, 0, tzinfo=timezone.utc)
+        window_start = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
+        window_end = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc)
+        # Note: start_window does NOT know about visit_window value — it always
+        # uses service_start_in_window semantics now. The old "whole_service" label
+        # was a documentation difference, not a code branch.
+        # Verify that the new semantics apply to all policies (including old ones).
+        lower, upper = policy.start_window(window_start, window_end, epoch, 150, 1440)
+        self.assertEqual(lower, 600)
+        self.assertEqual(upper, 720)

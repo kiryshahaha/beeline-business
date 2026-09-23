@@ -35,6 +35,7 @@ class SolveRequest(StrictModel):
     slack_max: Minute
     vehicle_fixed_cost: Annotated[int, Field(strict=True, ge=0, le=0)] = 0
     search_time_limit_s: Annotated[int, Field(strict=True, ge=1, le=10)] = 5
+    open_end: bool = False
 
     @model_validator(mode="after")
     def validate_problem(self) -> Self:
@@ -45,9 +46,18 @@ class SolveRequest(StrictModel):
             for a in (self.starts, self.ends, self.vehicle_profiles, self.vehicle_time_windows)
         ):
             raise ValueError("Vehicle array dimensions must match num_vehicles")
-        if self.starts != self.ends or len(set(self.starts)) != v:
-            raise ValueError("Every vehicle needs its own round-trip depot node")
-        if any(i >= n for i in self.starts):
+        if self.open_end:
+            if self.starts == self.ends:
+                raise ValueError("open_end requires starts != ends")
+            if len(set(self.starts)) != v or len(set(self.ends)) != v:
+                raise ValueError("Every vehicle needs its own unique start and end depot node")
+            if set(self.starts) & set(self.ends):
+                raise ValueError("open_end: start and end depot nodes must not overlap")
+        else:
+            if self.starts != self.ends or len(set(self.starts)) != v:
+                raise ValueError("Every vehicle needs its own round-trip depot node")
+        depots = set(self.starts) | set(self.ends)
+        if any(i >= n for i in self.starts) or any(i >= n for i in self.ends):
             raise ValueError("Depot index outside matrices")
         if any(p not in self.matrices for p in self.vehicle_profiles):
             raise ValueError("Unknown vehicle matrix profile")
@@ -60,7 +70,6 @@ class SolveRequest(StrictModel):
             raise ValueError("Invalid time window or horizon")
         if self.slack_max > self.time_capacity:
             raise ValueError("Waiting exceeds horizon")
-        depots = set(self.starts)
         if any(self.service_times[i] or self.penalties[i] for i in depots):
             raise ValueError("Depots cannot have service or dropping costs")
         tasks = set(range(n)) - depots
