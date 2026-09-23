@@ -11,9 +11,14 @@ const icons = [
 
 const LayoutBar = () => {
   const [activeIcon, setActiveIcon] = useState("map");
+  const activeIndex = icons.findIndex(icon => icon.id === activeIcon);
 
   return (
     <div className={styles.container}>
+      <div 
+        className={styles.indicator} 
+        style={{ transform: `translateY(${activeIndex * 52}px)` }} 
+      />
       {icons.map((icon) => (
         <div
           key={icon.id}
