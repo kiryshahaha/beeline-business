@@ -41,7 +41,6 @@ def solve(data: SolveRequest) -> SolveResponse:
         dimension.CumulVar(routing.End(v)).SetRange(a, b)
 
     tasks = sorted(set(range(n)) - (set(data.starts) | set(data.ends)))
-    depots = set(data.starts) | set(data.ends)
     for node in tasks:
         index = manager.NodeToIndex(node)
         dimension.CumulVar(index).SetRange(*data.time_windows[node])

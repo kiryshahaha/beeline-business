@@ -92,8 +92,14 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
                 )
                 start_pos = position(previous_step.node)
                 end_pos = position(node_index)
-                road = roads.get((worker["profile"], start_pos, end_pos)) if start_pos != end_pos else None
-                seconds, meters_leg = (road.duration_seconds, road.distance_meters) if road else (0, 0)
+                road = (
+                    roads.get((worker["profile"], start_pos, end_pos))
+                    if start_pos != end_pos
+                    else None
+                )
+                seconds, meters_leg = (
+                    (road.duration_seconds, road.distance_meters) if road else (0, 0)
+                )
                 conservative_travel = max(
                     matrix.time_minutes[previous_step.node][node_index],
                     math.ceil(seconds / 60),

@@ -84,7 +84,6 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
         }
         for p, matrix in matrices.items()
     }
-    n = len(nodes)
     horizon = prepared["horizon"]
     # Time windows for depot and (when open_end) finish nodes are the vehicle window.
     # Finish nodes in open_end have the full vehicle time window (any moment in shift is fine).

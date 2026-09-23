@@ -2,6 +2,7 @@
 
 import copy
 import unittest
+from datetime import UTC
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -123,13 +124,13 @@ class PlanningPolicyTests(unittest.TestCase):
         """F01 regression: a ticket with window 10:00-12:00 and 150 min duration
         must NOT be excluded. service_start ∈ [window_start, window_end]; only
         service_end (start+duration) is checked against shift_end."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         policy = execution_policy()
         self.assertEqual(policy.visit_window, "service_start_in_window")
-        epoch = datetime(2026, 9, 23, 0, 0, tzinfo=timezone.utc)
-        window_start = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
-        window_end = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc)
+        epoch = datetime(2026, 9, 23, 0, 0, tzinfo=UTC)
+        window_start = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
+        window_end = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
         lower, upper = policy.start_window(window_start, window_end, epoch, 150, 1440)
         # lower = 600, upper = 720 (no subtraction of duration)
         self.assertEqual(lower, 600)
@@ -139,13 +140,13 @@ class PlanningPolicyTests(unittest.TestCase):
 
     def test_whole_service_legacy_window_contracts_upper_by_duration(self):
         """Backwards-compatible: whole_service from old snapshots still subtracts duration."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         # Simulate a pre-T01 snapshot that stored whole_service
         policy = ExecutionPolicy(visit_window="whole_service")
-        epoch = datetime(2026, 9, 23, 0, 0, tzinfo=timezone.utc)
-        window_start = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
-        window_end = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc)
+        epoch = datetime(2026, 9, 23, 0, 0, tzinfo=UTC)
+        window_start = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
+        window_end = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
         # Note: start_window does NOT know about visit_window value — it always
         # uses service_start_in_window semantics now. The old "whole_service" label
         # was a documentation difference, not a code branch.
