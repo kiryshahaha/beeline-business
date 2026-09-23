@@ -2,23 +2,21 @@
 
 Tests cover:
 - A21: Renaming WorkType.name does not orphan tickets or break planning eligibility
-- A04: Service duration is work+docs without double travel (norm 50 -> 30 service, 100 -> 80 service)
+- A04: Service duration is work+docs without double travel (norm 50 -> 30, 100 -> 80)
 - A07: Required transport filtering (car-only vs walking/any)
 - A10: Emergency received_at prevents service start before receipt
 - Appliance combination: max(rule_quantity, ticket_allocated_quantity)
 - WorkType code, category, default_priority propagation to Ticket
 """
 
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
-    Appliance,
-    ApplianceStock,
     Brigade,
     BrigadeMember,
     Building,
@@ -28,34 +26,20 @@ from app.db.models import (
     Location,
     Office,
     Street,
-    Ticket,
-    TicketAppliance,
-    User,
-    Worker,
-    WorkerSkill,
-    WorkerSkillAssignment,
     WorkType,
     WorkTypePlanningRule,
-    WorkTypeRequiredAppliance,
-    WorkTypeRequiredSkill,
 )
 from app.db.session import get_session
 from app.main import app
 from app.modules.planning.eligibility import check_eligibility
-from app.modules.planning.policy import execution_policy
-from app.modules.tickets.enums import TicketCategory, TicketStatus
+from app.modules.tickets.enums import TicketCategory
 from app.modules.tickets.schemas import TicketCreate
 from app.modules.tickets.service import create_ticket, get_ticket
 from app.modules.users.enums import TransportType, UserRole
-from app.modules.users.schemas import UserCreate, WorkerProfileCreate
+from app.modules.users.schemas import WorkerProfileCreate
 from app.modules.users.service import create_user
-from app.modules.work_types.schemas import WorkTypeCreate, WorkTypeUpdate
-from app.modules.work_types.service import (
-    create_work_type,
-    list_work_types,
-    replace_rules,
-    update_work_type,
-)
+from app.modules.work_types.schemas import WorkTypeUpdate
+from app.modules.work_types.service import update_work_type
 from tests.support import DatabaseTestCase
 
 TZ = ZoneInfo("Europe/Moscow")
@@ -156,7 +140,7 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
         return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
     def test_a21_rename_canonical_work_type_does_not_break_tickets(self):
-        """A21: Rename canonical work type; rename does not disconnect tickets or break eligibility."""
+        """A21: Renaming work type does not disconnect tickets or break eligibility."""
         with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
             # 1. Find the canonical connection work type
             conn_wt = session.execute(
@@ -180,7 +164,9 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
             self.assertEqual(ticket.priority, 2)
 
             # 3. Rename WorkType name
-            update_work_type(session, conn_wt.id, WorkTypeUpdate(name="Подключение клиентов Обновленное"))
+            update_work_type(
+                session, conn_wt.id, WorkTypeUpdate(name="Подключение клиентов Обновленное")
+            )
 
             # 4. Read ticket again - FK intact
             re_read = get_ticket(session, ticket.id)
@@ -278,7 +264,7 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
             self.assertEqual(tickets_by_id[t_emerg.id]["duration"], 80)
 
     def test_a07_required_transport_type_filtering(self):
-        """A07: Requirement car -> candidates walking/car -> only car eligible. Empty -> both eligible."""
+        """A07: Requirement car: only car is eligible. Empty: both car and walk eligible."""
         with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
             repair_wt = session.execute(
                 select(WorkType).where(WorkType.code == "repair")

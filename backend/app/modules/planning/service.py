@@ -43,8 +43,9 @@ def read_snapshot(engine, request, policy):
 
 
 def recorded_policy(snapshot):
-    """Copy historical metadata verbatim, including the absence of pre-T01 parameters."""
-    return {key: snapshot[key] for key in ("policy_version", "planning_policy") if key in snapshot}
+    return {
+        key: snapshot[key] for key in ("policy_version", "planning_policy") if key in snapshot
+    }
 
 
 async def preview(engine, request, actor, settings, provider_factory, planner, clock=utc_now):

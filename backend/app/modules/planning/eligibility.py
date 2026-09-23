@@ -102,9 +102,9 @@ def prepare(snapshot: dict, now: datetime) -> dict:
     for ticket in snapshot["tickets"]:
         ticket = dict(ticket)
         tid = ticket["id"]
-        work_type = (
-            types_by_id.get(ticket.get("work_type_id"))
-            or (types_by_name.get(ticket["work_type"].strip().lower()) if ticket.get("work_type") else None)
+        raw_wt = ticket.get("work_type")
+        work_type = types_by_id.get(ticket.get("work_type_id")) or (
+            types_by_name.get(raw_wt.strip().lower()) if raw_wt else None
         )
         rule = rules.get(work_type["id"]) if work_type else None
         location = locations.get(ticket["location_id"])
@@ -202,3 +202,11 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         "unassigned": unassigned,
         "excluded_workers": excluded_workers,
     }
+
+
+def check_eligibility(snapshot: dict, now: datetime | None = None) -> dict:
+    """Convenience helper to evaluate candidate eligibility and exclusions."""
+    if now is None:
+        now = datetime.min.replace(tzinfo=MOSCOW)
+    return prepare(snapshot, now)
+

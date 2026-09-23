@@ -1,6 +1,6 @@
 """Bounded input selection directly from PostgreSQL, independent of paginated public APIs."""
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -121,7 +121,10 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
         {
             "request": request.model_dump(mode="json"),
             **(
-                {"policy_version": 1, "planning_policy": execution_policy().model_dump(mode="json")}
+                {
+                    "policy_version": 1,
+                    "planning_policy": execution_policy().model_dump(mode="json"),
+                }
                 if policy_snapshot is None
                 else policy_snapshot
             ),
