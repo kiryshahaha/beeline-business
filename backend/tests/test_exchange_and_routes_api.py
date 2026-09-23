@@ -210,8 +210,12 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
             points = route["geojson"]["features"][:2]
             self.assertEqual([p["properties"]["sequence"] for p in points], [1, 2])
             self.assertEqual(points[0]["properties"]["arrival_at"], "2026-09-23T09:00:00+03:00")
-            self.assertEqual(points[0]["properties"]["service_start_at"], "2026-09-23T09:00:00+03:00")
-            self.assertEqual(points[0]["properties"]["service_end_at"], "2026-09-23T09:30:00+03:00")
+            self.assertEqual(
+                points[0]["properties"]["service_start_at"], "2026-09-23T09:00:00+03:00"
+            )
+            self.assertEqual(
+                points[0]["properties"]["service_end_at"], "2026-09-23T09:30:00+03:00"
+            )
             self.assertEqual(points[0]["properties"]["waiting_minutes"], 0)
             self.assertEqual(
                 points[0]["geometry"]["coordinates"],
@@ -247,7 +251,10 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
             lambda p: p.update(stops=[]),
             lambda p: p.update(route_date="2026-09-22"),
             lambda p: p["stops"][0].update(arrival_at="2026-09-23T09:00:00"),
-            lambda p: p["stops"][1].update(arrival_at="2026-09-23T08:00:00+03:00", service_start_at="2026-09-23T08:00:00+03:00"),
+            lambda p: p["stops"][1].update(
+                arrival_at="2026-09-23T08:00:00+03:00",
+                service_start_at="2026-09-23T08:00:00+03:00"
+            ),
             lambda p: p["stops"][0].update(location_id=2147483647),
             lambda p: p["stops"][0].update(location_id=self.ids["locations"]["17"]),
             lambda p: p["stops"][0].update(ticket_id=self.ids["tickets"]["2"]),
