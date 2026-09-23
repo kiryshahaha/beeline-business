@@ -57,6 +57,21 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
         self.addCleanup(app.dependency_overrides.pop, get_session)
         self.client = self.enterContext(TestClient(app))
 
+        # Users and workers
+        self.observer = self.create_user("obs_t02", UserRole.OBSERVER)
+        self.worker_user = self.create_user(
+            "worker_car_t02",
+            UserRole.WORKER,
+            skills=["Аварийно-восстановительные работы", "Монтаж ВОЛС", "Настройка оборудования"],
+            transport_type=TransportType.CAR,
+        )
+        self.worker_walking = self.create_user(
+            "worker_walk_t02",
+            UserRole.WORKER,
+            skills=["Аварийно-восстановительные работы", "Монтаж ВОЛС", "Настройка оборудования"],
+            transport_type=TransportType.WALKING,
+        )
+
         # Basic infrastructure setup
         city = self.save(City(name="Москва"))
         district = self.save(District(city_id=city.id, name="Центральный"))
@@ -76,21 +91,6 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
             )
         )
         self.office = self.save(Office(name="Главный офис", location_id=self.location.id))
-
-        # Users and workers
-        self.observer = self.create_user("obs_t02", UserRole.OBSERVER)
-        self.worker_user = self.create_user(
-            "worker_car_t02",
-            UserRole.WORKER,
-            skills=["Аварийно-восстановительные работы", "Монтаж ВОЛС", "Настройка оборудования"],
-            transport_type=TransportType.CAR,
-        )
-        self.worker_walking = self.create_user(
-            "worker_walk_t02",
-            UserRole.WORKER,
-            skills=["Аварийно-восстановительные работы", "Монтаж ВОЛС", "Настройка оборудования"],
-            transport_type=TransportType.WALKING,
-        )
         self.brigade = self.save(
             Brigade(name="Бригада 1", foreman_id=self.observer.id, office_id=self.office.id)
         )
@@ -119,17 +119,18 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
                 transport_type=transport_type,
                 skills=skills or [],
             )
-        return create_user(
-            self.session,
-            UserCreate(
-                name=f"Имя {username}",
-                surname=f"Фамилия {username}",
-                username=username,
-                password="Password123!",
-                role=role,
-                worker_profile=profile,
-            ),
-        )
+        with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
+            return create_user(
+                session,
+                UserCreate(
+                    name=f"Имя {username}",
+                    surname=f"Фамилия {username}",
+                    username=username,
+                    password="Password123!",
+                    role=role,
+                    worker_profile=profile,
+                ),
+            )
 
     def auth_headers(self, user) -> dict[str, str]:
         response = self.client.post(
