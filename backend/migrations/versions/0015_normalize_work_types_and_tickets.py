@@ -106,7 +106,22 @@ def upgrade() -> None:
 
     # 2. Update tickets table
     op.add_column("tickets", sa.Column("work_type_id", sa.Integer(), nullable=True))
-    op.add_column("tickets", sa.Column("category", sa.String(50), nullable=True))
+    op.add_column(
+        "tickets",
+        sa.Column(
+            "category",
+            sa.Enum(
+                "emergency",
+                "connection",
+                "repair",
+                "additional",
+                name="ticket_category",
+                native_enum=False,
+                create_constraint=True,
+            ),
+            nullable=True,
+        ),
+    )
     op.add_column("tickets", sa.Column("priority", sa.Integer(), nullable=True))
     op.add_column(
         "tickets",
@@ -120,7 +135,22 @@ def upgrade() -> None:
     op.add_column(
         "tickets", sa.Column("sla_deadline_at", sa.DateTime(timezone=True), nullable=True)
     )
-    op.add_column("tickets", sa.Column("required_transport_type", sa.String(50), nullable=True))
+    op.add_column(
+        "tickets",
+        sa.Column(
+            "required_transport_type",
+            sa.Enum(
+                "car",
+                "walking",
+                "bicycle",
+                "public_transport",
+                name="ticket_required_transport_type",
+                native_enum=False,
+                create_constraint=True,
+            ),
+            nullable=True,
+        ),
+    )
     op.add_column("tickets", sa.Column("service_duration_source", sa.String(20), nullable=True))
 
     # Match by exact name first
@@ -267,17 +297,13 @@ def upgrade() -> None:
         "sla_deadline_at IS NULL OR sla_deadline_at > received_at",
     )
     op.create_check_constraint(
-        op.f("ck_tickets_ticket_category_valid"),
-        "tickets",
-        "category IN ('emergency', 'connection', 'repair', 'additional')",
-    )
-    op.create_check_constraint(
         op.f("ck_tickets_ticket_duration_source"),
         "tickets",
         "service_duration_source IS NULL OR "
         "service_duration_source IN ('ticket_estimate', 'work_norm')",
     )
     op.create_index("ix_tickets_category_priority", "tickets", ["category", "priority"])
+    op.create_index("ix_tickets_work_type_id", "tickets", ["work_type_id"])
 
     # 3. Ensure Base Skills exist
     for skill_name in BASE_SKILLS:
@@ -293,9 +319,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index("ix_tickets_work_type_id", table_name="tickets")
     op.drop_index("ix_tickets_category_priority", table_name="tickets")
     op.drop_constraint(op.f("ck_tickets_ticket_duration_source"), "tickets", type_="check")
-    op.drop_constraint(op.f("ck_tickets_ticket_category_valid"), "tickets", type_="check")
     op.drop_constraint(op.f("ck_tickets_sla_deadline_after_received"), "tickets", type_="check")
     op.drop_constraint(op.f("ck_tickets_priority_positive"), "tickets", type_="check")
     op.drop_constraint(op.f("ck_tickets_work_type_not_blank"), "tickets", type_="check")
