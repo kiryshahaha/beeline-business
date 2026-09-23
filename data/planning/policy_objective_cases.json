@@ -1,0 +1,317 @@
+{
+  "policy_id": "beeline_case",
+  "policy_version": 1,
+  "test_level": "policy_reference_not_native_solver",
+  "comparisons": [
+    {
+      "id": "emergency_before_many_connections",
+      "acceptance": [
+        "A09"
+      ],
+      "candidates": [
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 90,
+          "unassigned_connections": 20,
+          "unassigned_total": 20,
+          "active_workers": 1,
+          "travel_minutes": 10,
+          "changed_future_visits": 0
+        },
+        {
+          "unassigned_emergencies": 1,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 1,
+          "active_workers": 1,
+          "travel_minutes": 10,
+          "changed_future_visits": 0
+        }
+      ],
+      "winner": 0,
+      "explanation": "Обслуженная авария важнее 20 подключений."
+    },
+    {
+      "id": "asap_can_displace_ordinary_visits",
+      "acceptance": [
+        "A09",
+        "A10",
+        "A12"
+      ],
+      "candidates": [
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 5,
+          "unassigned_connections": 0,
+          "unassigned_total": 4,
+          "active_workers": 1,
+          "travel_minutes": 50,
+          "changed_future_visits": 0
+        },
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 6,
+          "unassigned_connections": 0,
+          "unassigned_total": 0,
+          "active_workers": 1,
+          "travel_minutes": 10,
+          "changed_future_visits": 0
+        }
+      ],
+      "winner": 0,
+      "explanation": "Одна минута выигрыша реакции допускает потерю четырёх обычных визитов: осознанный trade-off T01."
+    },
+    {
+      "id": "connection_before_repair",
+      "acceptance": [
+        "A09"
+      ],
+      "candidates": [
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 4,
+          "active_workers": 1,
+          "travel_minutes": 10,
+          "changed_future_visits": 0
+        },
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 1,
+          "unassigned_total": 1,
+          "active_workers": 1,
+          "travel_minutes": 10,
+          "changed_future_visits": 0
+        }
+      ],
+      "winner": 0,
+      "explanation": "При равных авариях подключение важнее нескольких ремонтов/дозаказов."
+    },
+    {
+      "id": "coverage_before_workers_and_travel",
+      "acceptance": [
+        "A12"
+      ],
+      "candidates": [
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 0,
+          "active_workers": 3,
+          "travel_minutes": 200,
+          "changed_future_visits": 0
+        },
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 1,
+          "active_workers": 1,
+          "travel_minutes": 1,
+          "changed_future_visits": 0
+        }
+      ],
+      "winner": 0,
+      "explanation": "При равных старших целях дополнительная обычная заявка важнее двух работников и пути."
+    },
+    {
+      "id": "one_worker_before_shorter_travel",
+      "acceptance": [
+        "A11"
+      ],
+      "candidates": [
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 0,
+          "active_workers": 1,
+          "travel_minutes": 41,
+          "changed_future_visits": 0
+        },
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 0,
+          "active_workers": 2,
+          "travel_minutes": 40,
+          "changed_future_visits": 0
+        }
+      ],
+      "winner": 0,
+      "explanation": "При одинаковом покрытии один инженер выигрывает, хотя едет дольше."
+    },
+    {
+      "id": "travel_before_stability",
+      "acceptance": [
+        "A12"
+      ],
+      "candidates": [
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 0,
+          "active_workers": 1,
+          "travel_minutes": 10,
+          "changed_future_visits": 3
+        },
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 0,
+          "active_workers": 1,
+          "travel_minutes": 11,
+          "changed_future_visits": 0
+        }
+      ],
+      "winner": 0,
+      "explanation": "Стабильность — последняя цель, поэтому одна минута пути старше трёх изменений."
+    },
+    {
+      "id": "stable_tie_break",
+      "acceptance": [
+        "A12"
+      ],
+      "candidates": [
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 0,
+          "active_workers": 1,
+          "travel_minutes": 10,
+          "changed_future_visits": 1
+        },
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 0,
+          "active_workers": 1,
+          "travel_minutes": 10,
+          "changed_future_visits": 2
+        }
+      ],
+      "winner": 0,
+      "explanation": "При равенстве остальных метрик сохраняется больше прежних визитов."
+    },
+    {
+      "id": "exact_tie",
+      "acceptance": [
+        "A12"
+      ],
+      "candidates": [
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 0,
+          "active_workers": 1,
+          "travel_minutes": 10,
+          "changed_future_visits": 0
+        },
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 0,
+          "active_workers": 1,
+          "travel_minutes": 10,
+          "changed_future_visits": 0
+        }
+      ],
+      "winner": null,
+      "explanation": "Полное равенство ключей: выбор не предписан политикой."
+    },
+    {
+      "id": "no_weight_overflow_or_priority_inversion",
+      "acceptance": [
+        "A09"
+      ],
+      "candidates": [
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 1000000000000,
+          "active_workers": 1,
+          "travel_minutes": 1000000000000,
+          "changed_future_visits": 0
+        },
+        {
+          "unassigned_emergencies": 1,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 1,
+          "active_workers": 1,
+          "travel_minutes": 10,
+          "changed_future_visits": 0
+        }
+      ],
+      "winner": 0,
+      "explanation": "Лексикографический reference не смешивает младшие цели весами; это не заявка на допустимый размер solver."
+    },
+    {
+      "id": "repair_and_additional_have_equal_rank",
+      "acceptance": [
+        "A09"
+      ],
+      "candidates": [
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 1,
+          "active_workers": 1,
+          "travel_minutes": 10,
+          "changed_future_visits": 0
+        },
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 0,
+          "unassigned_connections": 0,
+          "unassigned_total": 1,
+          "active_workers": 1,
+          "travel_minutes": 10,
+          "changed_future_visits": 0
+        }
+      ],
+      "winner": null,
+      "explanation": "Repair/additional не имеют отдельной ступени; остальные метрики одинаковы."
+    },
+    {
+      "id": "worse_candidate_first",
+      "acceptance": [
+        "A10"
+      ],
+      "candidates": [
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 90,
+          "unassigned_connections": 0,
+          "unassigned_total": 0,
+          "active_workers": 1,
+          "travel_minutes": 10,
+          "changed_future_visits": 0
+        },
+        {
+          "unassigned_emergencies": 0,
+          "emergency_response_minutes": 20,
+          "unassigned_connections": 0,
+          "unassigned_total": 0,
+          "active_workers": 1,
+          "travel_minutes": 200,
+          "changed_future_visits": 0
+        }
+      ],
+      "winner": 1,
+      "explanation": "Выбор зависит от метрик, а не от порядка кандидатов."
+    }
+  ]
+}

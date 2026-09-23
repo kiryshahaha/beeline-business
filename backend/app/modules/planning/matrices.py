@@ -4,10 +4,12 @@ import math
 
 from app.modules.planning.async_utils import bounded_map
 from app.modules.planning.errors import PlanningError
+from app.modules.planning.policy import execution_policy
 from app.modules.planning.solver_contract import SolveRequest
 
 
 async def build_problem(prepared: dict, provider, settings) -> tuple[SolveRequest, list[dict]]:
+    policy = prepared.get("policy") or execution_policy(settings)
     workers, tickets = prepared["workers"], prepared["tickets"]
     nodes = [{"kind": "depot", "location_id": w["location_id"]} for w in workers] + [
         {"kind": "ticket", "location_id": t["location_id"], "ticket": t} for t in tickets
@@ -63,6 +65,7 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
     }
     v, horizon = len(workers), prepared["horizon"]
     request = SolveRequest(
+        policy_version=policy.policy_version,
         num_vehicles=v,
         starts=list(range(v)),
         ends=list(range(v)),
@@ -72,9 +75,9 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
         time_windows=[[0, horizon] for _ in workers] + [t["window"] for t in tickets],
         service_times=[0] * v + [t["duration"] for t in tickets],
         allowed_vehicles={str(v + i): t["allowed"] for i, t in enumerate(tickets)},
-        penalties=[0] * v + [v * horizon + 1] * len(tickets),
+        penalties=[0] * v + [policy.penalty(v, horizon)] * len(tickets),
         time_capacity=horizon,
         slack_max=horizon,
-        search_time_limit_s=settings.planning_solve_time_limit_seconds,
+        search_time_limit_s=policy.search_time_limit_seconds,
     )
     return request, nodes

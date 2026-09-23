@@ -91,6 +91,9 @@ jobs:
       - name: Verify planning datasets
         run: python generate_planning_synthetic.py --output .local/planning-synthetic
 
+      - name: Verify committed CSV-XLSX packages and T01 policy scenarios
+        run: python verify_synthetic.py
+
       - name: Backend, real planner, PostgreSQL and Bruno E2E
         run: python run_planning_e2e.py --report-dir .local/planning-e2e
 

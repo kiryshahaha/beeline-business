@@ -43,6 +43,7 @@ class PlannerApiTests(unittest.TestCase):
             lambda d: d.update(vehicle_fixed_cost=5000),
             lambda d: d.update(num_vehicles=True),
             lambda d: d.update(contract_version=2),
+            lambda d: d.update(policy_version=2),
             lambda d: d.update(allowed_vehicles={}),
             lambda d: d.update(time_capacity=-1),
             lambda d: d.update(service_times=[0]),

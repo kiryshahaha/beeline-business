@@ -21,6 +21,7 @@ from app.db.models import (
     WorkTypeRequiredAppliance,
     WorkTypeRequiredSkill,
 )
+from app.modules.planning.policy import execution_policy
 from app.modules.planning.schemas import PreviewRequest
 from app.modules.planning.snapshot import normalize
 
@@ -35,7 +36,7 @@ def rows(session: Session, model, *conditions):
     ]
 
 
-def load_snapshot(session: Session, request: PreviewRequest) -> dict:
+def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=None) -> dict:
     ticket_ids, worker_ids = request.ticket_ids, request.worker_ids
     tickets = rows(session, Ticket, Ticket.id.in_(ticket_ids))
     workers = rows(session, Worker, Worker.user_id.in_(worker_ids))
@@ -111,7 +112,11 @@ def load_snapshot(session: Session, request: PreviewRequest) -> dict:
     return normalize(
         {
             "request": request.model_dump(mode="json"),
-            "policy_version": 1,
+            **(
+                {"policy_version": 1, "planning_policy": execution_policy().model_dump(mode="json")}
+                if policy_snapshot is None
+                else policy_snapshot
+            ),
             "tickets": tickets,
             "workers": workers,
             "roles": roles,

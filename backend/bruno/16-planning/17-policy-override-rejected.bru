@@ -1,0 +1,19 @@
+meta {
+  name: Нельзя включить неисполняемую политику через preview
+  type: http
+  seq: 17
+}
+post {
+  url: {{base_url}}/api/v1/planning/preview
+  body: json
+  auth: bearer
+}
+auth:bearer {
+  token: {{observer_access_token}}
+}
+body:json {
+  {"route_date":"2030-01-15","ticket_ids":{{planning_ticket_ids}},"worker_ids":{{planning_worker_ids}},"planning_policy":{"route_end":"open"}}
+}
+assert {
+  res.status: eq 422
+}

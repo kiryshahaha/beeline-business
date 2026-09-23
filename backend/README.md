@@ -1880,9 +1880,15 @@ Observer вызывает POST /api/v1/planning/preview с датой, ticket_id
 ```powershell
 python -m unittest discover -s tests -v
 python generate_planning_synthetic.py --output ../data/planning
+python verify_synthetic.py
 python run_planning_e2e.py --planner-python ../planner/.venv/Scripts/python.exe
 ```
 
 E2E запускает настоящий backend и OR-Tools, отдельную схему PostgreSQL и
 контролируемый HTTP-сервис вместо Geoapify, затем всю коллекцию Bruno.
 Недоступная БД или отсутствующая нативная библиотека завершают проверки ошибкой.
+
+`GET /api/v1/planning/policy` показывает наблюдателю текущую конфигурацию расчёта
+и отдельно контракт кейса T01. Сохранённый preview содержит полную `planning_policy`;
+старые планы без параметров возвращают `null`. Подробности и границы реализации:
+[PLANNING_POLICY.md](../docs/PLANNING_POLICY.md).
