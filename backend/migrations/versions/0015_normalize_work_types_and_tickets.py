@@ -30,10 +30,12 @@ BASE_SKILLS = [
 
 KNOWN_ALIASES = {
     "подключение клиентов базовая": "connection",
+    "подключение": "connection",
     "настройка сети": "connection",
     "настройка wi-fi": "connection",
     "wi-fi 'настройка'": "connection",
     "подключить точку доступа": "connection",
+    "монтаж оборудования": "repair",
     "аварий на ткд": "emergency",
     "авария на ткд": "emergency",
     "авария": "emergency",
@@ -317,8 +319,117 @@ def upgrade() -> None:
             ).bindparams(skill=skill_name)
         )
 
+    # 4. Trigger to set work_type_id and defaults on direct raw SQL inserts
+    op.execute(
+        sa.text(
+            """
+            CREATE OR REPLACE FUNCTION trg_tickets_set_defaults()
+            RETURNS TRIGGER AS $$
+            DECLARE
+                found_wt RECORD;
+            BEGIN
+                IF NEW.received_at IS NULL THEN
+                    NEW.received_at := COALESCE(NEW.created_at, now());
+                END IF;
+
+                IF NEW.work_type_id IS NULL THEN
+                    IF NEW.work_type IS NOT NULL AND btrim(NEW.work_type) <> '' THEN
+                        SELECT id, category, default_priority
+                        INTO found_wt
+                        FROM work_types
+                        WHERE lower(name) = lower(btrim(NEW.work_type))
+                           OR lower(code) = lower(btrim(NEW.work_type))
+                        LIMIT 1;
+
+                        IF found_wt.id IS NULL THEN
+                            IF lower(NEW.work_type) LIKE '%авар%' THEN
+                                SELECT id, category, default_priority INTO found_wt
+                                FROM work_types WHERE code = 'emergency' LIMIT 1;
+                            ELSIF lower(NEW.work_type) LIKE '%подключ%'
+                               OR lower(NEW.work_type) LIKE '%настройк%' THEN
+                                SELECT id, category, default_priority INTO found_wt
+                                FROM work_types WHERE code = 'connection' LIMIT 1;
+                            ELSIF lower(NEW.work_type) LIKE '%дозаказ%' THEN
+                                SELECT id, category, default_priority INTO found_wt
+                                FROM work_types WHERE code = 'additional' LIMIT 1;
+                            ELSE
+                                SELECT id, category, default_priority INTO found_wt
+                                FROM work_types WHERE code = 'repair' LIMIT 1;
+                            END IF;
+                        END IF;
+
+                        IF found_wt.id IS NOT NULL THEN
+                            NEW.work_type_id := found_wt.id;
+                            IF NEW.category IS NULL THEN
+                                NEW.category := found_wt.category;
+                            END IF;
+                            IF NEW.priority IS NULL THEN
+                                NEW.priority := found_wt.default_priority;
+                            END IF;
+                        END IF;
+                    END IF;
+
+                    IF NEW.work_type_id IS NULL THEN
+                        SELECT id, category, default_priority
+                        INTO found_wt
+                        FROM work_types
+                        ORDER BY id
+                        LIMIT 1;
+
+                        IF found_wt.id IS NOT NULL THEN
+                            NEW.work_type_id := found_wt.id;
+                            IF NEW.category IS NULL THEN
+                                NEW.category := found_wt.category;
+                            END IF;
+                            IF NEW.priority IS NULL THEN
+                                NEW.priority := found_wt.default_priority;
+                            END IF;
+                        END IF;
+                    END IF;
+                END IF;
+
+                IF NEW.category IS NULL THEN
+                    SELECT category INTO NEW.category FROM work_types WHERE id = NEW.work_type_id;
+                    IF NEW.category IS NULL THEN
+                        NEW.category := 'repair';
+                    END IF;
+                END IF;
+
+                IF NEW.priority IS NULL THEN
+                    SELECT default_priority INTO NEW.priority
+                    FROM work_types WHERE id = NEW.work_type_id;
+                    IF NEW.priority IS NULL THEN
+                        NEW.priority := 3;
+                    END IF;
+                END IF;
+
+                IF NEW.category = 'emergency' AND NEW.sla_deadline_at IS NULL THEN
+                    NEW.sla_deadline_at := NEW.received_at + interval '24 hours';
+                END IF;
+
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            DROP TRIGGER IF EXISTS trg_tickets_defaults ON tickets;
+            CREATE TRIGGER trg_tickets_defaults
+            BEFORE INSERT ON tickets
+            FOR EACH ROW
+            EXECUTE FUNCTION trg_tickets_set_defaults();
+            """
+        )
+    )
+
 
 def downgrade() -> None:
+    op.execute(
+        sa.text(
+            """
+            DROP TRIGGER IF EXISTS trg_tickets_defaults ON tickets;
+            DROP FUNCTION IF EXISTS trg_tickets_set_defaults();
+            """
+        )
+    )
     op.drop_index("ix_tickets_work_type_id", table_name="tickets")
     op.drop_index("ix_tickets_category_priority", table_name="tickets")
     op.drop_constraint(op.f("ck_tickets_ticket_duration_source"), "tickets", type_="check")

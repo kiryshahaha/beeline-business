@@ -72,8 +72,8 @@ def _ticket_from_row(details: RowMapping) -> TicketRead:
     category = details.get("category")
     if category is not None and not isinstance(category, TicketCategory):
         category = TicketCategory(category)
-    return TicketRead(
-        **TicketFields.model_validate(details).model_dump(),
+    data = TicketFields.model_validate(details).model_dump()
+    data.update(
         id=details["id"],
         work_type_id=details["work_type_id"],
         category=category or TicketCategory.REPAIR,
@@ -104,6 +104,7 @@ def _ticket_from_row(details: RowMapping) -> TicketRead:
             longitude=details["longitude"],
         ),
     )
+    return TicketRead(**data)
 
 
 def create_ticket(session: Session, data: TicketCreate) -> TicketRead:
