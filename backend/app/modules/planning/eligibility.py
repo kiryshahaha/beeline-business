@@ -209,4 +209,3 @@ def check_eligibility(snapshot: dict, now: datetime | None = None) -> dict:
     if now is None:
         now = datetime.min.replace(tzinfo=MOSCOW)
     return prepare(snapshot, now)
-

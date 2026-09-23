@@ -15,4 +15,3 @@ class TicketCategory(StrEnum):
     CONNECTION = "connection"
     REPAIR = "repair"
     ADDITIONAL = "additional"
-

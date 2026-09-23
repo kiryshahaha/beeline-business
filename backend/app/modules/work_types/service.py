@@ -74,4 +74,3 @@ def update_work_type(session: Session, work_type_id: int, data: WorkTypeUpdate) 
             return get_work_type(session, work_type_id)
     except IntegrityError as error:
         raise WorkTypeNameAlreadyExistsError from error
-

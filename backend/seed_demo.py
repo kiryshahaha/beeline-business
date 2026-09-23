@@ -519,21 +519,29 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
         ).scalar()
         created = ticket_id is None
         if created:
-            wt_row = session.execute(
-                text(
-                    "SELECT id, category, default_priority FROM work_types "
-                    "WHERE lower(name) = lower(:name) OR lower(code) = lower(:name) "
-                    "LIMIT 1"
-                ),
-                {"name": visit.work_type},
-            ).mappings().one_or_none()
-            if wt_row is None:
-                wt_row = session.execute(
+            wt_row = (
+                session.execute(
                     text(
                         "SELECT id, category, default_priority FROM work_types "
-                        "ORDER BY id LIMIT 1"
+                        "WHERE lower(name) = lower(:name) OR lower(code) = lower(:name) "
+                        "LIMIT 1"
+                    ),
+                    {"name": visit.work_type},
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if wt_row is None:
+                wt_row = (
+                    session.execute(
+                        text(
+                            "SELECT id, category, default_priority FROM work_types "
+                            "ORDER BY id LIMIT 1"
+                        )
                     )
-                ).mappings().one()
+                    .mappings()
+                    .one()
+                )
             v_start = datetime.combine(visit_date, time(visit.start_hour), MOSCOW_TIME)
             ticket_id = session.execute(
                 text("""

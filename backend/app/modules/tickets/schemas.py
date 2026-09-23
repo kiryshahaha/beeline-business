@@ -82,13 +82,13 @@ class TicketFields(BaseModel):
     work_type_id: PositiveInt32 | None = Field(
         default=None,
         description=(
-            "ID вида работ из справочника work_types. "
-            "Если не указан, определяется по work_type."
+            "ID вида работ из справочника work_types. Если не указан, определяется по work_type."
         ),
     )
-    work_type: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
-    ] | None = None
+    work_type: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+        | None
+    ) = None
     category: TicketCategory | str | None = Field(
         default=None,
         description=(
@@ -220,4 +220,3 @@ class TicketRead(TicketFields):
     updated_at: AwareDatetime
     location: LocationRead
     assignee_ids: list[int] = Field(default_factory=list)
-

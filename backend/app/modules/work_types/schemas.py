@@ -148,4 +148,3 @@ class WorkTypeUpdate(BaseModel):
             if getattr(self, field) is None:
                 raise ValueError(f"Поле {field} не может быть null")
         return self
-

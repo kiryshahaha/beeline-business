@@ -66,9 +66,7 @@ class Ticket(IntegerIdMixin, Base):
     planned_end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     estimated_duration_minutes: Mapped[int]
     actual_duration_minutes: Mapped[int | None]
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -100,7 +98,6 @@ class Ticket(IntegerIdMixin, Base):
         Index("ix_tickets_visit_window_start", visit_window_start),
         Index("ix_tickets_category_priority", category, priority),
     )
-
 
 
 class TicketAssignment(Base):

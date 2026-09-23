@@ -93,7 +93,6 @@ def add_ticket(session: Session, values: dict[str, object]) -> int:
     ).scalar_one()
 
 
-
 def lock_ticket(session: Session, ticket_id: int) -> RowMapping | None:
     return (
         session.execute(

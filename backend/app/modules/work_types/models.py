@@ -40,7 +40,6 @@ class WorkType(IntegerIdMixin, Base):
     )
 
 
-
 class WorkTypePlanningRule(Base):
     __tablename__ = "work_type_planning_rules"
 

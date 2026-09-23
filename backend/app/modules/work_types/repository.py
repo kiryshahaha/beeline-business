@@ -94,4 +94,3 @@ def update_work_type(session: Session, work_type_id: int, changes: dict[str, obj
         text(f"UPDATE work_types SET {assignments} WHERE id = :work_type_id"),
         {**{column: changes[column] for column in columns}, "work_type_id": work_type_id},
     )
-

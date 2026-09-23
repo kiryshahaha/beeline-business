@@ -156,17 +156,20 @@ def upgrade() -> None:
 
     # Any remaining unmapped tickets? Check and auto-create work_type or raise if unknown
     conn = op.get_bind()
-    unmapped = conn.execute(
-        sa.text("SELECT DISTINCT work_type FROM tickets WHERE work_type_id IS NULL")
-    ).scalars().all()
+    unmapped = (
+        conn.execute(sa.text("SELECT DISTINCT work_type FROM tickets WHERE work_type_id IS NULL"))
+        .scalars()
+        .all()
+    )
     if unmapped:
         # Create work types for these unmapped types so no data is corrupted or lost
         for wt_name in unmapped:
             if wt_name and wt_name.strip():
                 clean_name = wt_name.strip()
-                res = conn.execute(
-                    sa.text(
-                        """
+                res = (
+                    conn.execute(
+                        sa.text(
+                            """
                         INSERT INTO work_types (
                             name, code, category, default_priority,
                             travel_minutes, work_minutes, documents_minutes
@@ -178,8 +181,11 @@ def upgrade() -> None:
                         )
                         RETURNING id, category, default_priority
                         """
-                    ).bindparams(name=clean_name)
-                ).mappings().one()
+                        ).bindparams(name=clean_name)
+                    )
+                    .mappings()
+                    .one()
+                )
                 conn.execute(
                     sa.text(
                         """
@@ -254,9 +260,7 @@ def upgrade() -> None:
         "tickets",
         "work_type IS NULL OR (work_type = btrim(work_type) AND work_type <> '')",
     )
-    op.create_check_constraint(
-        op.f("ck_tickets_priority_positive"), "tickets", "priority >= 1"
-    )
+    op.create_check_constraint(op.f("ck_tickets_priority_positive"), "tickets", "priority >= 1")
     op.create_check_constraint(
         op.f("ck_tickets_sla_deadline_after_received"),
         "tickets",
@@ -309,9 +313,7 @@ def downgrade() -> None:
     op.drop_column("tickets", "category")
     op.drop_column("tickets", "work_type_id")
 
-    op.drop_constraint(
-        op.f("ck_work_types_default_priority_positive"), "work_types", type_="check"
-    )
+    op.drop_constraint(op.f("ck_work_types_default_priority_positive"), "work_types", type_="check")
     op.drop_constraint(op.f("ck_work_types_category_valid"), "work_types", type_="check")
     op.drop_constraint(op.f("ck_work_types_code_not_blank"), "work_types", type_="check")
     op.drop_index("uq_work_types_code", table_name="work_types")

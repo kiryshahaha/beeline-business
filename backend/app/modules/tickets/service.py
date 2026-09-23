@@ -140,8 +140,8 @@ def create_ticket(session: Session, data: TicketCreate) -> TicketRead:
                 elif "дозаказ" in lower_wt:
                     category = "additional"
 
-                work_priority = 1 if category == "emergency" else (
-                    2 if category == "connection" else 3
+                work_priority = (
+                    1 if category == "emergency" else (2 if category == "connection" else 3)
                 )
                 work_type_id = work_types_repository.add_work_type(
                     session,
@@ -184,8 +184,6 @@ def create_ticket(session: Session, data: TicketCreate) -> TicketRead:
         ticket_id = repository.add_ticket(session, values)
         # Build the response inside the transaction; a failed operation leaves no ticket.
         return get_ticket(session, ticket_id)
-
-
 
 
 def replace_assignees(session: Session, ticket_id: int, worker_ids: list[int]) -> TicketRead:

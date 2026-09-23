@@ -78,7 +78,6 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
     return data
 
 
-
 def preview_request(receipt, data):
     ids = receipt["id_map"]
     return {
