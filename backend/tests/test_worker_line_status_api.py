@@ -390,6 +390,9 @@ class WorkerLinePlanningEligibilityTests(unittest.TestCase):
 
         self.assertEqual(prepared["workers"], [])
         self.assertEqual(
-            prepared["excluded_workers"],
-            [{"worker_id": 7, "reason": "worker_offline"}],
+            [(x["worker_id"], x["reason"]["code"]) for x in prepared["excluded_workers"]],
+            [(7, "worker_offline")],
+        )
+        self.assertEqual(
+            prepared["excluded_workers"][0]["reason"]["message"], "Инженер снят с линии"
         )

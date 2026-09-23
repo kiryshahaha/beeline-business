@@ -1,0 +1,23 @@
+meta {
+  name: Пустой план нельзя применить
+  type: http
+  seq: 19
+}
+
+post {
+  url: {{base_url}}/api/v1/planning/plans/{{planning_empty_id}}/apply
+
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 409
+}
+
+tests {
+  test("Нечего применять", () => expect(res.getBody().detail.code).to.equal("plan_has_no_assignments"));
+}

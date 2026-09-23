@@ -1,7 +1,7 @@
 """Public planning DTOs; matrices and database snapshots stay private."""
 
 from datetime import date, datetime
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -32,14 +32,83 @@ class PreviewRequest(BaseModel):
 # Public DTOs deliberately omit raw snapshots, solver matrices and internal IDs.
 
 
+ReasonCategory = Literal[
+    "data",
+    "ticket_state",
+    "availability",
+    "skill",
+    "area",
+    "transport",
+    "inventory",
+    "unreachable",
+    "time",
+    "capacity",
+    "search",
+    "mixed",
+    "policy",
+    "selection",
+]
+
+
+class Explanation(BaseModel):
+    """One checked fact: why something was rejected, or why a visit is allowed."""
+
+    code: str
+    category: ReasonCategory
+    message: str
+    constraint: str | None
+    ids: dict[str, list[int]]
+    observed: dict[str, Any] | None
+    required: dict[str, Any] | None
+
+
+class CandidateRejection(BaseModel):
+    worker_id: int
+    reason: Explanation
+
+
 class Rejection(BaseModel):
     ticket_id: int
-    reason: str
+    reason: Explanation
+    candidates: list[CandidateRejection]
 
 
 class ExcludedWorker(BaseModel):
     worker_id: int
-    reason: str
+    reason: Explanation
+
+
+class PlanMetrics(BaseModel):
+    requested_tickets: int
+    eligible_tickets: int
+    assigned_tickets: int
+    unassigned_tickets: int
+    requested_workers: int
+    available_workers: int
+    used_workers: int
+    distance_meters: float
+    travel_minutes: int
+    service_minutes: int
+    waiting_minutes: int
+    unassigned_by_category: dict[ReasonCategory, int]
+
+
+class WorkerCopyEstimate(BaseModel):
+    like_worker_id: int
+    ticket_ids: list[int]
+    travel_minutes: int
+
+
+class ResourceEstimate(BaseModel):
+    is_estimate: Literal[True]
+    method: Literal["greedy_insertion_with_worker_copies"]
+    complete: bool
+    message: str
+    additional_workers: int
+    considered_ticket_ids: list[int]
+    covered_ticket_ids: list[int]
+    uncovered_ticket_ids: list[int]
+    workers: list[WorkerCopyEstimate]
 
 
 class PlannedVisit(BaseModel):
@@ -52,6 +121,7 @@ class PlannedVisit(BaseModel):
     waiting_minutes: int
     effective_service_minutes: int
     duration_source: Literal["ticket_estimate", "work_norm"]
+    factors: list[Explanation] = []
 
 
 class PlannedRoute(BaseModel):
@@ -89,13 +159,16 @@ class PlanRead(BaseModel):
     planning_policy: ExecutionPolicy | None = None
     plan_id: UUID
     state: Literal["ready", "applied", "expired", "stale"]
+    outcome: Literal["complete", "partial", "empty"]
     route_date: date
     timezone: Literal["Europe/Moscow"]
     expires_at: datetime
-    solver_status: Literal["FEASIBLE", "OPTIMAL"]
+    solver_status: Literal["FEASIBLE", "OPTIMAL"] | None
+    metrics: PlanMetrics | None = None
     routes: list[PlannedRoute]
     unassigned: list[Rejection]
     excluded_workers: list[ExcludedWorker]
+    resource_estimate: ResourceEstimate | None = None
     warnings: list[str]
     is_current: bool | None = None
     apply_result: ApplyResult | None = None

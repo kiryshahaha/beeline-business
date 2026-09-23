@@ -1,0 +1,44 @@
+meta {
+  name: Пустой план после применения читается с причинами
+  type: http
+  seq: 18
+}
+
+post {
+  url: {{base_url}}/api/v1/planning/preview
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"route_date":"2030-01-15","ticket_ids":{{planning_ticket_ids}},"worker_ids":{{planning_worker_ids}}}
+}
+
+assert {
+  res.status: eq 201
+}
+
+script:post-response {
+  if (res.getStatus() === 201) bru.setVar("planning_empty_id", res.getBody().plan_id);
+}
+
+tests {
+  test("Корректный пустой план, а не сбой решателя", () => {
+    const b = res.getBody();
+    expect(b.outcome).to.equal("empty");
+    expect(b.solver_status).to.equal(null);
+    expect(b.routes).to.have.lengthOf(0);
+    expect(b.metrics.eligible_tickets).to.equal(0);
+    expect(b.metrics.unassigned_tickets).to.equal(24);
+    expect(b.metrics.unassigned_by_category).to.deep.equal({ticket_state: 24});
+    for (const u of b.unassigned) {
+      expect(u.reason.code).to.equal("already_assigned");
+      expect(u.reason.message).to.contain("уже назначена");
+      expect(u.reason.ids.worker_ids).to.have.lengthOf(1);
+    }
+  });
+}

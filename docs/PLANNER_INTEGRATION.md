@@ -238,7 +238,10 @@ sequenceDiagram
 - `allow_partial=false`: любое исключение/отброшенная заявка → 422
   `incomplete_plan`, без применимого черновика. Это строгость результата для
   пользователя; её нельзя смешивать со статусом математического поиска.
-- Если не удалось запланировать ни одной заявки — 422 `no_feasible_assignments`.
+- Если не удалось запланировать ни одной заявки — обычный `201` с `outcome="empty"`,
+  метриками и причинами. Такой preview хранится и читается по `plan_id`, apply
+  отвечает `409 plan_has_no_assignments`. Сбои провайдера/решателя остаются ошибками
+  502/503/504 и не превращаются в пустой план.
 - Повтор preview может создать другой черновик; бизнес-данные не меняются.
   Для ограничения затрат добавить серверный лимит одновременных расчётов и rate limit.
 
@@ -274,14 +277,32 @@ sequenceDiagram
       "duration_source": "ticket_estimate"
     }]
   }],
-  "unassigned": [
-    {"ticket_id": 102, "reason": "no_eligible_worker"},
-    {"ticket_id": 103, "reason": "not_selected_by_solver"}
-  ],
+  "unassigned": [{
+    "ticket_id": 103,
+    "reason": {
+      "code": "no_slot_in_computed_plan",
+      "category": "capacity",
+      "message": "Не найдено подходящее место в рассчитанном плане: ...",
+      "constraint": null,
+      "ids": {"worker_ids": [21]},
+      "observed": null,
+      "required": null
+    },
+    "candidates": [
+      {"worker_id": 21, "reason": {"code": "route_full", "...": "..."}},
+      {"worker_id": 22, "reason": {"code": "missing_skill", "...": "..."}}
+    ]
+  }],
   "excluded_workers": [],
+  "outcome": "partial",
+  "metrics": {"requested_tickets": 3, "assigned_tickets": 1, "used_workers": 1, "...": 0},
+  "resource_estimate": {"is_estimate": true, "additional_workers": 1, "...": "..."},
   "warnings": []
 }
 ```
+
+Каждый визит в `stops` дополнительно содержит `factors` — список проверенных фактов
+той же структуры, что причина отказа.
 
 Это пример формы ответа, а не эталон вычислений для произвольных ID. Полный DTO
 дополнить геометрией, списком переходов и версией алгоритма. В preview нет
@@ -291,14 +312,20 @@ sequenceDiagram
 `GET /api/v1/planning/plans/{plan_id}` — для observer, 404 для отсутствующего ID.
 Возвращает то же сохранённое представление и state; не пересчитывает его автоматически.
 
-Коды исключений задаются enum и покрываются тестами: `ticket_not_planned`,
-`already_assigned`, `missing_coordinates`, `outside_shift_horizon`,
+Причина — объект `{code, category, message, constraint, ids, observed, required}`,
+подробно описан в [README модуля](../backend/app/modules/planning/README.md).
+Коды заявки: `ticket_not_planned`, `already_assigned`, `missing_coordinates`,
 `unknown_work_type`, `work_requirements_not_configured`, `invalid_service_duration`,
-`equipment_not_reserved`, `stock_inconsistent`, `no_eligible_worker`,
-`unreachable`, `not_selected_by_solver`; для работников также `missing_office`,
-`worker_busy`, `shift_already_started`, `unsupported_transport_profile`.
-`unreachable` допустим только при проверенном отсутствии достижимого варианта;
-если доказательства нет, писать `not_selected_by_solver`, а не выдумывать объяснение оптимизатора.
+`outside_shift_horizon`, `equipment_not_reserved`, `stock_inconsistent`,
+`no_available_workers`, `missing_skill`, `no_eligible_worker`, `feasible_slot_missed`,
+`no_slot_in_computed_plan`, а также единый код кандидатов, если он у всех одинаков.
+Коды кандидата: `missing_skill`, `office_mismatch`, `window_outside_shift`,
+`service_after_shift_end`, `unreachable_by_transport`, `address_unreachable`,
+`arrival_after_window`, `return_after_shift_end`, `route_full`, `slot_available`.
+Коды инженера: `invalid_worker_role`, `worker_offline`, `missing_office`,
+`missing_coordinates`, `shift_already_started`, `unsupported_transport_profile`, `worker_busy`.
+Недостижимость утверждается только по проверенной матрице для конкретного инженера;
+если место не найдено в рассчитанных маршрутах, так и пишется, без заявления о невозможности.
 
 ### 5.2. Применение
 

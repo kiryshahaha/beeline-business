@@ -62,6 +62,10 @@ T01 в 16-planning: чтение `/planning/policy` наблюдателем, `4
 изменения норм работ. `case_contract.activation=contract_only` не выдаётся за
 активную цель OR-Tools.
 
+T10 в 16-planning: preview содержит `outcome`, `metrics` и `factors` каждого визита;
+повторный расчёт уже назначенных заявок возвращает `201` с `outcome=empty`, причинами
+`already_assigned` и `solver_status=null`, а его apply — `409 plan_has_no_assignments`.
+
 Для полного воспроизводимого прогона из backend используйте run_planning_e2e.py.
 Он сам поднимает тестовое окружение с реальным OR-Tools. При ручном запуске всей
 коллекции нужен GEOAPIFY_API_KEY; обращения к настоящему Geoapify расходуют квоту.
