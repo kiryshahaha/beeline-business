@@ -1,0 +1,24 @@
+meta {
+  name: Новая выдача того же дня не нужна
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/api/v1/workers/{{equipment_worker_id}}/equipment/issue
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"operation_key":"bruno-kit-2030-01-15-again","date":"2030-01-15"}
+}
+
+assert {
+  res.status: eq 409
+  res.body.detail.code: eq nothing_to_issue
+}

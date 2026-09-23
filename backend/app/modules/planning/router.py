@@ -10,6 +10,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.core.config import get_settings
 from app.db.session import get_engine
+from app.modules.appliances.inventory import InventoryError
 from app.modules.auth.dependencies import require_roles
 from app.modules.planning import service
 from app.modules.planning.case_policy import case_policy
@@ -63,6 +64,8 @@ def get_provider_factory(settings=Depends(planning_settings)):
 
 
 def fail(error):
+    if isinstance(error, InventoryError):
+        raise HTTPException(error.status, detail=error.detail()) from error
     if isinstance(error, PlanningError):
         raise HTTPException(error.status, detail={"code": error.code, **error.details}) from error
     raise HTTPException(503, detail={"code": "planning_database_unavailable"}) from error
@@ -119,5 +122,5 @@ async def apply_plan(
 ):
     try:
         return await asyncio.to_thread(service.apply_plan, engine, plan_id, clock)
-    except (PlanningError, OperationalError) as error:
+    except (PlanningError, InventoryError, OperationalError) as error:
         fail(error)

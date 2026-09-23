@@ -128,6 +128,9 @@ def replace_assignees_in_transaction(
         raise WorkerNotFoundError
     if not all(worker_line_statuses.values()):
         raise WorkerOffLineError
+    from app.modules.appliances import inventory
+
+    inventory.check_reassignment(session, ticket_id, worker_ids)
     new_worker_ids = repository.replace_assignees(session, ticket_id, worker_ids)
     for worker_id in new_worker_ids:
         repository.add_notification_events(
@@ -164,7 +167,7 @@ def update_ticket_status(
         if status == TicketStatus.COMPLETED:
             from app.modules.appliances import service as appliances_service
 
-            appliances_service.on_ticket_status_completed(session, ticket_id)
+            appliances_service.on_ticket_status_completed(session, ticket_id, current_user.id)
         repository.add_notification_events(
             session,
             repository.list_observer_ids(session),

@@ -1,0 +1,34 @@
+meta {
+  name: Явно вернуть оборудование одной заявки на склад
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/api/v1/workers/{{equipment_worker_id}}/equipment/return
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"operation_key":"bruno-return-1","ticket_ids":[{{equipment_return_ticket_id}}]}
+}
+
+assert {
+  res.status: eq 200
+  res.body.kind: eq return
+}
+
+tests {
+  test("Движение с рук инженера в офис резерва заявки", () => {
+    for (const m of res.getBody().movements) {
+      expect(m.from_worker_id).to.equal(Number(bru.getVar("equipment_worker_id")));
+      expect(m.to_office_id).to.be.a("number");
+      expect(m.ticket_id).to.equal(Number(bru.getVar("equipment_return_ticket_id")));
+    }
+  });
+}

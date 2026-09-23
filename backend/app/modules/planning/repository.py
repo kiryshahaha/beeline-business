@@ -1,6 +1,6 @@
 """Bounded input selection directly from PostgreSQL, independent of paginated public APIs."""
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -12,6 +12,7 @@ from app.db.models import (
     Office,
     Ticket,
     TicketAppliance,
+    TicketApplianceState,
     TicketAssignment,
     User,
     Worker,
@@ -104,6 +105,11 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
                 TicketAppliance.office_id.in_(office_ids),
                 TicketAppliance.appliance_id.in_(appliance_ids),
                 Ticket.status.in_(["planned", "in_progress"]),
+                # Issued or written-off units have already left the office stock.
+                ~exists().where(
+                    TicketApplianceState.ticket_id == TicketAppliance.ticket_id,
+                    TicketApplianceState.appliance_id == TicketAppliance.appliance_id,
+                ),
             )
             .group_by(TicketAppliance.office_id, TicketAppliance.appliance_id)
             .order_by(TicketAppliance.office_id, TicketAppliance.appliance_id)

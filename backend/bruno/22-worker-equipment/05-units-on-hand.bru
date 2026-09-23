@@ -1,0 +1,31 @@
+meta {
+  name: Оборудование закреплено за заявками
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/workers/{{equipment_worker_id}}/equipment?date=2030-01-15
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Всё на руках занято назначенными заявками", () => {
+    const b = res.getBody();
+    expect(b.to_issue).to.have.lengthOf(0);
+    expect(b.items.length).to.be.above(0);
+    for (const item of b.items) {
+      expect(item.committed).to.equal(item.on_hand);
+      expect(item.free).to.equal(0);
+    }
+  });
+}
