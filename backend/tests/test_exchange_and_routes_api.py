@@ -60,10 +60,18 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
                     "location_id": self.ids["locations"]["1"],
                     "ticket_id": self.ids["tickets"]["1"],
                     "arrival_at": "2026-09-23T09:00:00+03:00",
+                    "service_start_at": "2026-09-23T09:00:00+03:00",
+                    "service_end_at": "2026-09-23T09:30:00+03:00",
+                    "waiting_minutes": 0,
+                    "duration_source": "ticket_estimate",
                 },
                 {
                     "location_id": self.ids["locations"]["2"],
                     "arrival_at": "2026-09-23T10:00:00+03:00",
+                    "service_start_at": "2026-09-23T10:00:00+03:00",
+                    "service_end_at": "2026-09-23T10:30:00+03:00",
+                    "waiting_minutes": 0,
+                    "duration_source": "ticket_estimate",
                 },
             ],
             **overrides,
@@ -202,6 +210,9 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
             points = route["geojson"]["features"][:2]
             self.assertEqual([p["properties"]["sequence"] for p in points], [1, 2])
             self.assertEqual(points[0]["properties"]["arrival_at"], "2026-09-23T09:00:00+03:00")
+            self.assertEqual(points[0]["properties"]["service_start_at"], "2026-09-23T09:00:00+03:00")
+            self.assertEqual(points[0]["properties"]["service_end_at"], "2026-09-23T09:30:00+03:00")
+            self.assertEqual(points[0]["properties"]["waiting_minutes"], 0)
             self.assertEqual(
                 points[0]["geometry"]["coordinates"],
                 [
@@ -236,7 +247,7 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
             lambda p: p.update(stops=[]),
             lambda p: p.update(route_date="2026-09-22"),
             lambda p: p["stops"][0].update(arrival_at="2026-09-23T09:00:00"),
-            lambda p: p["stops"][1].update(arrival_at="2026-09-23T08:00:00+03:00"),
+            lambda p: p["stops"][1].update(arrival_at="2026-09-23T08:00:00+03:00", service_start_at="2026-09-23T08:00:00+03:00"),
             lambda p: p["stops"][0].update(location_id=2147483647),
             lambda p: p["stops"][0].update(location_id=self.ids["locations"]["17"]),
             lambda p: p["stops"][0].update(ticket_id=self.ids["tickets"]["2"]),
@@ -268,10 +279,18 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
                 {
                     "location_id": self.ids["locations"]["1"],
                     "arrival_at": "2026-09-23T23:30:00+03:00",
+                    "service_start_at": "2026-09-23T23:30:00+03:00",
+                    "service_end_at": "2026-09-24T00:00:00+03:00",
+                    "waiting_minutes": 0,
+                    "duration_source": "ticket_estimate",
                 },
                 {
                     "location_id": self.ids["locations"]["2"],
                     "arrival_at": "2026-09-24T01:30:00+03:00",
+                    "service_start_at": "2026-09-24T01:30:00+03:00",
+                    "service_end_at": "2026-09-24T02:00:00+03:00",
+                    "waiting_minutes": 0,
+                    "duration_source": "ticket_estimate",
                 },
             ],
         )
@@ -323,6 +342,10 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
                     {
                         "location_id": self.ids["locations"]["1"],
                         "arrival_at": "2026-09-25T09:00:00+03:00",
+                        "service_start_at": "2026-09-25T09:00:00+03:00",
+                        "service_end_at": "2026-09-25T09:30:00+03:00",
+                        "waiting_minutes": 0,
+                        "duration_source": "ticket_estimate",
                     },
                 ],
             )

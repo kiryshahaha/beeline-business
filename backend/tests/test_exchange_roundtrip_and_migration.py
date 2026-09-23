@@ -40,6 +40,10 @@ class ExchangeRoundtripTests(DatabaseTestCase):
                                     "location_id": cls.ids["locations"]["1"],
                                     "ticket_id": cls.ids["tickets"]["1"],
                                     "arrival_at": "2026-09-21T09:00:00+03:00",
+                                    "service_start_at": "2026-09-21T09:00:00+03:00",
+                                    "service_end_at": "2026-09-21T09:30:00+03:00",
+                                    "waiting_minutes": 0,
+                                    "duration_source": "ticket_estimate",
                                 }
                             ],
                         }

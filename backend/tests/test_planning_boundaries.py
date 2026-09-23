@@ -159,6 +159,10 @@ class PlanningBoundaryTests(unittest.IsolatedAsyncioTestCase):
                         "location_id": 1,
                         "sequence": 1,
                         "arrival_at": "2030-01-15T09:00:00+03:00",
+                        "service_start_at": "2030-01-15T09:00:00+03:00",
+                        "service_end_at": "2030-01-15T09:30:00+03:00",
+                        "waiting_minutes": 0,
+                        "duration_source": "ticket_estimate",
                     },
                 },
                 {
@@ -168,6 +172,10 @@ class PlanningBoundaryTests(unittest.IsolatedAsyncioTestCase):
                         "location_id": 2,
                         "sequence": 2,
                         "arrival_at": "2030-01-15T12:00:00+03:00",
+                        "service_start_at": "2030-01-15T12:00:00+03:00",
+                        "service_end_at": "2030-01-15T12:30:00+03:00",
+                        "waiting_minutes": 0,
+                        "duration_source": "ticket_estimate",
                     },
                 },
                 {
