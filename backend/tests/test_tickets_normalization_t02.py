@@ -158,7 +158,9 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
             session.flush()
 
         # 2. Create ticket referencing this work_type_id
-        now = datetime.now(TZ)
+        # Use a fixed morning anchor so windows stay inside the 08:00-20:00 shift
+        # regardless of when the test suite runs.
+        now = datetime.combine(datetime.now(TZ).date(), time(10, 0), TZ)
         ticket_dto = TicketCreate(
             location_id=self.location.id,
             title="Подключение клиента",
@@ -229,7 +231,9 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
 
         session.flush()
 
-        now = datetime.now(TZ).replace(microsecond=0)
+        # Fixed morning anchor: visit windows fall inside the 08:00-20:00 shift
+        # regardless of when the test suite executes.
+        now = datetime.combine(datetime.now(TZ).date(), time(10, 0), TZ)
         t_repair = create_ticket(
             session,
             TicketCreate(
@@ -285,7 +289,8 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
             )
             session.flush()
 
-        now = datetime.now(TZ)
+        # Fixed morning anchor so windows stay inside the 08:00-20:00 shift.
+        now = datetime.combine(datetime.now(TZ).date(), time(10, 0), TZ)
         # Ticket 1: requires CAR
         t_car = create_ticket(
             session,
