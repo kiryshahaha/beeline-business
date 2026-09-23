@@ -98,7 +98,7 @@ def list_users(
 
 
 def create_user(session: Session, data: UserCreate) -> UserRead:
-    with session.begin():
+    with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         if repository.find_user_by_username(session, data.username) is not None:
             raise UsernameAlreadyExistsError

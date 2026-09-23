@@ -38,7 +38,7 @@ def get_work_type(session: Session, work_type_id: int) -> WorkTypeRead:
 
 def create_work_type(session: Session, data: WorkTypeCreate) -> WorkTypeRead:
     try:
-        with session.begin():
+        with session.begin_nested() if session.in_transaction() else session.begin():
             lock_planning_mutation(session)
             if repository.find_id_by_name(session, data.name) is not None:
                 raise WorkTypeNameAlreadyExistsError
@@ -54,7 +54,7 @@ def create_work_type(session: Session, data: WorkTypeCreate) -> WorkTypeRead:
 def update_work_type(session: Session, work_type_id: int, data: WorkTypeUpdate) -> WorkTypeRead:
     changes = data.model_dump(exclude_unset=True)
     try:
-        with session.begin():
+        with session.begin_nested() if session.in_transaction() else session.begin():
             lock_planning_mutation(session)
             current = repository.lock_work_type(session, work_type_id)
             if current is None:

@@ -108,7 +108,7 @@ def _ticket_from_row(details: RowMapping) -> TicketRead:
 
 
 def create_ticket(session: Session, data: TicketCreate) -> TicketRead:
-    with session.begin():
+    with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         if repository.find_location_id(session, data.location_id) is None:
             raise LocationNotFoundError
@@ -188,7 +188,7 @@ def create_ticket(session: Session, data: TicketCreate) -> TicketRead:
 
 
 def replace_assignees(session: Session, ticket_id: int, worker_ids: list[int]) -> TicketRead:
-    with session.begin():
+    with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         return replace_assignees_in_transaction(session, ticket_id, worker_ids)
 
@@ -221,7 +221,7 @@ def update_ticket_status(
 ) -> TicketRead:
     if current_user.role == UserRole.FOREMAN:
         raise PermissionDeniedError
-    with session.begin():
+    with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         ticket = repository.lock_ticket(session, ticket_id)
         if ticket is None:

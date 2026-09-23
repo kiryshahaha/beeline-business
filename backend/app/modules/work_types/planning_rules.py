@@ -69,7 +69,7 @@ def read_rules(session: Session, work_type_id: int) -> dict:
 
 
 def replace_rules(session: Session, work_type_id: int, data: PlanningRulesWrite, actor: int):
-    with session.begin():
+    with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         work_type = session.get(WorkType, work_type_id)
         if work_type is None:
