@@ -42,10 +42,12 @@ def create_work_type(session: Session, data: WorkTypeCreate) -> WorkTypeRead:
             lock_planning_mutation(session)
             if repository.find_id_by_name(session, data.name) is not None:
                 raise WorkTypeNameAlreadyExistsError
+            if data.code and repository.find_id_by_code(session, data.code) is not None:
+                raise WorkTypeNameAlreadyExistsError
             work_type_id = repository.add_work_type(session, data.model_dump())
             return get_work_type(session, work_type_id)
     except IntegrityError as error:
-        # A parallel request inserted the same name after the check above.
+        # A parallel request inserted the same name/code after the check above.
         raise WorkTypeNameAlreadyExistsError from error
 
 
@@ -62,9 +64,14 @@ def update_work_type(session: Session, work_type_id: int, data: WorkTypeUpdate) 
                 work_type_id,
             ):
                 raise WorkTypeNameAlreadyExistsError
+            if "code" in changes and changes["code"]:
+                code_owner = repository.find_id_by_code(session, changes["code"])
+                if code_owner not in (None, work_type_id):
+                    raise WorkTypeNameAlreadyExistsError
             if sum(changes.get(part, current[part]) for part in NORM_PARTS) == 0:
                 raise WorkTypeNormNotPositiveError
             repository.update_work_type(session, work_type_id, changes)
             return get_work_type(session, work_type_id)
     except IntegrityError as error:
         raise WorkTypeNameAlreadyExistsError from error
+

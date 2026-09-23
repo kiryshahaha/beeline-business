@@ -48,12 +48,28 @@ class WorkTypeRead(BaseModel):
 
     id: int
     name: str = Field(description="Название вида работ.")
+    code: str = Field(default="repair", description="Стабильный код вида работ.")
+    category: str = Field(
+        default="repair",
+        description="Каноническая категория (emergency, connection, repair, additional).",
+    )
+    default_priority: int = Field(default=3, description="Приоритет по умолчанию (1..3).")
     travel_minutes: int = Field(description="Дорога до клиента или ТКД, минуты.")
     work_minutes: int = Field(description="Технические работы, минуты.")
     documents_minutes: int = Field(description="Оформление документов, минуты.")
     norm_minutes: int = Field(
         description="Базовый норматив: сумма дороги, технических работ и документов."
     )
+    service_minutes: int = Field(
+        default=0,
+        description="Норматив обслуживания без дороги: технические работы + документы.",
+    )
+
+    @model_validator(mode="after")
+    def compute_service_minutes(self) -> Self:
+        if not self.service_minutes:
+            self.service_minutes = self.work_minutes + self.documents_minutes
+        return self
 
 
 class WorkTypeCreate(BaseModel):
@@ -62,6 +78,14 @@ class WorkTypeCreate(BaseModel):
     )
 
     name: WorkTypeName = Field(description="Уникально без учёта регистра.")
+    code: str | None = Field(
+        default=None, description="Стабильный код. Если не задан, генерируется."
+    )
+    category: str = Field(
+        default="repair",
+        description="Каноническая категория: emergency, connection, repair, additional.",
+    )
+    default_priority: int = Field(default=3, ge=1, description="Приоритет по умолчанию.")
     travel_minutes: Minutes = Field(description="Дорога до клиента или ТКД, 0–1440 минут.")
     work_minutes: Minutes = Field(description="Технические работы, 0–1440 минут.")
     documents_minutes: Minutes = Field(description="Оформление документов, 0–1440 минут.")
@@ -70,6 +94,15 @@ class WorkTypeCreate(BaseModel):
     @classmethod
     def reject_null_character(cls, value: str | None) -> str | None:
         return _reject_null_character(value)
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, value: str) -> str:
+        if value not in ("emergency", "connection", "repair", "additional"):
+            raise ValueError(
+                "Категория должна быть одной из: emergency, connection, repair, additional"
+            )
+        return value
 
     @model_validator(mode="after")
     def norm_is_positive(self) -> Self:
@@ -86,6 +119,9 @@ class WorkTypeUpdate(BaseModel):
     )
 
     name: WorkTypeName | None = None
+    code: str | None = None
+    category: str | None = None
+    default_priority: int | None = Field(default=None, ge=1)
     travel_minutes: Minutes | None = None
     work_minutes: Minutes | None = None
     documents_minutes: Minutes | None = None
@@ -95,6 +131,15 @@ class WorkTypeUpdate(BaseModel):
     def reject_null_character(cls, value: str | None) -> str | None:
         return _reject_null_character(value)
 
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, value: str | None) -> str | None:
+        if value is not None and value not in ("emergency", "connection", "repair", "additional"):
+            raise ValueError(
+                "Категория должна быть одной из: emergency, connection, repair, additional"
+            )
+        return value
+
     @model_validator(mode="after")
     def has_non_null_changes(self) -> Self:
         if not self.model_fields_set:
@@ -103,3 +148,4 @@ class WorkTypeUpdate(BaseModel):
             if getattr(self, field) is None:
                 raise ValueError(f"Поле {field} не может быть null")
         return self
+

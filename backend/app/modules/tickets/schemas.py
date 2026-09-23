@@ -13,7 +13,8 @@ from pydantic import (
 )
 
 from app.modules.locations.schemas import LocationRead
-from app.modules.tickets.enums import TicketStatus
+from app.modules.tickets.enums import TicketCategory, TicketStatus
+from app.modules.users.enums import TransportType
 
 PositiveInt32 = Annotated[int, Field(strict=True, ge=1, le=2_147_483_647)]
 NonNegativeInt32 = Annotated[int, Field(strict=True, ge=0, le=2_147_483_647)]
@@ -24,6 +25,12 @@ TICKET_CREATE_EXAMPLE = {
     "title": "Настроить Wi-Fi",
     "description": "Учебный пример заявки",
     "work_type": "Настройка сети",
+    "work_type_id": 1,
+    "category": "connection",
+    "priority": 2,
+    "received_at": "2026-09-13T09:00:00+03:00",
+    "sla_deadline_at": None,
+    "required_transport_type": None,
     "status": "planned",
     "visit_window_start": "2026-09-14T10:00:00+03:00",
     "visit_window_end": "2026-09-14T14:00:00+03:00",
@@ -72,9 +79,46 @@ class TicketFields(BaseModel):
     )
     title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     description: str | None = None
+    work_type_id: PositiveInt32 | None = Field(
+        default=None,
+        description=(
+            "ID вида работ из справочника work_types. "
+            "Если не указан, определяется по work_type."
+        ),
+    )
     work_type: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
-    ]
+    ] | None = None
+    category: TicketCategory | str | None = Field(
+        default=None,
+        description=(
+            "Каноническая категория: emergency, connection, repair, additional. "
+            "По умолчанию берётся из вида работ."
+        ),
+    )
+    priority: PositiveInt32 | None = Field(
+        default=None,
+        description="Приоритет выполнения (1 — наивысший, 2 — подключение, 3 — обычные).",
+    )
+    received_at: AwareDatetime | None = Field(
+        default=None,
+        description="Время поступления заявки. По умолчанию текущее время.",
+    )
+    sla_deadline_at: AwareDatetime | None = Field(
+        default=None,
+        description="Крайний срок завершения по SLA.",
+    )
+    required_transport_type: TransportType | None = Field(
+        default=None,
+        description=(
+            "Обязательный транспорт исполнителя (car, walking, bicycle, public_transport). "
+            "null — любой."
+        ),
+    )
+    service_duration_source: str | None = Field(
+        default=None,
+        description="Источник норматива обслуживания: ticket_estimate или work_norm.",
+    )
     status: TicketStatus = Field(
         default=TicketStatus.PLANNED,
         description="planned — запланирована, in_progress — в работе, "
@@ -113,6 +157,8 @@ class TicketFields(BaseModel):
 
     @model_validator(mode="after")
     def validate_intervals(self) -> Self:
+        if self.work_type_id is None and (self.work_type is None or not self.work_type.strip()):
+            raise ValueError("Укажите work_type_id или work_type")
         if self.visit_window_end <= self.visit_window_start:
             raise ValueError("Конец окна визита должен быть позже начала")
         if (self.planned_start_at is None) != (self.planned_end_at is None):
@@ -123,6 +169,12 @@ class TicketFields(BaseModel):
             and self.planned_end_at <= self.planned_start_at
         ):
             raise ValueError("Плановое окончание должно быть позже начала")
+        if (
+            self.sla_deadline_at is not None
+            and self.received_at is not None
+            and self.sla_deadline_at <= self.received_at
+        ):
+            raise ValueError("Срок SLA должен быть позже времени поступления")
         return self
 
 
@@ -157,7 +209,15 @@ class TicketRead(TicketFields):
     model_config = ConfigDict(json_schema_extra={"examples": [TICKET_READ_EXAMPLE]})
 
     id: int
+    work_type_id: int
+    category: TicketCategory
+    priority: int
+    received_at: AwareDatetime
+    sla_deadline_at: AwareDatetime | None = None
+    required_transport_type: TransportType | None = None
+    service_duration_source: str | None = None
     created_at: AwareDatetime
     updated_at: AwareDatetime
     location: LocationRead
     assignee_ids: list[int] = Field(default_factory=list)
+

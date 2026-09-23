@@ -145,6 +145,9 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             "work_types",
             id=i,
             name=f"{skill} [synthetic {seed}]",
+            code=f"synthetic_{seed}_{i}",
+            category="repair",
+            default_priority=3,
             travel_minutes=15,
             work_minutes=30,
             documents_minutes=10,
@@ -169,6 +172,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             # the small fixture; other scenarios retain the full address distribution.
             location = 17 * ((i // 8) % (location_count // 17) + 1)
         status = ("planned", "in_progress", "completed", "wont_fix")[(i // 8) % 4]
+        wt_id = (i % 3) + 1
         add(
             "tickets",
             id=i,
@@ -186,6 +190,13 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             work_type="Редкий отсутствующий навык"
             if scenario == "missing_skill"
             else f"{SKILLS[i % 3]} [synthetic {seed}]",
+            work_type_id=wt_id,
+            category="repair",
+            priority=3,
+            received_at=start - timedelta(hours=2),
+            sla_deadline_at=None,
+            required_transport_type=None,
+            service_duration_source="ticket_estimate",
             status=status,
             visit_window_start=start,
             visit_window_end=start
@@ -199,6 +210,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             if status in ("in_progress", "completed")
             else None,
         )
+
         worker = (i - 1) % workers + 9
         if scenario not in ("unassigned", "missing_skill"):
             add("ticket_assignments", ticket_id=i, worker_id=worker)

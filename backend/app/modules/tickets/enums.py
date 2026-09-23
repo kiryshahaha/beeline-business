@@ -8,3 +8,11 @@ class TicketStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     WONT_FIX = "wont_fix"
+
+
+class TicketCategory(StrEnum):
+    EMERGENCY = "emergency"
+    CONNECTION = "connection"
+    REPAIR = "repair"
+    ADDITIONAL = "additional"
+

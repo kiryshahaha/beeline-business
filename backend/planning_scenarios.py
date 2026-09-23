@@ -46,6 +46,12 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
         ticket.update(
             status="planned",
             work_type=work_type["name"],
+            work_type_id=work_type["id"],
+            category=work_type.get("category", "repair"),
+            priority=work_type.get("default_priority", 3),
+            received_at=start - timedelta(hours=1),
+            sla_deadline_at=None,
+            required_transport_type=None,
             title=f"[planning:{scenario}] {i + 1}",
             visit_window_start=start,
             visit_window_end=end,
@@ -65,10 +71,12 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
         )
     if scenario == "rejections":
         data["tickets"][0]["status"] = "completed"
+        data["tickets"][1]["work_type_id"] = 999999
         data["tickets"][1]["work_type"] = "Unconfigured fictional work"
         data["ticket_appliances"] = [a for a in data["ticket_appliances"] if a["ticket_id"] != 3]
         data["tickets"][3]["visit_window_end"] = start + timedelta(minutes=5)
     return data
+
 
 
 def preview_request(receipt, data):

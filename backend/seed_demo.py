@@ -519,13 +519,31 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
         ).scalar()
         created = ticket_id is None
         if created:
+            wt_row = session.execute(
+                text(
+                    "SELECT id, category, default_priority FROM work_types "
+                    "WHERE lower(name) = lower(:name) OR lower(code) = lower(:name) "
+                    "LIMIT 1"
+                ),
+                {"name": visit.work_type},
+            ).mappings().one_or_none()
+            if wt_row is None:
+                wt_row = session.execute(
+                    text(
+                        "SELECT id, category, default_priority FROM work_types "
+                        "ORDER BY id LIMIT 1"
+                    )
+                ).mappings().one()
+            v_start = datetime.combine(visit_date, time(visit.start_hour), MOSCOW_TIME)
             ticket_id = session.execute(
                 text("""
                     INSERT INTO tickets (
-                        location_id, title, description, work_type,
+                        location_id, title, description, work_type, work_type_id,
+                        category, priority, received_at,
                         visit_window_start, visit_window_end, estimated_duration_minutes
                     ) VALUES (
-                        :location_id, :title, :description, :work_type,
+                        :location_id, :title, :description, :work_type, :work_type_id,
+                        :category, :priority, :received_at,
                         :visit_window_start, :visit_window_end, :estimated_duration_minutes
                     )
                     RETURNING id
@@ -539,15 +557,18 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                         "Это не сообщение о реальной неисправности по данному адресу."
                     ),
                     "work_type": visit.work_type,
-                    "visit_window_start": datetime.combine(
-                        visit_date, time(visit.start_hour), MOSCOW_TIME
-                    ),
+                    "work_type_id": wt_row["id"],
+                    "category": wt_row["category"],
+                    "priority": wt_row["default_priority"],
+                    "received_at": v_start - timedelta(hours=2),
+                    "visit_window_start": v_start,
                     "visit_window_end": datetime.combine(
                         visit_date, time(visit.end_hour), MOSCOW_TIME
                     ),
                     "estimated_duration_minutes": visit.duration_minutes,
                 },
             ).scalar_one()
+
         results.append(
             SeedResult(
                 ticket_id=ticket_id,

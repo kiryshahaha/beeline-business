@@ -80,6 +80,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 "office_id": office["id"],
                 "location_id": location["id"],
                 "profile": PROFILES[worker["transport_type"]],
+                "transport_type": worker["transport_type"],
                 "window": [
                     math.ceil((start - epoch).total_seconds() / 60),
                     math.floor((end - epoch).total_seconds() / 60),
@@ -89,7 +90,8 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         )
         workers.append(worker)
     horizon = max((w["window"][1] for w in workers), default=1440)
-    types = {x["name"].strip().lower(): x for x in snapshot["work_types"]}
+    types_by_id = {x["id"]: x for x in snapshot["work_types"]}
+    types_by_name = {x["name"].strip().lower(): x for x in snapshot["work_types"]}
     rules = {x["work_type_id"]: x for x in snapshot["rules"]}
     stock = {(x["office_id"], x["appliance_id"]): x["stock"] for x in snapshot["stocks"]}
     reserved = {
@@ -100,7 +102,10 @@ def prepare(snapshot: dict, now: datetime) -> dict:
     for ticket in snapshot["tickets"]:
         ticket = dict(ticket)
         tid = ticket["id"]
-        work_type = types.get(ticket["work_type"].strip().lower())
+        work_type = (
+            types_by_id.get(ticket.get("work_type_id"))
+            or (types_by_name.get(ticket["work_type"].strip().lower()) if ticket.get("work_type") else None)
+        )
         rule = rules.get(work_type["id"]) if work_type else None
         location = locations.get(ticket["location_id"])
         allocations = [a for a in snapshot["allocations"] if a["ticket_id"] == tid]
@@ -122,9 +127,19 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 if rule["service_duration_source"] == "ticket_estimate"
                 else work_type["work_minutes"] + work_type["documents_minutes"]
             )
+            visit_start = dt(ticket["visit_window_start"])
+            if ticket.get("received_at"):
+                received = dt(ticket["received_at"])
+                if received > visit_start:
+                    visit_start = received
+            visit_end = dt(ticket["visit_window_end"])
+            if ticket.get("sla_deadline_at"):
+                sla = dt(ticket["sla_deadline_at"])
+                if sla < visit_end:
+                    visit_end = sla
             window = policy.start_window(
-                dt(ticket["visit_window_start"]),
-                dt(ticket["visit_window_end"]),
+                visit_start,
+                visit_end,
                 epoch,
                 duration,
                 horizon,
@@ -137,6 +152,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 for s in snapshot["required_skills"]
                 if s["work_type_id"] == work_type["id"]
             }
+            req_transport = ticket.get("required_transport_type")
             if not 0 < duration <= 2880:
                 reason = "invalid_service_duration"
             elif window[0] > window[1]:
@@ -155,6 +171,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                     v
                     for v, w in enumerate(workers)
                     if skills <= w["skill_ids"]
+                    and (req_transport is None or w["transport_type"] == req_transport)
                     and all(a["office_id"] == w["office_id"] for a in allocations)
                     and max(window[0], w["window"][0]) <= min(window[1], w["window"][1] - duration)
                 ]
@@ -166,11 +183,15 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                         duration=duration,
                         allowed=allowed,
                         duration_source=rule["service_duration_source"],
+                        category=ticket.get("category") or work_type.get("category") or "repair",
+                        priority=ticket.get("priority") or work_type.get("default_priority") or 3,
+                        work_type_id=work_type["id"],
                     )
         if reason:
             unassigned.append({"ticket_id": tid, "reason": reason})
         else:
             tickets.append(ticket)
+
     return {
         "policy": policy,
         "epoch": epoch,

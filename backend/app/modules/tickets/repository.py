@@ -8,7 +8,10 @@ from app.modules.notifications.enums import NotificationKind
 # Shared columns and joins keep single-ticket and list responses identical.
 TICKET_SELECT_SQL = """
     SELECT
-        t.id, t.location_id, t.title, t.description, t.work_type, t.status,
+        t.id, t.location_id, t.title, t.description,
+        t.work_type, t.work_type_id, t.category, t.priority,
+        t.received_at, t.sla_deadline_at, t.required_transport_type, t.service_duration_source,
+        t.status,
         t.visit_window_start, t.visit_window_end, t.planned_start_at, t.planned_end_at,
         t.estimated_duration_minutes, t.actual_duration_minutes,
         t.created_at, t.updated_at,
@@ -70,11 +73,17 @@ def add_ticket(session: Session, values: dict[str, object]) -> int:
     return session.execute(
         text("""
             INSERT INTO tickets (
-                location_id, title, description, work_type, status,
+                location_id, title, description,
+                work_type, work_type_id, category, priority,
+                received_at, sla_deadline_at, required_transport_type, service_duration_source,
+                status,
                 visit_window_start, visit_window_end, planned_start_at, planned_end_at,
                 estimated_duration_minutes, actual_duration_minutes
             ) VALUES (
-                :location_id, :title, :description, :work_type, :status,
+                :location_id, :title, :description,
+                :work_type, :work_type_id, :category, :priority,
+                :received_at, :sla_deadline_at, :required_transport_type, :service_duration_source,
+                :status,
                 :visit_window_start, :visit_window_end, :planned_start_at, :planned_end_at,
                 :estimated_duration_minutes, :actual_duration_minutes
             )
@@ -82,6 +91,7 @@ def add_ticket(session: Session, values: dict[str, object]) -> int:
         """),
         values,
     ).scalar_one()
+
 
 
 def lock_ticket(session: Session, ticket_id: int) -> RowMapping | None:
