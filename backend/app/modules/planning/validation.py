@@ -8,7 +8,7 @@ def validate_solution(problem: SolveRequest, solution: SolveResponse) -> None:
     if solution.status not in ("FEASIBLE", "OPTIMAL"):
         raise PlanningError("planner_not_solved", 503, retryable=True)
     seen, vehicles = set(), set()
-    tasks = set(range(len(problem.time_windows))) - set(problem.starts)
+    tasks = set(range(len(problem.time_windows))) - (set(problem.starts) | set(problem.ends))
     try:
         for route in solution.routes:
             v = route.vehicle_id

@@ -1,5 +1,6 @@
 """Business logic and domain operations for appliances and warehouse stock."""
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.modules.appliances import repository
@@ -36,8 +37,15 @@ class TicketNotFoundError(Exception):
     pass
 
 
-class InsufficientStockError(Exception):
-    pass
+class EquipmentConflict(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+class InsufficientStockError(EquipmentConflict):
+    def __init__(self, message: str):
+        super().__init__("insufficient_stock", message)
 
 
 class ApplianceAlreadyAttachedError(Exception):
@@ -324,6 +332,32 @@ def remove_ticket_appliance(
     repository.delete_ticket_appliance(session, ta)
 
 
-def on_ticket_status_completed(session: Session, ticket_id: int) -> None:
+def on_ticket_status_completed(
+    session: Session,
+    ticket_id: int,
+    *,
+    event_id: int | None = None,
+    execution_cycle: int | None = None,
+) -> None:
     """Consume non-tool equipment from office stocks upon ticket completion."""
-    repository.consume_ticket_appliances_on_completed(session, ticket_id)
+    if event_id is None or execution_cycle is None:
+        row = session.execute(
+            text(
+                """
+            SELECT last_event_id, execution_cycle
+            FROM tickets
+            WHERE id = :ticket_id
+                """
+            ),
+            {"ticket_id": ticket_id},
+        ).one()
+        event_id = event_id or row[0]
+        execution_cycle = execution_cycle or row[1]
+    if event_id is None:
+        raise ValueError("Для списания нужен идентификатор события завершения")
+    repository.consume_ticket_appliances_on_completed(
+        session,
+        ticket_id,
+        event_id=event_id,
+        execution_cycle=execution_cycle,
+    )

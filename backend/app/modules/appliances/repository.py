@@ -250,29 +250,107 @@ def find_ticket_default_office_id(session: Session, ticket_id: int) -> int | Non
     return int(fallback_id) if fallback_id is not None else None
 
 
-def consume_ticket_appliances_on_completed(session: Session, ticket_id: int) -> None:
+def consume_ticket_appliances_on_completed(
+    session: Session, ticket_id: int, *, event_id: int, execution_cycle: int
+) -> None:
     """Deduct consumables (all except TOOL) from physical stock upon ticket completion."""
     query = """
         SELECT ta.office_id, ta.appliance_id, ta.quantity, a.type
         FROM ticket_appliances ta
         JOIN appliances a ON a.id = ta.appliance_id
         WHERE ta.ticket_id = :ticket_id
+        ORDER BY ta.office_id, ta.appliance_id
     """
     rows = session.execute(text(query), {"ticket_id": ticket_id}).mappings().all()
     for row in rows:
         if row["type"] != ApplianceType.TOOL.value:
-            # Atomic decrement of stock
-            update_query = """
-                UPDATE appliance_stocks
-                SET stock = GREATEST(0, stock - :quantity)
-                WHERE office_id = :office_id AND appliance_id = :appliance_id
-            """
-            session.execute(
-                text(update_query),
+            existing_movement = session.execute(
+                text(
+                    """
+                    SELECT id
+                    FROM equipment_movements
+                    WHERE ticket_id = :ticket_id
+                      AND execution_cycle = :execution_cycle
+                      AND appliance_id = :appliance_id
+                      AND movement = 'consume'
+                    """
+                ),
+                {
+                    "ticket_id": ticket_id,
+                    "execution_cycle": execution_cycle,
+                    "appliance_id": row["appliance_id"],
+                },
+            ).scalar_one_or_none()
+            if existing_movement is not None:
+                continue
+            stock = session.execute(
+                text(
+                    """
+                    SELECT stock
+                    FROM appliance_stocks
+                    WHERE office_id = :office_id
+                      AND appliance_id = :appliance_id
+                    FOR UPDATE
+                    """
+                ),
+                {
+                    "office_id": row["office_id"],
+                    "appliance_id": row["appliance_id"],
+                },
+            ).scalar_one_or_none()
+            if stock is None or stock < row["quantity"]:
+                from app.modules.appliances.service import InsufficientStockError
+
+                raise InsufficientStockError(
+                    f"Недостаточно оборудования на складе: appliance_id={row['appliance_id']}"
+                )
+            movement_id = session.execute(
+                text(
+                    """
+                    INSERT INTO equipment_movements (
+                        ticket_id, execution_cycle, appliance_id, office_id,
+                        event_id, movement, quantity
+                    ) VALUES (
+                        :ticket_id, :execution_cycle, :appliance_id, :office_id,
+                        :event_id, 'consume', :quantity
+                    )
+                    ON CONFLICT (ticket_id, execution_cycle, appliance_id, movement)
+                    DO NOTHING
+                    RETURNING id
+                    """
+                ),
+                {
+                    "ticket_id": ticket_id,
+                    "execution_cycle": execution_cycle,
+                    "appliance_id": row["appliance_id"],
+                    "office_id": row["office_id"],
+                    "event_id": event_id,
+                    "quantity": row["quantity"],
+                },
+            ).scalar_one_or_none()
+            if movement_id is None:
+                continue
+            updated_stock = session.execute(
+                text(
+                    """
+                    UPDATE appliance_stocks
+                    SET stock = stock - :quantity
+                    WHERE office_id = :office_id
+                      AND appliance_id = :appliance_id
+                      AND stock >= :quantity
+                    RETURNING stock
+                    """
+                ),
                 {
                     "office_id": row["office_id"],
                     "appliance_id": row["appliance_id"],
                     "quantity": row["quantity"],
                 },
-            )
+            ).scalar_one_or_none()
+            if updated_stock is None:
+                from app.modules.appliances.service import InsufficientStockError
+
+                raise InsufficientStockError(
+                    f"Недостаточно оборудования на складе: appliance_id={row['appliance_id']}"
+                )
     session.flush()

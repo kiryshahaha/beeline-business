@@ -11,9 +11,20 @@ from app.modules.planning.solver_contract import SolveRequest
 async def build_problem(prepared: dict, provider, settings) -> tuple[SolveRequest, list[dict]]:
     policy = prepared.get("policy") or execution_policy(settings)
     workers, tickets = prepared["workers"], prepared["tickets"]
-    nodes = [{"kind": "depot", "location_id": w["location_id"]} for w in workers] + [
-        {"kind": "ticket", "location_id": t["location_id"], "ticket": t} for t in tickets
-    ]
+    anchored = any(
+        "start_location_id" in worker or "end_location_id" in worker for worker in workers
+    )
+    if anchored:
+        nodes = [
+            {"kind": "depot_start", "location_id": w.get("start_location_id", w["location_id"])}
+            for w in workers
+        ] + [
+            {"kind": "depot_end", "location_id": w.get("end_location_id", w["location_id"])}
+            for w in workers
+        ]
+    else:
+        nodes = [{"kind": "depot", "location_id": w["location_id"]} for w in workers]
+    nodes += [{"kind": "ticket", "location_id": t["location_id"], "ticket": t} for t in tickets]
     coordinates, coordinate_index, node_coordinates = [], {}, []
     for node in nodes:
         location = prepared["locations"][node["location_id"]]
@@ -64,18 +75,19 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
         for p, matrix in matrices.items()
     }
     v, horizon = len(workers), prepared["horizon"]
+    depot_count = 2 * v if anchored else v
     request = SolveRequest(
         policy_version=policy.policy_version,
         num_vehicles=v,
         starts=list(range(v)),
-        ends=list(range(v)),
+        ends=list(range(v, 2 * v)) if anchored else list(range(v)),
         vehicle_profiles=[w["profile"] for w in workers],
         vehicle_time_windows=[w["window"] for w in workers],
         matrices=expanded,
-        time_windows=[[0, horizon] for _ in workers] + [t["window"] for t in tickets],
-        service_times=[0] * v + [t["duration"] for t in tickets],
-        allowed_vehicles={str(v + i): t["allowed"] for i, t in enumerate(tickets)},
-        penalties=[0] * v + [policy.penalty(v, horizon)] * len(tickets),
+        time_windows=[[0, horizon] for _ in range(depot_count)] + [t["window"] for t in tickets],
+        service_times=[0] * depot_count + [t["duration"] for t in tickets],
+        allowed_vehicles={str(depot_count + i): t["allowed"] for i, t in enumerate(tickets)},
+        penalties=[0] * depot_count + [policy.penalty(v, horizon)] * len(tickets),
         time_capacity=horizon,
         slack_max=horizon,
         search_time_limit_s=policy.search_time_limit_seconds,

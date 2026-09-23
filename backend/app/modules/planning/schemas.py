@@ -16,6 +16,8 @@ class PreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     route_date: date
+    district_id: PositiveInt32 | None = None
+    base_day_revision: PositiveInt32 | None = None
     ticket_ids: list[PositiveInt32] = Field(min_length=1, max_length=50)
     worker_ids: list[PositiveInt32] = Field(min_length=1, max_length=20)
     allow_partial: bool = Field(default=True, strict=True)
@@ -81,6 +83,7 @@ class ApplyResult(BaseModel):
     already_applied: bool
     routes: list[AppliedRoute]
     assigned_ticket_ids: list[int]
+    day_revision: int | None = None
 
 
 class PlanRead(BaseModel):
@@ -88,6 +91,8 @@ class PlanRead(BaseModel):
     plan_id: UUID
     state: Literal["ready", "applied", "expired", "stale"]
     route_date: date
+    district_id: int | None = None
+    day_revision: int | None = None
     timezone: Literal["Europe/Moscow"]
     expires_at: datetime
     solver_status: Literal["FEASIBLE", "OPTIMAL"]

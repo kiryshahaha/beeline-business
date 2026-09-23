@@ -280,7 +280,7 @@ def lock_worker_line_status(session: Session, worker_id: int) -> RowMapping | No
     return (
         session.execute(
             text("""
-                SELECT user_id, is_on_line
+                SELECT user_id, is_on_line, workshift_start, workshift_end
                 FROM workers
                 WHERE user_id = :worker_id
                 FOR UPDATE
@@ -312,6 +312,7 @@ def release_planned_assignments(session: Session, worker_id: int) -> list[int]:
                 WHERE assignment.ticket_id = ticket.id
                   AND assignment.worker_id = :worker_id
                   AND ticket.status = 'planned'
+                  AND ticket.lifecycle_state IN ('waiting_assignment', 'assigned')
                 RETURNING assignment.ticket_id
             """),
             {"worker_id": worker_id},
@@ -339,4 +340,34 @@ def clear_planned_times_without_assignees(session: Session, ticket_ids: list[int
               )
         """),
         {"ticket_ids": ticket_ids},
+    )
+
+
+def list_worker_day_contexts(session: Session, worker_id: int) -> list[RowMapping]:
+    return list(
+        session.execute(
+            text(
+                """
+                SELECT DISTINCT building.district_id,
+                    COALESCE(
+                        route.route_date,
+                        (ticket.visit_window_start AT TIME ZONE 'Europe/Moscow')::date
+                    )
+                    AS route_date
+                FROM ticket_assignments AS assignment
+                JOIN tickets AS ticket ON ticket.id = assignment.ticket_id
+                JOIN locations AS location ON location.id = ticket.location_id
+                JOIN buildings AS building ON building.id = location.building_id
+                LEFT JOIN routes AS route
+                    ON route.worker_id = assignment.worker_id
+                   AND route.route_date =
+                       (ticket.visit_window_start AT TIME ZONE 'Europe/Moscow')::date
+                WHERE assignment.worker_id = :worker_id
+                ORDER BY building.district_id, route_date
+                """
+            ),
+            {"worker_id": worker_id},
+        )
+        .mappings()
+        .all()
     )

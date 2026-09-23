@@ -1,0 +1,27 @@
+meta {
+  name: Исполнитель не меняет состояние заявки
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{execution_ticket_id}}/dispatch
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{worker_access_token}}
+}
+
+headers {
+  Idempotency-Key: execution-worker-forbidden
+}
+
+body:json {
+  {"expected_revision":10,"payload":{}}
+}
+
+assert {
+  res.status: eq 403
+}

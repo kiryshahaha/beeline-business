@@ -8,6 +8,9 @@ from app.db.models import (
     ApplianceStock,
     Brigade,
     BrigadeMember,
+    Building,
+    DayPlanRevision,
+    Division,
     Location,
     Office,
     Ticket,
@@ -15,12 +18,14 @@ from app.db.models import (
     TicketAssignment,
     User,
     Worker,
+    WorkerDayState,
     WorkerSkillAssignment,
     WorkType,
     WorkTypePlanningRule,
     WorkTypeRequiredAppliance,
     WorkTypeRequiredSkill,
 )
+from app.modules.planning.errors import PlanningError
 from app.modules.planning.policy import execution_policy
 from app.modules.planning.schemas import PreviewRequest
 from app.modules.planning.snapshot import normalize
@@ -39,6 +44,21 @@ def rows(session: Session, model, *conditions):
 def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=None) -> dict:
     ticket_ids, worker_ids = request.ticket_ids, request.worker_ids
     tickets = rows(session, Ticket, Ticket.id.in_(ticket_ids))
+    ticket_districts = {
+        row["id"]: row["district_id"]
+        for row in session.execute(
+            select(Ticket.id, Building.district_id)
+            .join(Location, Location.id == Ticket.location_id)
+            .join(Building, Building.id == Location.building_id)
+            .where(Ticket.id.in_(ticket_ids))
+        ).mappings()
+    }
+    district_ids = set(ticket_districts.values())
+    if request.district_id is not None and district_ids - {request.district_id}:
+        raise PlanningError("ticket_district_mismatch", ticket_districts=sorted(district_ids))
+    if len(district_ids) > 1:
+        raise PlanningError("multiple_districts", districts=sorted(district_ids))
+    district_id = request.district_id or next(iter(district_ids), None)
     workers = rows(session, Worker, Worker.user_id.in_(worker_ids))
     roles = [
         dict(row)
@@ -64,8 +84,45 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
     )
     members = rows(session, BrigadeMember, BrigadeMember.worker_id.in_(worker_ids))
     brigades = rows(session, Brigade, Brigade.id.in_({m["brigade_id"] for m in members}))
+    if district_id is not None:
+        divisions = {
+            row["id"]: row["district_id"]
+            for row in rows(
+                session, Division, Division.id.in_({b["division_id"] for b in brigades})
+            )
+        }
+        brigade_by_id = {brigade["id"]: brigade for brigade in brigades}
+        invalid_worker_ids = sorted(
+            member["worker_id"]
+            for member in members
+            if divisions.get(brigade_by_id.get(member["brigade_id"], {}).get("division_id"))
+            != district_id
+        )
+        if invalid_worker_ids:
+            raise PlanningError("worker_district_mismatch", worker_ids=invalid_worker_ids)
     offices = rows(session, Office, Office.id.in_({b["office_id"] for b in brigades}))
-    location_ids = {t["location_id"] for t in tickets} | {o["location_id"] for o in offices}
+    worker_day_states = rows(
+        session,
+        WorkerDayState,
+        WorkerDayState.worker_id.in_(worker_ids),
+        WorkerDayState.route_date == request.route_date,
+        *([WorkerDayState.district_id == district_id] if district_id is not None else []),
+    )
+    state_location_ids = {
+        state["last_location_id"]
+        for state in worker_day_states
+        if state["last_location_id"] is not None
+    }
+    state_location_ids.update(
+        state["current_destination_id"]
+        for state in worker_day_states
+        if state["current_destination_id"] is not None
+    )
+    location_ids = (
+        {t["location_id"] for t in tickets}
+        | {o["location_id"] for o in offices}
+        | state_location_ids
+    )
     locations = rows(session, Location, Location.id.in_(location_ids))
     skills = rows(session, WorkerSkillAssignment, WorkerSkillAssignment.worker_id.in_(worker_ids))
     work_types = rows(
@@ -109,6 +166,15 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
             .order_by(TicketAppliance.office_id, TicketAppliance.appliance_id)
         ).mappings()
     ]
+    current_day_revision = None
+    if district_id is not None:
+        current_day_revision = session.execute(
+            select(DayPlanRevision.revision).where(
+                DayPlanRevision.district_id == district_id,
+                DayPlanRevision.route_date == request.route_date,
+                DayPlanRevision.is_current.is_(True),
+            )
+        ).scalar_one_or_none()
     return normalize(
         {
             "request": request.model_dump(mode="json"),
@@ -135,5 +201,9 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
             "appliances": appliances,
             "stocks": stocks,
             "reservations": reservations,
+            "ticket_districts": ticket_districts,
+            "district_id": district_id,
+            "worker_day_states": worker_day_states,
+            "current_day_revision": current_day_revision,
         }
     )

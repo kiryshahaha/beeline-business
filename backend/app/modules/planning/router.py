@@ -1,16 +1,20 @@
 """Observer commands for calculating, inspecting and atomically applying day plans."""
 
 import asyncio
+from datetime import date
 from threading import BoundedSemaphore
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.db.session import get_engine
+from app.db.session import get_engine, get_session
 from app.modules.auth.dependencies import require_roles
+from app.modules.execution import day_state
+from app.modules.execution.schemas import RedirectCommand, WorkerDayStateRead
 from app.modules.planning import service
 from app.modules.planning.case_policy import case_policy
 from app.modules.planning.errors import PlanningError
@@ -31,6 +35,8 @@ _preview_slots = BoundedSemaphore(2)
 
 router = APIRouter(prefix="/api/v1/planning", tags=["planning"])
 Observer = Annotated[UserRead, Depends(require_roles(UserRole.OBSERVER))]
+DatabaseSession = Annotated[Session, Depends(get_session)]
+IdempotencyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
 
 
 def get_clock():
@@ -96,6 +102,45 @@ async def preview(
         fail(error)
     finally:
         _preview_slots.release()
+
+
+@router.post(
+    "/days/{district_id}/{route_date}/redirect",
+    response_model=WorkerDayStateRead,
+)
+def redirect_worker(
+    district_id: int,
+    route_date: date,
+    data: RedirectCommand,
+    actor: Observer,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyHeader = None,
+) -> WorkerDayStateRead:
+    if idempotency_key is None or not idempotency_key.strip() or len(idempotency_key) > 128:
+        raise HTTPException(422, detail="Требуется непустой Idempotency-Key длиной до 128 символов")
+    try:
+        return day_state.redirect_worker(
+            session,
+            district_id,
+            route_date,
+            data,
+            actor_id=actor.id,
+            idempotency_key=idempotency_key.strip(),
+        )
+    except day_state.DayStateRevisionConflict as error:
+        raise HTTPException(
+            409,
+            detail={"code": error.code, "current_revision": error.current_revision},
+        ) from error
+    except day_state.IdempotencyConflict as error:
+        raise HTTPException(
+            409,
+            detail={"code": "idempotency_conflict", "event_id": error.event_id},
+        ) from error
+    except day_state.DistrictNotFound as error:
+        raise HTTPException(404, detail="Район не найден") from error
+    except day_state.UnsafeRedirect as error:
+        raise HTTPException(422, detail=str(error)) from error
 
 
 @router.get("/plans/{plan_id}", response_model=PlanRead, response_model_exclude_unset=True)

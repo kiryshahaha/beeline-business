@@ -12,6 +12,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.modules.execution.enums import TicketLifecycleState
 from app.modules.locations.schemas import LocationRead
 from app.modules.tickets.enums import TicketStatus
 
@@ -37,6 +38,13 @@ TICKET_READ_EXAMPLE = {
     **TICKET_CREATE_EXAMPLE,
     "id": 1,
     "assignee_ids": [2],
+    "state": "waiting_assignment",
+    "revision": 1,
+    "execution_cycle": 1,
+    "actual_started_at": None,
+    "actual_completed_at": None,
+    "cancel_reason": None,
+    "last_event_id": None,
     "created_at": "2026-09-13T09:00:00+03:00",
     "updated_at": "2026-09-13T09:00:00+03:00",
     "location": {
@@ -151,12 +159,21 @@ class TicketStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: TicketStatus
+    expected_revision: PositiveInt32 | None = None
+    reason: str | None = Field(default=None, max_length=2000)
 
 
 class TicketRead(TicketFields):
     model_config = ConfigDict(json_schema_extra={"examples": [TICKET_READ_EXAMPLE]})
 
     id: int
+    state: TicketLifecycleState = Field(description="Каноническое состояние выполнения заявки.")
+    revision: PositiveInt32
+    execution_cycle: PositiveInt32
+    actual_started_at: AwareDatetime | None = None
+    actual_completed_at: AwareDatetime | None = None
+    cancel_reason: str | None = None
+    last_event_id: PositiveInt32 | None = None
     created_at: AwareDatetime
     updated_at: AwareDatetime
     location: LocationRead

@@ -11,11 +11,16 @@
     "appliances": 27,
     "cities": 3,
     "users": 12,
+    "work_types": 3,
     "worker_skills": 3,
     "districts": 12,
     "streets": 12,
+    "work_type_planning_rules": 3,
     "workers": 4,
     "buildings": 24,
+    "divisions": 12,
+    "work_type_required_appliances": 3,
+    "work_type_required_skills": 3,
     "worker_skill_assignments": 7,
     "entrances": 24,
     "locations": 24,
@@ -27,7 +32,11 @@
     "ticket_appliances": 21,
     "ticket_assignments": 18,
     "ticket_comments": 8,
+    "work_events": 1,
+    "worker_day_states": 1,
     "brigade_members": 4,
+    "day_plan_revisions": 1,
+    "equipment_movements": 1,
     "routes": 8
   },
   "scenarios": [
@@ -42,12 +51,12 @@
   ],
   "files": {
     "dataset.zip": {
-      "bytes": 7813,
-      "sha256": "04624d1d188f986e90898f0f0e8aed98f0f7055c0da4c79a7dca04fddbce4901"
+      "bytes": 10345,
+      "sha256": "32a3750952d10257c79a26deb2713ab33ae56efe3dde43c9c3d869594c9d36a7"
     },
     "dataset.xlsx": {
-      "bytes": 27797,
-      "sha256": "379f59a201bf85edcc8022c4469855a281e7ec7456992d0282380eec86e9af7c"
+      "bytes": 34479,
+      "sha256": "832c279bf44044ab7212fa13f3ec429a53e7cd40f3095be1ae2d6214ff35a760"
     }
   },
   "notes": [

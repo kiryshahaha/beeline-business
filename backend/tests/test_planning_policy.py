@@ -18,9 +18,19 @@ from app.modules.planning.errors import PlanningError
 from app.modules.planning.policy import ExecutionPolicy, execution_policy, snapshot_policy
 from app.modules.planning.snapshot import fingerprint
 from app.modules.planning.solver_contract import SolveRequest
+from planning_scenarios import generate_planning_dataset
 
 
 class PlanningPolicyTests(unittest.TestCase):
+    def test_planning_fixture_keeps_one_district_per_day(self):
+        data = generate_planning_dataset()
+        locations = {row["id"]: row["building_id"] for row in data["locations"]}
+        buildings = {row["id"]: row for row in data["buildings"]}
+        districts = {
+            buildings[locations[ticket["location_id"]]]["district_id"] for ticket in data["tickets"]
+        }
+        self.assertEqual(districts, {1})
+
     def test_reviewable_synthetic_tradeoffs(self):
         path = Path(__file__).resolve().parents[2] / "data/planning/policy_objective_cases.json"
         examples = policy_scenarios(path)

@@ -9,6 +9,7 @@ BRIGADE_COLUMNS = """
     b.name,
     b.foreman_id,
     b.office_id,
+    b.division_id,
     b.created_at,
     b.updated_at,
     COALESCE(

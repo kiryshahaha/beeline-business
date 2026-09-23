@@ -1,0 +1,31 @@
+meta {
+  name: Назначить исполнителя
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{base_url}}/api/v1/tickets/{{execution_ticket_id}}/assignees
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"worker_ids":[{{worker_id}}]}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Заявка назначена исполнителю", function () {
+    expect(res.getBody().state).to.equal("assigned");
+    expect(res.getBody().revision).to.equal(2);
+    expect(res.getBody().assignee_ids).to.deep.equal([Number(bru.getVar("worker_id"))]);
+  });
+}

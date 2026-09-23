@@ -1,0 +1,28 @@
+meta {
+  name: Прочитать состояние рабочего дня
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{base_url}}/api/v1/workers/{{worker_id}}/day-state?district_id={{district_id}}&date={{execution_route_date}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Снимок рабочего дня содержит журнал событий", function () {
+    const state = res.getBody();
+    expect(state.worker_id).to.equal(Number(bru.getVar("worker_id")));
+    expect(state.route_date).to.equal(bru.getVar("execution_route_date"));
+    expect(state.event_ids).to.be.an("array").that.is.not.empty;
+  });
+}

@@ -37,6 +37,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
     brigades = {x["id"]: x for x in snapshot["brigades"]}
     members = {x["worker_id"]: x["brigade_id"] for x in snapshot["members"]}
     roles = {x["id"]: x["role"] for x in snapshot["roles"]}
+    day_states = {x["worker_id"]: x for x in snapshot.get("worker_day_states", [])}
     busy = {x["id"]: x for x in snapshot["busy_tickets"]}
     workers, excluded_workers = [], []
     for worker in snapshot["workers"]:
@@ -51,17 +52,26 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         brigade = brigades.get(members.get(wid))
         office = offices.get(brigade["office_id"]) if brigade else None
         location = locations.get(office["location_id"]) if office else None
+        day_state = day_states.get(wid)
         reason = None
         if roles.get(wid) != "worker":
             reason = "invalid_worker_role"
+        elif day_state and not day_state["available"]:
+            reason = "worker_unavailable"
         elif not worker["is_on_line"]:
             reason = "worker_offline"
         elif not office:
             reason = "missing_office"
         elif not location or location["latitude"] is None or location["longitude"] is None:
             reason = "missing_coordinates"
-        elif start <= now:
+        elif start <= now and not (day_state and day_state.get("last_location_id")):
             reason = "shift_already_started"
+        elif day_state and day_state.get("current_ticket_id"):
+            reason = (
+                "worker_en_route"
+                if day_state.get("current_destination_id") is not None
+                else "worker_busy"
+            )
         elif worker["transport_type"] not in PROFILES:
             reason = "unsupported_transport_profile"
         else:
@@ -77,18 +87,40 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         if reason:
             excluded_workers.append({"worker_id": wid, "reason": reason})
             continue
+        start_location_id = (
+            day_state["last_location_id"]
+            if day_state and day_state.get("last_location_id")
+            else office["location_id"]
+        )
+        if start_location_id not in locations:
+            excluded_workers.append({"worker_id": wid, "reason": "missing_last_location"})
+            continue
+        available_at = start
+        if day_state and day_state.get("expected_available_at"):
+            available_at = max(available_at, dt(day_state["expected_available_at"]))
         worker.update(
             {
                 "office_id": office["id"],
-                "location_id": location["id"],
+                "location_id": start_location_id,
+                **(
+                    {
+                        "start_location_id": start_location_id,
+                        "end_location_id": office["location_id"],
+                    }
+                    if day_state and day_state.get("last_location_id")
+                    else {}
+                ),
                 "profile": PROFILES[worker["transport_type"]],
                 "window": [
-                    math.ceil((start - epoch).total_seconds() / 60),
+                    math.ceil((available_at - epoch).total_seconds() / 60),
                     math.floor((end - epoch).total_seconds() / 60),
                 ],
                 "skill_ids": {s["skill_id"] for s in snapshot["skills"] if s["worker_id"] == wid},
             }
         )
+        if worker["window"][0] > worker["window"][1]:
+            excluded_workers.append({"worker_id": wid, "reason": "no_remaining_shift"})
+            continue
         workers.append(worker)
     horizon = max((w["window"][1] for w in workers), default=1440)
     types = {x["name"].strip().lower(): x for x in snapshot["work_types"]}

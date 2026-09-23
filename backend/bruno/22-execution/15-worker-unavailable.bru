@@ -1,0 +1,49 @@
+meta {
+  name: Зафиксировать недоступность до конца смены
+  type: http
+  seq: 15
+}
+
+post {
+  url: {{base_url}}/api/v1/workers/{{worker_id}}/unavailable
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+headers {
+  Idempotency-Key: execution-worker-unavailable
+}
+
+body:json {
+  {
+    "expected_revision": 5,
+    "occurred_at": "{{execution_unavailable_at}}",
+    "district_id": {{district_id}},
+    "route_date": "{{execution_route_date}}",
+    "worker_id": {{worker_id}},
+    "reason": "Инженер завершил смену раньше",
+    "expected_available_at": "{{execution_available_at}}",
+    "payload": {}
+  }
+}
+
+script:pre-request {
+  const now = Date.now();
+  bru.setVar("execution_unavailable_at", new Date(now).toISOString());
+  bru.setVar("execution_available_at", new Date(now + 4 * 60 * 60 * 1000).toISOString());
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Инженер отмечен недоступным", function () {
+    expect(res.getBody().available).to.equal(false);
+    expect(res.getBody().reason).to.equal("Инженер завершил смену раньше");
+  });
+}

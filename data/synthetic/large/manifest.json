@@ -18,6 +18,7 @@
     "work_type_planning_rules": 3,
     "workers": 240,
     "buildings": 3334,
+    "divisions": 12,
     "work_type_required_appliances": 3,
     "work_type_required_skills": 3,
     "worker_skill_assignments": 480,
@@ -31,7 +32,11 @@
     "ticket_appliances": 8750,
     "ticket_assignments": 7500,
     "ticket_comments": 3333,
+    "work_events": 1,
+    "worker_day_states": 1,
     "brigade_members": 240,
+    "day_plan_revisions": 1,
+    "equipment_movements": 1,
     "routes": 3472
   },
   "scenarios": [
@@ -46,12 +51,12 @@
   ],
   "files": {
     "dataset.zip": {
-      "bytes": 474337,
-      "sha256": "36bc205a98055320a857edbe43dd67eb834c41f70b05fd43bd6b60585b649a05"
+      "bytes": 507433,
+      "sha256": "c00db2e3ce36c5f4424257435828cd1085e1abb1eb4f4cd1ae2c7c4c8e26831b"
     },
     "dataset.xlsx": {
-      "bytes": 1643105,
-      "sha256": "2b9483af94d81967ea6519a69b62ed4fe4c7f491f775aa3d55cbfa5177500b12"
+      "bytes": 1916540,
+      "sha256": "416d25ebfb7445044300d8e000ffcde1f292226498685b13b42d56829b36cbe9"
     }
   },
   "notes": [
