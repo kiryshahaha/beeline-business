@@ -348,6 +348,7 @@ class WorkerLineStatusMigrationTests(DatabaseTestCase):
 class WorkerLinePlanningEligibilityTests(unittest.TestCase):
     def test_offline_worker_is_excluded_before_other_eligibility_checks(self):
         snapshot = {
+            "policy_version": 1,
             "request": {
                 "route_date": "2026-09-17",
                 "ticket_ids": [],
