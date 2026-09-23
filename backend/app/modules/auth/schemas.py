@@ -47,3 +47,19 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: TokenType = TokenType.BEARER
     expires_in: int = Field(description="Время жизни access-токена в секундах")
+
+
+LOGIN_RESPONSE_EXAMPLE = {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "token_type": "bearer",
+    "expires_in": 900,
+}
+
+
+class LoginResponse(BaseModel):
+    """Ответ на /login и /refresh: refresh_token передаётся только через httpOnly cookie."""
+    model_config = ConfigDict(json_schema_extra={"examples": [LOGIN_RESPONSE_EXAMPLE]})
+
+    access_token: str
+    token_type: TokenType = TokenType.BEARER
+    expires_in: int = Field(description="Время жизни access-токена в секундах")

@@ -4,14 +4,21 @@ import React, { useState, useRef, useEffect } from "react";
 import styles from "./Search.module.css";
 import Image from "next/image";
 import ExpandableMenu from "@/components/ui/ExpandableMenu/ExpandableMenu";
+import { useBrigades } from "@/hooks/useBrigades";
+import { useUsers } from "@/hooks/useUsers";
+import { useTickets } from "@/hooks/useTickets";
 
-const ALL_FILTERS = ['бригады', 'районы', 'разное'];
+const ALL_FILTERS = ['бригады', 'работники', 'заявки'];
 
 const Search = () => {
-  const [activeFilters, setActiveFilters] = useState(['бригады']);
+  const [activeFilters, setActiveFilters] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const containerRef = useRef(null);
+
+  const { brigades = [] } = useBrigades();
+  const { users = [] } = useUsers();
+  const { tickets = [] } = useTickets();
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -23,14 +30,26 @@ const Search = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const mockResults = [
-    { id: 1, title: 'Бригада "Альфа"' },
-    { id: 2, title: 'Бригада "Бета"' },
-    { id: 3, title: 'Задача #1024: Обрыв кабеля' },
-    { id: 4, title: 'Задача #1025: Установка роутера' },
-  ];
+  const allData = [];
+  if (activeFilters.length === 0 || activeFilters.includes('бригады')) {
+    (brigades || []).forEach(b => {
+      allData.push({ id: `brigade_${b.id}`, title: `Бригада: ${b.name}`, type: 'brigade', raw: b });
+    });
+  }
+  if (activeFilters.length === 0 || activeFilters.includes('работники')) {
+    const staff = (users || []).filter(u => u.role === "worker" || u.role === "foreman");
+    staff.forEach(u => {
+      const fullName = [u.surname, u.name, u.lastname].filter(Boolean).join(" ");
+      allData.push({ id: `user_${u.id}`, title: `Сотрудник: ${fullName}`, type: 'user', raw: u });
+    });
+  }
+  if (activeFilters.length === 0 || activeFilters.includes('заявки')) {
+    (tickets || []).forEach(t => {
+      allData.push({ id: `ticket_${t.id}`, title: `Заявка #${t.id}: ${t.title}`, type: 'ticket', raw: t });
+    });
+  }
 
-  const hasMatches = searchQuery && mockResults.some(r => r.title.toLowerCase().includes(searchQuery.toLowerCase()));
+  const hasMatches = searchQuery && allData.some(r => r.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const showSuggestions = isFocused && searchQuery.length > 0;
 
@@ -74,7 +93,7 @@ const Search = () => {
         </div>
         <div className={styles.suggestionsWrapper}>
           <div className={styles.suggestions}>
-            {mockResults.map(res => {
+            {allData.map(res => {
               const isMatch = !searchQuery || res.title.toLowerCase().includes(searchQuery.toLowerCase());
               return (
                 <div 
@@ -116,24 +135,15 @@ const Search = () => {
           </>
         )}
       >
-        <button 
-          className={`${styles.filterPill} ${activeFilters.includes('бригады') ? styles.active : ''}`}
-          onClick={() => toggleFilter('бригады')}
-        >
-          бригады
-        </button>
-        <button 
-          className={`${styles.filterPill} ${activeFilters.includes('районы') ? styles.active : ''}`}
-          onClick={() => toggleFilter('районы')}
-        >
-          районы
-        </button>
-        <button 
-          className={`${styles.filterPill} ${activeFilters.includes('разное') ? styles.active : ''}`}
-          onClick={() => toggleFilter('разное')}
-        >
-          разное
-        </button>
+        {ALL_FILTERS.map(filter => (
+          <button 
+            key={filter}
+            className={`${styles.filterPill} ${activeFilters.includes(filter) ? styles.active : ''}`}
+            onClick={() => toggleFilter(filter)}
+          >
+            {filter}
+          </button>
+        ))}
       </ExpandableMenu>
     </div>
   );

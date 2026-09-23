@@ -10,7 +10,7 @@
     border-radius: 12px;
     display: flex;
     flex-direction: column;
-    min-width: 280px;
+    width: 280px;
     border: 2px solid var(--stroke);
     box-sizing: border-box;
 }
@@ -113,7 +113,9 @@
 
 .suggestions {
     min-height: 0;
-    overflow: hidden;
+    max-height: 30vh;
+    overflow-y: auto;
+    overflow-x: hidden;
     opacity: 0;
     transition: opacity 0.2s ease;
     display: flex;
@@ -137,6 +139,9 @@
     transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
     box-sizing: border-box;
     border-bottom: 1px solid var(--stroke);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
 }
 
 .suggestionItem.hidden {

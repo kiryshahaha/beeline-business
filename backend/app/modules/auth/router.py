@@ -2,26 +2,28 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session
 from app.modules.auth import service
 from app.modules.auth.schemas import (
     LoginRequest,
-    RefreshTokenRequest,
+    LoginResponse,
     TokenResponse,
 )
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 DatabaseSession = Annotated[Session, Depends(get_session)]
 
+REFRESH_COOKIE = "refresh_token"
 
-@router.post("/login", response_model=TokenResponse)
-def login(data: LoginRequest, session: DatabaseSession) -> TokenResponse:
-    """Вход пользователя в систему по логину и паролю. Возвращает access и refresh токены."""
+
+@router.post("/login", response_model=LoginResponse)
+def login(data: LoginRequest, response: Response, session: DatabaseSession) -> LoginResponse:
+    """Вход по логину и паролю. Возвращает access_token; refresh_token устанавливается в httpOnly cookie."""
     try:
-        return service.authenticate_user(session, data.username, data.password)
+        tokens = service.authenticate_user(session, data.username, data.password)
     except service.InvalidCredentialsError as error:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -29,12 +31,36 @@ def login(data: LoginRequest, session: DatabaseSession) -> TokenResponse:
             headers={"WWW-Authenticate": "Bearer"},
         ) from error
 
+    response.set_cookie(
+        key=REFRESH_COOKIE,
+        value=tokens.refresh_token,
+        httponly=True,
+        samesite="strict",
+        secure=False,  # поставьте True в продакшене (HTTPS)
+        max_age=tokens.expires_in * 2,  # запас: чуть дольше access
+    )
+    return LoginResponse(
+        access_token=tokens.access_token,
+        token_type=tokens.token_type,
+        expires_in=tokens.expires_in,
+    )
 
-@router.post("/refresh", response_model=TokenResponse)
-def refresh_token(data: RefreshTokenRequest, session: DatabaseSession) -> TokenResponse:
-    """Обновление access-токена с ротацией refresh-токена."""
+
+@router.post("/refresh", response_model=LoginResponse)
+def refresh_token(
+    response: Response,
+    session: DatabaseSession,
+    refresh_token: Annotated[str | None, Cookie(alias=REFRESH_COOKIE)] = None,
+) -> LoginResponse:
+    """Обновление access-токена. refresh_token берётся из httpOnly cookie."""
+    if refresh_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh-токен отсутствует",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     try:
-        return service.refresh_access_token(session, data.refresh_token)
+        tokens = service.refresh_access_token(session, refresh_token)
     except service.InvalidTokenError as error:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -42,9 +68,29 @@ def refresh_token(data: RefreshTokenRequest, session: DatabaseSession) -> TokenR
             headers={"WWW-Authenticate": "Bearer"},
         ) from error
 
+    response.set_cookie(
+        key=REFRESH_COOKIE,
+        value=tokens.refresh_token,
+        httponly=True,
+        samesite="strict",
+        secure=False,
+        max_age=tokens.expires_in * 2,
+    )
+    return LoginResponse(
+        access_token=tokens.access_token,
+        token_type=tokens.token_type,
+        expires_in=tokens.expires_in,
+    )
+
 
 @router.post("/logout")
-def logout(data: RefreshTokenRequest, session: DatabaseSession) -> dict[str, str]:
-    """Выход из системы и отзыв действующего refresh-токена."""
-    service.logout_user(session, data.refresh_token)
+def logout(
+    response: Response,
+    session: DatabaseSession,
+    refresh_token: Annotated[str | None, Cookie(alias=REFRESH_COOKIE)] = None,
+) -> dict[str, str]:
+    """Выход из системы. Отзывает refresh-токен и сбрасывает cookie."""
+    if refresh_token:
+        service.logout_user(session, refresh_token)
+    response.delete_cookie(key=REFRESH_COOKIE, samesite="strict")
     return {"status": "ok"}
