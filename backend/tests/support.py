@@ -74,8 +74,9 @@ class CommittedDatabaseTestCase(DatabaseTestCase):
                 text(
                     "TRUNCATE planning_plan_routes, planning_plans, work_type_required_skills, "
                     "work_type_required_appliances, work_type_planning_rules, "
-                    "data_imports, routes, ticket_appliances, "
-                    "appliance_stocks, appliances, "
+                    "data_imports, routes, ticket_appliance_states, appliance_movements, "
+                    "appliance_operations, worker_appliances, office_kit_reserves, "
+                    "ticket_appliances, appliance_stocks, appliances, "
                     "brigade_members, brigades, offices, notification_events, "
                     "push_subscriptions, ticket_comments, ticket_assignments, "
                     "tickets, refresh_tokens, calendar_tokens, worker_skill_assignments, "

@@ -111,6 +111,10 @@ def get_reserved_stock_for_office(
         WHERE ta.office_id = :office_id
           AND ta.appliance_id = :appliance_id
           AND t.status IN ('planned', 'in_progress')
+          AND NOT EXISTS (
+              SELECT 1 FROM ticket_appliance_states s
+              WHERE s.ticket_id = ta.ticket_id AND s.appliance_id = ta.appliance_id
+          )
     """
     params: dict[str, Any] = {"office_id": office_id, "appliance_id": appliance_id}
     if exclude_ticket_id is not None:
@@ -140,6 +144,10 @@ def list_office_stocks(session: Session, office_id: int) -> list[dict[str, Any]]
             JOIN tickets t ON t.id = ta.ticket_id
             WHERE ta.office_id = :office_id
               AND t.status IN ('planned', 'in_progress')
+              AND NOT EXISTS (
+                  SELECT 1 FROM ticket_appliance_states s
+                  WHERE s.ticket_id = ta.ticket_id AND s.appliance_id = ta.appliance_id
+              )
             GROUP BY ta.appliance_id
         ) r ON r.appliance_id = a.id
         WHERE a.is_active = TRUE
@@ -248,31 +256,3 @@ def find_ticket_default_office_id(session: Session, ticket_id: int) -> int | Non
     fallback_query = "SELECT id FROM offices ORDER BY id LIMIT 1"
     fallback_id = session.execute(text(fallback_query)).scalar_one_or_none()
     return int(fallback_id) if fallback_id is not None else None
-
-
-def consume_ticket_appliances_on_completed(session: Session, ticket_id: int) -> None:
-    """Deduct consumables (all except TOOL) from physical stock upon ticket completion."""
-    query = """
-        SELECT ta.office_id, ta.appliance_id, ta.quantity, a.type
-        FROM ticket_appliances ta
-        JOIN appliances a ON a.id = ta.appliance_id
-        WHERE ta.ticket_id = :ticket_id
-    """
-    rows = session.execute(text(query), {"ticket_id": ticket_id}).mappings().all()
-    for row in rows:
-        if row["type"] != ApplianceType.TOOL.value:
-            # Atomic decrement of stock
-            update_query = """
-                UPDATE appliance_stocks
-                SET stock = GREATEST(0, stock - :quantity)
-                WHERE office_id = :office_id AND appliance_id = :appliance_id
-            """
-            session.execute(
-                text(update_query),
-                {
-                    "office_id": row["office_id"],
-                    "appliance_id": row["appliance_id"],
-                    "quantity": row["quantity"],
-                },
-            )
-    session.flush()

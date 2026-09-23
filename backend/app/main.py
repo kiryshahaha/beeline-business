@@ -11,8 +11,10 @@ from app.core.config import get_settings
 from app.modules.analytics.router import router as analytics_router
 from app.modules.appliances.router import (
     appliances_router,
+    equipment_journal_router,
     office_stock_router,
     ticket_appliances_router,
+    worker_equipment_router,
 )
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.schemas import (
@@ -115,6 +117,8 @@ app.include_router(brigades_router)
 app.include_router(work_types_router)
 app.include_router(tickets_router)
 app.include_router(ticket_appliances_router)
+app.include_router(worker_equipment_router)
+app.include_router(equipment_journal_router)
 app.include_router(calendar_router)
 app.include_router(comments_router)
 app.include_router(notifications_router)

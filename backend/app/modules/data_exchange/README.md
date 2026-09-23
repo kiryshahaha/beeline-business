@@ -31,4 +31,6 @@ python -m unittest tests.test_exchange_and_routes_api tests.test_exchange_roundt
 БД при вставке. Одноимённый вид работ с одинаковыми компонентами норматива использует
 существующий ID (включая строки миграции 0011); расхождение нормативов отклоняет весь импорт.
 Планы planning_plans и planning_plan_routes не экспортируются: это служебные снимки
-для проверки актуальности и применения. Сохранённые GeoJSON-маршруты экспортируются полностью.
+для проверки актуальности и применения. Таблицы оборудования на руках и журнала операций
+(office_kit_reserves, worker_appliances, appliance_operations, appliance_movements,
+ticket_appliance_states) исключены до T11. Сохранённые GeoJSON-маршруты экспортируются полностью.

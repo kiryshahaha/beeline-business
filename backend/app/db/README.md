@@ -26,3 +26,7 @@ planning_plans хранит UUID, дату, TTL, согласованный сн
 planning_plan_routes связывает применённый план с сохранёнными routes.
 Связи и check-ограничения не позволяют создать применённый план без квитанции.
 План не заменяет tickets/assignments: изменения в них выполняются атомарно при apply.
+
+Оборудование на руках (0016): worker_appliances — остаток у инженера, office_kit_reserves —
+норма резерва офиса, appliance_operations/appliance_movements — идемпотентный журнал
+перемещений, ticket_appliance_states — выдана ли позиция заявки и списана ли она.

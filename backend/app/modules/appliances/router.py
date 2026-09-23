@@ -1,5 +1,6 @@
 """REST API routers for appliances, office warehouse stock, and ticket allocations."""
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
@@ -7,17 +8,24 @@ from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
 from app.db.session import get_session
-from app.modules.appliances import service
+from app.modules.appliances import inventory, service
 from app.modules.appliances.enums import ApplianceType
 from app.modules.appliances.schemas import (
     ApplianceCreate,
     ApplianceRead,
     ApplianceUpdate,
+    IssueRequest,
+    KitReserveItemRead,
+    KitReserveSetRequest,
     OfficeStockItemRead,
     OfficeStockSetRequest,
+    OperationRead,
+    RestoreRequest,
+    ReturnRequest,
     TicketApplianceCreate,
     TicketApplianceRead,
     TicketApplianceUpdate,
+    WorkerEquipmentRead,
 )
 from app.modules.auth.dependencies import get_current_user, require_roles
 from app.modules.users.enums import UserRole
@@ -31,6 +39,8 @@ PositiveIntPath = Annotated[int, Path(ge=1, le=2_147_483_647)]
 appliances_router = APIRouter(prefix="/api/v1/appliances", tags=["appliances"])
 office_stock_router = APIRouter(prefix="/api/v1/offices", tags=["office stock"])
 ticket_appliances_router = APIRouter(prefix="/api/v1/tickets", tags=["ticket appliances"])
+worker_equipment_router = APIRouter(prefix="/api/v1/workers", tags=["worker equipment"])
+equipment_journal_router = APIRouter(prefix="/api/v1/equipment", tags=["worker equipment"])
 
 
 def _handle_service_error(error: Exception) -> None:
@@ -55,6 +65,10 @@ def _handle_service_error(error: Exception) -> None:
         ),
     ):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+    if isinstance(error, service.AllocationLockedError):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    if isinstance(error, inventory.InventoryError):
+        raise HTTPException(status_code=error.status, detail=error.detail()) from error
     if isinstance(error, service.PermissionDeniedError):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
     raise error
@@ -274,3 +288,143 @@ def remove_ticket_appliance(
             service.remove_ticket_appliance(session, id, appliance_id, current_user)
     except Exception as err:
         _handle_service_error(err)
+
+
+# --- 4. UNITS ON HAND, KIT AND JOURNAL ---
+
+
+def _inventory_error(error: inventory.InventoryError):
+    raise HTTPException(status_code=error.status, detail=error.detail()) from error
+
+
+@office_stock_router.get(
+    "/{office_id}/kit-reserve",
+    response_model=list[KitReserveItemRead],
+    summary="Норма резерва комплекта инженера офиса",
+)
+def list_kit_reserve(
+    office_id: PositiveIntPath, session: DatabaseSession, _current_user: CurrentUser
+) -> list[KitReserveItemRead]:
+    try:
+        return inventory.kit_reserve(session, office_id)
+    except inventory.InventoryError as error:
+        _inventory_error(error)
+
+
+@office_stock_router.put(
+    "/{office_id}/kit-reserve/{appliance_id}",
+    response_model=KitReserveItemRead,
+    summary="Задать норму резерва комплекта (0 удаляет норму)",
+)
+def set_kit_reserve(
+    office_id: PositiveIntPath,
+    appliance_id: PositiveIntPath,
+    data: KitReserveSetRequest,
+    session: DatabaseSession,
+    _admin: RequireObserver,
+) -> KitReserveItemRead:
+    try:
+        with session.begin():
+            lock_planning_mutation(session)
+            return inventory.set_kit_reserve(session, office_id, appliance_id, data.quantity)
+    except inventory.InventoryError as error:
+        _inventory_error(error)
+
+
+@worker_equipment_router.get(
+    "/{worker_id}/equipment",
+    response_model=WorkerEquipmentRead,
+    summary="Оборудование на руках инженера и комплект к выдаче на дату",
+)
+def read_worker_equipment(
+    worker_id: PositiveIntPath,
+    session: DatabaseSession,
+    current_user: CurrentUser,
+    day: Annotated[date | None, Query(alias="date")] = None,
+) -> WorkerEquipmentRead:
+    allowed = (
+        current_user.role == UserRole.OBSERVER
+        or (current_user.role == UserRole.WORKER and current_user.id == worker_id)
+        or (
+            current_user.role == UserRole.FOREMAN
+            and inventory.is_foreman_of(session, current_user.id, worker_id)
+        )
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Нет доступа к оборудованию инженера")
+    try:
+        return inventory.worker_equipment(session, worker_id, day or inventory.today())
+    except inventory.InventoryError as error:
+        _inventory_error(error)
+
+
+@worker_equipment_router.post(
+    "/{worker_id}/equipment/issue",
+    response_model=OperationRead,
+    summary="Выдать комплект на день: оборудование назначенных заявок и резерв офиса",
+)
+def issue_worker_kit(
+    worker_id: PositiveIntPath,
+    data: IssueRequest,
+    session: DatabaseSession,
+    admin: RequireObserver,
+) -> OperationRead:
+    try:
+        with session.begin():
+            lock_planning_mutation(session)
+            return inventory.issue_kit(session, worker_id, data.date, data.operation_key, admin.id)
+    except inventory.InventoryError as error:
+        _inventory_error(error)
+
+
+@worker_equipment_router.post(
+    "/{worker_id}/equipment/return",
+    response_model=OperationRead,
+    summary="Вернуть оборудование с рук инженера на склад офиса",
+)
+def return_worker_equipment(
+    worker_id: PositiveIntPath,
+    data: ReturnRequest,
+    session: DatabaseSession,
+    admin: RequireObserver,
+) -> OperationRead:
+    try:
+        with session.begin():
+            lock_planning_mutation(session)
+            return inventory.return_equipment(session, worker_id, data, admin.id)
+    except inventory.InventoryError as error:
+        _inventory_error(error)
+
+
+@ticket_appliances_router.post(
+    "/{id}/equipment/restore",
+    response_model=OperationRead,
+    summary="Оформить возврат списанного оборудования заявки после переоткрытия",
+)
+def restore_ticket_equipment(
+    id: PositiveIntPath,
+    data: RestoreRequest,
+    session: DatabaseSession,
+    admin: RequireObserver,
+) -> OperationRead:
+    try:
+        with session.begin():
+            lock_planning_mutation(session)
+            return inventory.restore_ticket_equipment(session, id, data, admin.id)
+    except inventory.InventoryError as error:
+        _inventory_error(error)
+
+
+@equipment_journal_router.get(
+    "/operations",
+    response_model=list[OperationRead],
+    summary="Журнал движения оборудования",
+)
+def list_equipment_operations(
+    session: DatabaseSession,
+    _admin: RequireObserver,
+    worker_id: Annotated[int | None, Query(ge=1, le=2_147_483_647)] = None,
+    ticket_id: Annotated[int | None, Query(ge=1, le=2_147_483_647)] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[OperationRead]:
+    return inventory.operations(session, worker_id=worker_id, ticket_id=ticket_id, limit=limit)
