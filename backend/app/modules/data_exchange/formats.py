@@ -201,8 +201,10 @@ def normalize_dataframe(
 
         # 3. Check nullable constraints
         def _is_empty(v):
-            return v is None or (isinstance(v, float) and pd.isna(v)) or (
-                v == "" and not isinstance(col.type, String)
+            return (
+                v is None
+                or (isinstance(v, float) and pd.isna(v))
+                or (v == "" and not isinstance(col.type, String))
             )
 
         is_empty = decoded.map(_is_empty)
@@ -214,8 +216,10 @@ def normalize_dataframe(
         # 4. Convert and validate column values into pure Python objects
         converted = []
         for idx, val in decoded.items():
-            if val is None or (isinstance(val, float) and pd.isna(val)) or (
-                val == "" and not isinstance(col.type, String)
+            if (
+                val is None
+                or (isinstance(val, float) and pd.isna(val))
+                or (val == "" and not isinstance(col.type, String))
             ):
                 converted.append(None)
             else:
