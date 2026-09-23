@@ -84,6 +84,10 @@ class RouteStop(StrictModel):
     location_id: PositiveInt32
     ticket_id: PositiveInt32 | None = None
     arrival_at: AwareDatetime
+    service_start_at: AwareDatetime
+    service_end_at: AwareDatetime
+    waiting_minutes: int = Field(ge=0)
+    duration_source: Literal["ticket_estimate", "work_norm"]
 
 
 class LineString(StrictModel):
