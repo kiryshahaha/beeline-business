@@ -19,8 +19,8 @@ class Ticket(IntegerIdMixin, Base):
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text)
     work_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    work_type_id: Mapped[int] = mapped_column(
-        ForeignKey("work_types.id", ondelete="RESTRICT"), index=True
+    work_type_id: Mapped[int | None] = mapped_column(
+        ForeignKey("work_types.id", ondelete="RESTRICT"), index=True, nullable=True
     )
     category: Mapped[TicketCategory] = mapped_column(
         Enum(

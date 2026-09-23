@@ -75,9 +75,7 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
                 longitude=37.61,
             )
         )
-        self.office = self.save(
-            Office(name="Главный офис", location_id=self.location.id, is_active=True)
-        )
+        self.office = self.save(Office(name="Главный офис", location_id=self.location.id))
 
         # Users and workers
         self.observer = self.create_user("obs_t02", UserRole.OBSERVER)

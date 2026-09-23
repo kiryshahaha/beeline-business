@@ -71,7 +71,7 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
         )
     if scenario == "rejections":
         data["tickets"][0]["status"] = "completed"
-        data["tickets"][1]["work_type_id"] = 999999
+        data["tickets"][1]["work_type_id"] = None
         data["tickets"][1]["work_type"] = "Unconfigured fictional work"
         data["ticket_appliances"] = [a for a in data["ticket_appliances"] if a["ticket_id"] != 3]
         data["tickets"][3]["visit_window_end"] = start + timedelta(minutes=5)

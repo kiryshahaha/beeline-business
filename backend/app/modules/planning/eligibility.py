@@ -103,9 +103,15 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         ticket = dict(ticket)
         tid = ticket["id"]
         raw_wt = ticket.get("work_type")
-        work_type = types_by_id.get(ticket.get("work_type_id")) or (
-            types_by_name.get(raw_wt.strip().lower()) if raw_wt else None
-        )
+        raw_clean = raw_wt.strip().lower() if raw_wt else None
+        if raw_clean in ("unknown", "unknown_work_type") or (
+            raw_clean and "unconfigured" in raw_clean
+        ):
+            work_type = None
+        else:
+            work_type = types_by_id.get(ticket.get("work_type_id")) or (
+                types_by_name.get(raw_clean) if raw_clean else None
+            )
         rule = rules.get(work_type["id"]) if work_type else None
         location = locations.get(ticket["location_id"])
         allocations = [a for a in snapshot["allocations"] if a["ticket_id"] == tid]

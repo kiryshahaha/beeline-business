@@ -48,12 +48,15 @@ class WorkTypeRead(BaseModel):
 
     id: int
     name: str = Field(description="Название вида работ.")
-    code: str = Field(default="repair", description="Стабильный код вида работ.")
+    code: str = Field(default="repair", exclude=True, description="Стабильный код вида работ.")
     category: str = Field(
         default="repair",
+        exclude=True,
         description="Каноническая категория (emergency, connection, repair, additional).",
     )
-    default_priority: int = Field(default=3, description="Приоритет по умолчанию (1..3).")
+    default_priority: int = Field(
+        default=3, exclude=True, description="Приоритет по умолчанию (1..3)."
+    )
     travel_minutes: int = Field(description="Дорога до клиента или ТКД, минуты.")
     work_minutes: int = Field(description="Технические работы, минуты.")
     documents_minutes: int = Field(description="Оформление документов, минуты.")
@@ -62,6 +65,7 @@ class WorkTypeRead(BaseModel):
     )
     service_minutes: int = Field(
         default=0,
+        exclude=True,
         description="Норматив обслуживания без дороги: технические работы + документы.",
     )
 
