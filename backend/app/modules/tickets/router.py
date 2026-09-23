@@ -105,6 +105,11 @@ def replace_ticket_assignees(
         raise HTTPException(
             status_code=422, detail="Один или несколько исполнителей не найдены"
         ) from error
+    except service.WorkerOffLineError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Один или несколько исполнителей сняты с линии",
+        ) from error
 
 
 @router.patch("/{id}/status", response_model=TicketRead)

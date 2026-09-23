@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 WORKER_COLUMNS_SQL = """
     u.id, u.surname, u.name, u.lastname,
-    w.workshift_start, w.workshift_end, w.transport_type
+    w.workshift_start, w.workshift_end, w.transport_type, w.is_on_line
 """
 
 

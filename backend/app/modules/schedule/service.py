@@ -57,6 +57,7 @@ def _worker(row: RowMapping, day: date, tickets: dict[int, list[ScheduleTicket]]
         id=row["id"],
         full_name=_full_name(row["surname"], row["name"], row["lastname"]),
         transport_type=row["transport_type"],
+        is_on_line=row["is_on_line"],
         workshift_start=row["workshift_start"],
         workshift_end=row["workshift_end"],
         shifts=shift_intervals(day, row["workshift_start"], row["workshift_end"]),
