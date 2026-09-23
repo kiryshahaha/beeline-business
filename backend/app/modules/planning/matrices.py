@@ -19,9 +19,7 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
         finish_nodes = [{"kind": "finish", "location_id": w["location_id"]} for w in workers]
     else:
         finish_nodes = depot_nodes  # same objects; starts == ends
-    task_nodes = [
-        {"kind": "ticket", "location_id": t["location_id"], "ticket": t} for t in tickets
-    ]
+    task_nodes = [{"kind": "ticket", "location_id": t["location_id"], "ticket": t} for t in tickets]
     # Node ordering: depots | (finishes if open_end) | tasks
     if open_end:
         nodes = depot_nodes + finish_nodes + task_nodes
@@ -97,9 +95,7 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
     finish_penalties = [0] * v if open_end else []
     task_penalties = [policy.penalty(v, horizon)] * len(tickets)
     # allowed_vehicles keys are task node indices (strings).
-    allowed = {
-        str(task_offset + i): t["allowed"] for i, t in enumerate(tickets)
-    }
+    allowed = {str(task_offset + i): t["allowed"] for i, t in enumerate(tickets)}
     request = SolveRequest(
         policy_version=policy.policy_version,
         num_vehicles=v,

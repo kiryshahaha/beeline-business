@@ -89,7 +89,7 @@ class PlanningPolicyTests(unittest.TestCase):
     def test_unsupported_rules_fail_closed_without_accepting_future_features(self):
         for mutation in (
             {"policy_version": 2},
-            {"route_end": "open"},       # not a supported literal
+            {"route_end": "open"},  # not a supported literal
             {"visit_window": "service_start"},  # partial literal not accepted
             {"vehicle_fixed_cost": 1},
             {"search_time_limit_seconds": 11},
