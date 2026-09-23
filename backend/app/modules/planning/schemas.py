@@ -47,7 +47,9 @@ class PlannedVisit(BaseModel):
     location_id: int
     sequence: int
     arrival_at: datetime
+    service_start_at: datetime
     service_end_at: datetime
+    waiting_minutes: int
     effective_service_minutes: int
     duration_source: Literal["ticket_estimate", "work_norm"]
 

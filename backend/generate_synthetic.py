@@ -254,6 +254,14 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
                                 "arrival_at": (
                                     start + timedelta(minutes=sequence * 40 + number)
                                 ).isoformat(),
+                                "service_start_at": (
+                                    start + timedelta(minutes=sequence * 40 + number)
+                                ).isoformat(),
+                                "service_end_at": (
+                                    start + timedelta(minutes=sequence * 40 + number + 30)
+                                ).isoformat(),
+                                "waiting_minutes": 0,
+                                "duration_source": "ticket_estimate",
                             },
                         }
                     )

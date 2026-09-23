@@ -158,7 +158,10 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                     for v, w in enumerate(workers)
                     if skills <= w["skill_ids"]
                     and all(a["office_id"] == w["office_id"] for a in allocations)
-                    and max(window[0], w["window"][0]) <= min(window[1], w["window"][1] - duration)
+                    # service_start must be in [window[0], window[1]] AND in shift
+                    # service_end (start + duration) must fit within shift_end
+                    and max(window[0], w["window"][0]) <= min(window[1], w["window"][1])
+                    and max(window[0], w["window"][0]) + duration <= w["window"][1]
                 ]
                 if not allowed:
                     reason = "no_eligible_worker"
@@ -173,10 +176,12 @@ def prepare(snapshot: dict, now: datetime) -> dict:
             unassigned.append({"ticket_id": tid, "reason": reason})
         else:
             tickets.append(ticket)
+    open_end = policy.route_end == "open_end"
     return {
         "policy": policy,
         "epoch": epoch,
         "horizon": horizon,
+        "open_end": open_end,
         "workers": workers,
         "tickets": tickets,
         "locations": locations,

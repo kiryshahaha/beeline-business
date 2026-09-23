@@ -13,11 +13,13 @@ from app.modules.routing.schemas import (
     RouteCreate,
     RouteGeoJSON,
     RouteLeg,
+    RouteStop,
 )
 
 
 async def build_routes(prepared, problem, nodes, solution, provider, settings):
     locations = prepared["locations"]
+    open_end: bool = problem.open_end
 
     def position(node):
         loc = locations[nodes[node]["location_id"]]
@@ -49,72 +51,127 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
     roads = dict(await bounded_map(fetch, requests, settings.planning_provider_concurrency))
     output, snapshots = [], []
     epoch = prepared["epoch"]
+    finish_nodes = set(problem.ends) if open_end else set()
+
     for route in routes:
         vehicle = route.vehicle_id
         worker = prepared["workers"][vehicle]
         lines, legs, stops, visits = [], [], [], []
-        travel = distance = waiting = 0
+        travel = distance = waiting_total = 0
         matrix = problem.matrices[worker["profile"]]
+
         for index, step in enumerate(route.steps):
-            node = nodes[step.node]
-            arrival = epoch + timedelta(minutes=step.arrival_time)
-            stop = {"location_id": node["location_id"], "arrival_at": arrival.isoformat()}
+            node_index = step.node
+            # open_end: skip the virtual finish node from public stops/legs
+            if open_end and node_index in finish_nodes and index == len(route.steps) - 1:
+                # Still account for travel to finish in metrics
+                if index > 0:
+                    previous_step = route.steps[index - 1]
+                    travel_to_finish = matrix.time_minutes[previous_step.node][node_index]
+                    if travel_to_finish is None:
+                        raise PlanningError("routing_estimate_changed", 502)
+                    travel += travel_to_finish
+                break
+
+            node = nodes[node_index]
+
+            # Physical arrival = epoch + step.arrival_time (the solver's cumul value).
+            # For depots (index==0) there is no waiting: service_start == arrival_at.
+            # For task nodes the solver already accounts for waiting: arrival_time
+            # is the service_start (earliest the window allows), NOT the physical
+            # road arrival.  We reconstruct the physical arrival from the previous
+            # step's service_end + travel to separate the two timestamps (F10).
+            if index == 0:
+                physical_arrival = epoch + timedelta(minutes=step.arrival_time)
+                service_start = physical_arrival
+                wait_minutes = 0
+            else:
+                previous_step = route.steps[index - 1]
+                prev_service_end_min = (
+                    previous_step.arrival_time + problem.service_times[previous_step.node]
+                )
+                start_pos = position(previous_step.node)
+                end_pos = position(node_index)
+                road = (
+                    roads.get((worker["profile"], start_pos, end_pos))
+                    if start_pos != end_pos
+                    else None
+                )
+                seconds, meters_leg = (
+                    (road.duration_seconds, road.distance_meters) if road else (0, 0)
+                )
+                conservative_travel = max(
+                    matrix.time_minutes[previous_step.node][node_index],
+                    math.ceil(seconds / 60),
+                )
+                if conservative_travel < 0:
+                    raise PlanningError("routing_estimate_changed", 502)
+                physical_arrival_min = prev_service_end_min + conservative_travel
+                # service_start = max(physical_arrival, window_lower)
+                # The solver stores the service-start in arrival_time.
+                service_start_min = step.arrival_time
+                wait_minutes = service_start_min - physical_arrival_min
+                if wait_minutes < 0:
+                    raise PlanningError("routing_estimate_changed", 502)
+                physical_arrival = epoch + timedelta(minutes=physical_arrival_min)
+                service_start = epoch + timedelta(minutes=service_start_min)
+                distance += meters_leg
+                travel += conservative_travel
+                waiting_total += wait_minutes
+                # Build leg (index > 0)
+                begin = len(lines)
+                if road:
+                    lines.extend(road.geometry["coordinates"])
+                legs.append(
+                    RouteLeg(
+                        from_sequence=index,
+                        to_sequence=index + 1,
+                        distance_meters=meters_leg,
+                        duration_seconds=seconds,
+                        geometry_start=begin,
+                        geometry_end=len(lines),
+                    )
+                )
+
+            stop = {
+                "location_id": node["location_id"],
+                "arrival_at": physical_arrival.isoformat(),
+                "service_start_at": service_start.isoformat(),
+            }
             if node["kind"] == "ticket":
                 ticket = node["ticket"]
                 stop["ticket_id"] = ticket["id"]
+                service_end = service_start + timedelta(minutes=ticket["duration"])
                 visits.append(
                     {
                         **stop,
                         "sequence": len(visits) + 1,
-                        "service_end_at": (
-                            arrival + timedelta(minutes=ticket["duration"])
-                        ).isoformat(),
+                        "service_end_at": service_end.isoformat(),
+                        "waiting_minutes": wait_minutes,
                         "effective_service_minutes": ticket["duration"],
                         "duration_source": ticket["duration_source"],
                     }
                 )
             stops.append(stop)
-            if index == 0:
-                continue
-            previous = route.steps[index - 1]
-            start, end = position(previous.node), position(step.node)
-            road = roads.get((worker["profile"], start, end)) if start != end else None
-            seconds, meters = (road.duration_seconds, road.distance_meters) if road else (0, 0)
-            conservative = max(
-                matrix.time_minutes[previous.node][step.node], math.ceil(seconds / 60)
-            )
-            gap = (
-                step.arrival_time
-                - previous.arrival_time
-                - problem.service_times[previous.node]
-                - conservative
-            )
-            if gap < 0:
-                raise PlanningError("routing_estimate_changed", 502)
-            begin = len(lines)
-            if road:
-                lines.extend(road.geometry["coordinates"])
-            legs.append(
-                RouteLeg(
-                    from_sequence=index,
-                    to_sequence=index + 1,
-                    distance_meters=meters,
-                    duration_seconds=seconds,
-                    geometry_start=begin,
-                    geometry_end=len(lines),
-                )
-            )
-            distance += meters
-            travel += conservative
-            waiting += gap
+
         properties = GeoapifyPathProperties(
             mode=worker["profile"], legs=legs, snap_limit_meters=settings.planning_max_snap_meters
         )
+        # RouteCreate uses arrival_at for ordering; use service_start_at as the persisted stop time
+        # (clients see service_start_at via the public PlannedVisit, not RouteStop.arrival_at).
+        route_stops = [
+            RouteStop(
+                location_id=s["location_id"],
+                ticket_id=s.get("ticket_id"),
+                arrival_at=s["service_start_at"],  # persisted as service_start for DB/schedule
+            )
+            for s in stops
+        ]
         try:
             data = RouteCreate(
                 worker_id=worker["user_id"],
                 route_date=epoch.date(),
-                stops=stops,
+                stops=route_stops,
                 geometry=MultiLineString(coordinates=lines) if lines else None,
                 path_properties=properties if lines else None,
             )
@@ -126,6 +183,7 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
                     "properties": {**stop, "sequence": i + 1},
                 }
                 for i, (step, stop) in enumerate(zip(route.steps, stops, strict=True))
+                if not (open_end and step.node in finish_nodes)
             ]
             if lines:
                 features.append(
@@ -149,6 +207,8 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
         except ValidationError as error:
             raise PlanningError("routing_invalid_geometry", 502) from error
         snapshots.append(data.model_dump(mode="json"))
+        departure_at = stops[0]["service_start_at"]
+        return_at = stops[-1]["service_start_at"]
         output.append(
             {
                 "worker_id": worker["user_id"],
@@ -156,12 +216,12 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
                 "routing_mode": worker["profile"],
                 "start_location_id": worker["location_id"],
                 "end_location_id": worker["location_id"],
-                "departure_at": stops[0]["arrival_at"],
-                "return_at": stops[-1]["arrival_at"],
+                "departure_at": departure_at,
+                "return_at": return_at,
                 "distance_meters": distance,
                 "travel_minutes": travel,
                 "service_minutes": route.service_minutes,
-                "waiting_minutes": waiting,
+                "waiting_minutes": waiting_total,
                 "stops": visits,
                 "geometry": data.geometry.model_dump(mode="json") if data.geometry else None,
                 "legs": [leg.model_dump() for leg in legs],
