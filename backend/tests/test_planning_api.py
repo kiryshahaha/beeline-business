@@ -93,8 +93,10 @@ class PlanningApiTests(CommittedDatabaseTestCase):
         with Session(self.engine) as session:
             return (
                 session.scalar(select(func.count(Route.id))),
-                session.scalar(select(func.count(Ticket.id)).where(Ticket.assigned_worker_id.is_not(None))),
-                session.scalar(select(func.count()).select_from(PlanningPlanRoute))
+                session.scalar(
+                    select(func.count(Ticket.id)).where(Ticket.assigned_worker_id.is_not(None))
+                ),
+                session.scalar(select(func.count()).select_from(PlanningPlanRoute)),
             )
 
     def test_preview_is_read_only_for_domain_and_apply_is_atomic_idempotent(self):

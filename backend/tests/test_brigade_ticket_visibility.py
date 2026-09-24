@@ -143,9 +143,7 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
 
     def test_foreman_scope_is_intersected_with_filter_before_pagination(self):
         self.assertEqual(self.listed_ids(self.foreman), [self.own_ticket])
-        self.assertEqual(
-            self.listed_ids(self.foreman, brigade_id=self.other_brigade), []
-        )
+        self.assertEqual(self.listed_ids(self.foreman, brigade_id=self.other_brigade), [])
         self.assertEqual(self.listed_ids(self.foreman, limit=1, offset=0), [self.own_ticket])
         self.assertEqual(
             self.listed_ids(

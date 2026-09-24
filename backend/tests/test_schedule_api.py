@@ -209,9 +209,7 @@ class ScheduleApiTests(DatabaseTestCase):
             night["shifts"],
             [interval(moscow(16, 22), moscow(17, 6)), interval(moscow(17, 22), moscow(18, 6))],
         )
-        self.assertEqual(
-            [ticket["id"] for ticket in day["tickets"]], [self.day_ticket]
-        )
+        self.assertEqual([ticket["id"] for ticket in day["tickets"]], [self.day_ticket])
         self.assertEqual(
             day["tickets"][0],
             {

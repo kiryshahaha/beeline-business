@@ -151,10 +151,7 @@ class TicketsSummaryApiTests(DatabaseTestCase):
         ).scalar_one()
         if worker_id is not None:
             self.connection.execute(
-                text(
-                    "UPDATE tickets SET assigned_worker_id = :worker_id "
-                    "WHERE id = :ticket_id"
-                ),
+                text("UPDATE tickets SET assigned_worker_id = :worker_id WHERE id = :ticket_id"),
                 {"ticket_id": ticket_id, "worker_id": worker_id},
             )
         return ticket_id
