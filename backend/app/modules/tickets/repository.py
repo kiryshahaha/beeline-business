@@ -93,14 +93,14 @@ def add_ticket(session: Session, values: dict[str, object]) -> int:
     return session.execute(
         text("""
             INSERT INTO tickets (
-                location_id, title, description,
+                location_id, service_area_id, title, description,
                 work_type, work_type_id, category, priority,
                 received_at, sla_deadline_at, required_transport_type, service_duration_source,
                 status, lifecycle_state,
                 visit_window_start, visit_window_end, planned_start_at, planned_end_at,
                 estimated_duration_minutes, actual_duration_minutes
             ) VALUES (
-                :location_id, :title, :description,
+                :location_id, :service_area_id, :title, :description,
                 :work_type, :work_type_id, :category, :priority,
                 :received_at, :sla_deadline_at, :required_transport_type, :service_duration_source,
                 :status, :lifecycle_state,
