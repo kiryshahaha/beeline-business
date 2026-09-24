@@ -55,12 +55,19 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
             .where(Ticket.id.in_(ticket_ids))
         ).mappings()
     }
+    all_service_areas = rows(session, ServiceArea)
+    service_areas_by_code = {sa["code"]: sa["id"] for sa in all_service_areas}
+    default_service_area_id = all_service_areas[0]["id"] if all_service_areas else None
+
     ticket_service_areas = {
         t["id"]: t["service_area_id"] for t in tickets if t.get("service_area_id") is not None
     }
     for t in tickets:
         if t["id"] not in ticket_service_areas and t["id"] in ticket_districts:
-            ticket_service_areas[t["id"]] = ticket_districts[t["id"]]
+            dist_id = ticket_districts[t["id"]]
+            ticket_service_areas[t["id"]] = service_areas_by_code.get(
+                f"district_{dist_id}", default_service_area_id or dist_id
+            )
     service_area_ids = set(ticket_service_areas.values())
     if request.service_area_id is not None and service_area_ids - {request.service_area_id}:
         raise PlanningError("ticket_service_area_mismatch", ticket_areas=sorted(service_area_ids))
@@ -116,7 +123,12 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
         else:
             mb = member_by_worker.get(wid)
             br = brigade_by_id.get(mb["brigade_id"]) if mb else None
-            worker_service_areas[wid] = divisions.get(br["division_id"]) if br else None
+            dist_id = divisions.get(br["division_id"]) if br else None
+            worker_service_areas[wid] = (
+                service_areas_by_code.get(f"district_{dist_id}", default_service_area_id or dist_id)
+                if dist_id is not None
+                else default_service_area_id
+            )
 
     target_area = service_area_id
     if target_area is not None:
@@ -268,7 +280,7 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
             "reservations": reservations,
             "ticket_districts": ticket_districts,
             "district_id": district_id,
-            "service_areas": rows(session, ServiceArea),
+            "service_areas": all_service_areas,
             "service_area_id": service_area_id,
             "ticket_service_areas": ticket_service_areas,
             "worker_service_areas": worker_service_areas,
