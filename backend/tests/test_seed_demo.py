@@ -15,7 +15,6 @@ from app.db.models import (
     Location,
     Street,
     Ticket,
-    TicketAssignment,
     TicketComment,
 )
 from app.modules.tickets.enums import TicketStatus
@@ -83,12 +82,14 @@ class SeedDemoTests(DatabaseTestCase):
 
     def test_demo_assignments_and_comments_are_repeatable_and_preserve_manual_text(self):
         first = seed_data(self.session, self.visit_date)
-        assignment_count = self.session.scalar(select(func.count()).select_from(TicketAssignment))
+        assignment_count = self.session.scalar(
+            select(func.count()).select_from(Ticket).where(Ticket.assigned_worker_id.is_not(None))
+        )
         comment_count = self.session.scalar(select(func.count()).select_from(TicketComment))
         self.assertEqual(assignment_count, len(DEMO_VISITS))
         self.assertEqual(comment_count, len(DEMO_VISITS))
         self.assertTrue(
-            all(get_ticket(self.session, item.ticket_id).assignee_ids for item in first)
+            all(get_ticket(self.session, item.ticket_id).assigned_worker_id for item in first)
         )
 
         first_comment = self.session.scalars(
@@ -100,7 +101,11 @@ class SeedDemoTests(DatabaseTestCase):
         self.session.expire_all()
 
         self.assertEqual(
-            self.session.scalar(select(func.count()).select_from(TicketAssignment)),
+            self.session.scalar(
+                select(func.count())
+                .select_from(Ticket)
+                .where(Ticket.assigned_worker_id.is_not(None))
+            ),
             assignment_count,
         )
         self.assertEqual(

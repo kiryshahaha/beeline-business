@@ -28,7 +28,7 @@ from app.modules.planning.day_models import DayPlanRevision
 from app.modules.planning.models import PlanningPlan, PlanningPlanRoute
 from app.modules.routing.models import Route
 from app.modules.streets.models import Street
-from app.modules.tickets.models import Ticket, TicketAssignment
+from app.modules.tickets.models import Ticket
 from app.modules.users.models import (
     RefreshToken,
     User,
@@ -69,7 +69,6 @@ __all__ = [
     "Street",
     "Ticket",
     "TicketAppliance",
-    "TicketAssignment",
     "TicketComment",
     "User",
     "Worker",

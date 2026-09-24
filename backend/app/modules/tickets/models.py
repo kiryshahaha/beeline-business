@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum,
@@ -83,6 +84,11 @@ class Ticket(IntegerIdMixin, Base):
         server_default=TicketLifecycleState.WAITING_ASSIGNMENT.value,
         nullable=False,
     )
+    assigned_worker_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workers.user_id", ondelete="RESTRICT"), index=True, nullable=True
+    )
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
     visit_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     visit_window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     planned_start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -131,18 +137,4 @@ class Ticket(IntegerIdMixin, Base):
         Index("ix_tickets_lifecycle_state", lifecycle_state),
         Index("ix_tickets_visit_window_start", visit_window_start),
         Index("ix_tickets_category_priority", category, priority),
-    )
-
-
-class TicketAssignment(Base):
-    __tablename__ = "ticket_assignments"
-
-    ticket_id: Mapped[int] = mapped_column(
-        ForeignKey("tickets.id", ondelete="CASCADE"), primary_key=True
-    )
-    worker_id: Mapped[int] = mapped_column(
-        ForeignKey("workers.user_id", ondelete="CASCADE"), primary_key=True, index=True
-    )
-    assigned_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
     )

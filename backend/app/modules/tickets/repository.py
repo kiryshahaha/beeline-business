@@ -26,14 +26,7 @@ TICKET_SELECT_SQL = """
         t.visit_window_start, t.visit_window_end, t.planned_start_at, t.planned_end_at,
         t.estimated_duration_minutes, t.actual_duration_minutes,
         t.created_at, t.updated_at,
-        COALESCE(
-            (
-                SELECT array_agg(ta.worker_id ORDER BY ta.worker_id)
-                FROM ticket_assignments AS ta
-                WHERE ta.ticket_id = t.id
-            ),
-            ARRAY[]::integer[]
-        ) AS assignee_ids,
+        t.assigned_worker_id, t.is_pinned,
         c.id AS city_id, c.name AS city,
         d.id AS district_id, d.name AS district,
         s.id AS street_id, s.name AS street,
@@ -53,11 +46,9 @@ TICKET_SELECT_SQL = """
 FOREMAN_VISIBILITY_SQL = """
     EXISTS (
         SELECT 1
-        FROM ticket_assignments AS visible_assignment
-        JOIN brigade_members AS visible_member
-            ON visible_member.worker_id = visible_assignment.worker_id
+        FROM brigade_members AS visible_member
         JOIN brigades AS visible_brigade ON visible_brigade.id = visible_member.brigade_id
-        WHERE visible_assignment.ticket_id = t.id
+        WHERE visible_member.worker_id = t.assigned_worker_id
           AND visible_brigade.foreman_id = :foreman_id
     )
 """
@@ -152,29 +143,23 @@ def find_worker_line_statuses(session: Session, worker_ids: list[int]) -> dict[i
     )
 
 
-def replace_assignees(session: Session, ticket_id: int, worker_ids: list[int]) -> set[int]:
-    current_ids = set(
-        session.execute(
-            text("SELECT worker_id FROM ticket_assignments WHERE ticket_id = :ticket_id"),
-            {"ticket_id": ticket_id},
-        )
-        .scalars()
-        .all()
-    )
-    requested_ids = set(worker_ids)
-    session.execute(
-        text("DELETE FROM ticket_assignments WHERE ticket_id = :ticket_id"),
+def update_assignment(
+    session: Session, ticket_id: int, worker_id: int | None, is_pinned: bool = True
+) -> tuple[int | None, int | None]:
+    old_worker_id = session.execute(
+        text("SELECT assigned_worker_id FROM tickets WHERE id = :ticket_id FOR UPDATE"),
         {"ticket_id": ticket_id},
+    ).scalar_one()
+
+    session.execute(
+        text("""
+            UPDATE tickets
+            SET assigned_worker_id = :worker_id, is_pinned = :is_pinned, updated_at = now()
+            WHERE id = :ticket_id
+        """),
+        {"ticket_id": ticket_id, "worker_id": worker_id, "is_pinned": is_pinned},
     )
-    for worker_id in sorted(requested_ids):
-        session.execute(
-            text("""
-                INSERT INTO ticket_assignments (ticket_id, worker_id)
-                VALUES (:ticket_id, :worker_id)
-            """),
-            {"ticket_id": ticket_id, "worker_id": worker_id},
-        )
-    return requested_ids - current_ids
+    return old_worker_id, worker_id
 
 
 def is_worker_assigned(session: Session, ticket_id: int, worker_id: int) -> bool:
@@ -183,8 +168,8 @@ def is_worker_assigned(session: Session, ticket_id: int, worker_id: int) -> bool
             text("""
                 SELECT EXISTS (
                     SELECT 1
-                    FROM ticket_assignments
-                    WHERE ticket_id = :ticket_id AND worker_id = :worker_id
+                    FROM tickets
+                    WHERE id = :ticket_id AND assigned_worker_id = :worker_id
                 )
             """),
             {"ticket_id": ticket_id, "worker_id": worker_id},

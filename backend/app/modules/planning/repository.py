@@ -16,7 +16,6 @@ from app.db.models import (
     Ticket,
     TicketAppliance,
     TicketApplianceState,
-    TicketAssignment,
     User,
     Worker,
     WorkerDayState,
@@ -68,21 +67,30 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
         ).mappings()
     ]
     active_tickets = select(Ticket.id).where(Ticket.status.in_(["planned", "in_progress"]))
-    assignments = rows(
+
+    # Simulate assignments list of dicts for compatibility with planner
+    assigned_tickets = rows(
         session,
-        TicketAssignment,
+        Ticket,
         or_(
-            TicketAssignment.ticket_id.in_(ticket_ids),
+            Ticket.id.in_(ticket_ids),
             and_(
-                TicketAssignment.worker_id.in_(worker_ids),
-                TicketAssignment.ticket_id.in_(active_tickets),
+                Ticket.assigned_worker_id.in_(worker_ids),
+                Ticket.id.in_(active_tickets),
             ),
         ),
     )
+    assignments = [
+        {"ticket_id": t["id"], "worker_id": t["assigned_worker_id"], "assigned_at": t["updated_at"]}
+        for t in assigned_tickets
+        if t["assigned_worker_id"] is not None
+    ]
     busy_ids = {a["ticket_id"] for a in assignments if a["worker_id"] in worker_ids}
-    busy = rows(
-        session, Ticket, Ticket.id.in_(busy_ids), Ticket.status.in_(["planned", "in_progress"])
-    )
+    busy = [
+        t
+        for t in assigned_tickets
+        if t["id"] in busy_ids and t["status"] in ("planned", "in_progress")
+    ]
     members = rows(session, BrigadeMember, BrigadeMember.worker_id.in_(worker_ids))
     brigades = rows(session, Brigade, Brigade.id.in_({m["brigade_id"] for m in members}))
     if district_id is not None:

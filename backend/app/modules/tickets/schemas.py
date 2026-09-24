@@ -44,7 +44,8 @@ TICKET_CREATE_EXAMPLE = {
 TICKET_READ_EXAMPLE = {
     **TICKET_CREATE_EXAMPLE,
     "id": 1,
-    "assignee_ids": [2],
+    "assigned_worker_id": 2,
+    "is_pinned": False,
     "state": "waiting_assignment",
     "revision": 1,
     "execution_cycle": 1,
@@ -192,19 +193,39 @@ class TicketCreate(TicketFields):
     )
 
 
-class TicketAssigneesUpdate(BaseModel):
+class TicketAssignmentUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    worker_ids: list[PositiveInt32] = Field(
-        min_length=0,
-        max_length=100,
-        description="Полный список ID исполнителей, назначенных на заявку.",
+    worker_id: PositiveInt32 | None = Field(
+        default=None,
+        description="ID нового исполнителя или null для снятия.",
+    )
+    is_pinned: bool = Field(
+        default=True,
+        description="Зафиксировать назначение (планировщик не переназначит эту заявку).",
     )
 
-    @field_validator("worker_ids")
-    @classmethod
-    def remove_duplicates(cls, values: list[int]) -> list[int]:
-        return list(dict.fromkeys(values))
+
+class AssignmentPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    worker_id: PositiveInt32
+
+
+class AssignmentPreviewResponse(BaseModel):
+    is_eligible: bool = Field(
+        description="Можно ли назначить работника (проходит ли все жесткие правила)."
+    )
+    violations: list[dict] = Field(
+        description="Список нарушенных жестких правил в формате словарей.", default_factory=list
+    )
+    route_shift_minutes: int | None = Field(
+        description="Сдвиг времени существующих заявок на маршруте (минуты), если применимо.",
+        default=None,
+    )
+    sla_violations_added: int = Field(
+        description="Количество новых нарушений SLA в маршруте из-за назначения.", default=0
+    )
 
 
 class TicketStatusUpdate(BaseModel):
@@ -236,4 +257,5 @@ class TicketRead(TicketFields):
     created_at: AwareDatetime
     updated_at: AwareDatetime
     location: LocationRead
-    assignee_ids: list[int] = Field(default_factory=list)
+    assigned_worker_id: int | None = Field(default=None)
+    is_pinned: bool = Field(default=False)

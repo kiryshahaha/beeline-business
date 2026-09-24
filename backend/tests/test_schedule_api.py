@@ -17,7 +17,6 @@ from app.db.models import (
     Office,
     Street,
     Ticket,
-    TicketAssignment,
 )
 from app.db.session import get_session
 from app.main import app
@@ -159,10 +158,9 @@ class ScheduleApiTests(DatabaseTestCase):
                 planned_start_at=planned_start,
                 planned_end_at=planned_end,
                 estimated_duration_minutes=60,
+                assigned_worker_id=workers[0].id if workers else None,
             )
         )
-        for worker in workers:
-            self.save(TicketAssignment(ticket_id=ticket.id, worker_id=worker.id))
         return ticket.id
 
     @staticmethod

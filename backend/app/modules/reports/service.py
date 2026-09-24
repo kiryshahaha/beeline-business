@@ -27,8 +27,8 @@ EXPORT_COLUMNS = (
     "estimated_duration_minutes",
     "actual_duration_minutes",
     "created_at",
-    "updated_at",
-    "assignee_ids",
+    "assigned_worker_id",
+    "is_pinned",
     "city_id",
     "city",
     "district_id",
@@ -70,7 +70,9 @@ def _address(row: dict[str, Any]) -> str:
 
 def _export_row(row: dict[str, Any]) -> dict[str, Any]:
     values = dict(row)
-    values["assignee_ids"] = ",".join(str(worker_id) for worker_id in values["assignee_ids"])
+    values["assigned_worker_id"] = (
+        str(values["assigned_worker_id"]) if values["assigned_worker_id"] else ""
+    )
     values["address"] = _address(values)
     return values
 

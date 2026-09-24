@@ -18,7 +18,6 @@ from app.db.models import (
     Route,
     Ticket,
     TicketAppliance,
-    TicketAssignment,
     WorkerSkillAssignment,
     WorkTypePlanningRule,
     WorkTypeRequiredAppliance,
@@ -94,7 +93,7 @@ class PlanningApiTests(CommittedDatabaseTestCase):
         with Session(self.engine) as session:
             return tuple(
                 session.scalar(select(func.count()).select_from(model))
-                for model in (Route, TicketAssignment, PlanningPlanRoute)
+                for model in (Route, PlanningPlanRoute)
             )
 
     def test_preview_is_read_only_for_domain_and_apply_is_atomic_idempotent(self):

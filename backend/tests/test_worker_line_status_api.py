@@ -19,7 +19,6 @@ from app.db.models import (
     Route,
     Street,
     Ticket,
-    TicketAssignment,
 )
 from app.db.session import get_session
 from app.main import app
@@ -116,10 +115,9 @@ class WorkerLineStatusApiTests(DatabaseTestCase):
                 planned_start_at=start,
                 planned_end_at=datetime(2026, 9, 17, 11, tzinfo=UTC),
                 estimated_duration_minutes=60,
+                assigned_worker_id=worker_ids[0] if worker_ids else None,
             )
         )
-        for worker_id in worker_ids:
-            self.save(TicketAssignment(ticket_id=ticket.id, worker_id=worker_id))
         return ticket.id
 
     @staticmethod
