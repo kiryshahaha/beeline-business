@@ -10,7 +10,6 @@ from app.modules.auth import service
 from app.modules.auth.schemas import (
     LoginRequest,
     LoginResponse,
-    TokenResponse,
 )
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -21,7 +20,10 @@ REFRESH_COOKIE = "refresh_token"
 
 @router.post("/login", response_model=LoginResponse)
 def login(data: LoginRequest, response: Response, session: DatabaseSession) -> LoginResponse:
-    """Вход по логину и паролю. Возвращает access_token; refresh_token устанавливается в httpOnly cookie."""
+    """
+    Вход по логину и паролю. 
+    Возвращает access_token; refresh_token устанавливается в httpOnly cookie.
+    """
     try:
         tokens = service.authenticate_user(session, data.username, data.password)
     except service.InvalidCredentialsError as error:
