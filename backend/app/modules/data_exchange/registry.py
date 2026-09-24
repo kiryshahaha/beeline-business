@@ -11,6 +11,7 @@ TABLE_NAMES = frozenset(
         "work_type_required_appliances",
         "cities",
         "districts",
+        "divisions",
         "streets",
         "buildings",
         "entrances",
@@ -28,7 +29,11 @@ TABLE_NAMES = frozenset(
         "appliances",
         "appliance_stocks",
         "ticket_appliances",
+        "equipment_movements",
         "notification_events",
+        "work_events",
+        "worker_day_states",
+        "day_plan_revisions",
         "routes",
     }
 )
@@ -66,5 +71,10 @@ def describe_tables() -> dict:
             "data_imports",
             "planning_plans",
             "planning_plan_routes",
+            "office_kit_reserves",
+            "worker_appliances",
+            "appliance_operations",
+            "appliance_movements",
+            "ticket_appliance_states",
         ],
     }

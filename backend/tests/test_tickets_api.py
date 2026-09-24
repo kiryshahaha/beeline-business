@@ -507,7 +507,16 @@ class TicketsApiTests(DatabaseTestCase):
                 "/api/v1/tickets/{id}/assignees",
                 "/api/v1/tickets/{id}/comments",
                 "/api/v1/tickets/{id}/comments/{comment_id}",
+                "/api/v1/tickets/{id}/equipment/restore",
                 "/api/v1/tickets/{id}/status",
+                "/api/v1/tickets/{id}/dispatch",
+                "/api/v1/tickets/{id}/start-route",
+                "/api/v1/tickets/{id}/start",
+                "/api/v1/tickets/{id}/complete",
+                "/api/v1/tickets/{id}/cancel",
+                "/api/v1/tickets/{id}/delay",
+                "/api/v1/tickets/{id}/reopen",
+                "/api/v1/tickets/{id}/window-change",
             },
         )
         self.assertEqual(set(paths["/api/v1/tickets"]), {"post", "get"})
@@ -518,6 +527,18 @@ class TicketsApiTests(DatabaseTestCase):
         self.assertEqual(set(comment_update), {"patch"})
         self.assertIn({"BearerAuth": []}, comment_update["patch"]["security"])
         self.assertEqual(set(paths["/api/v1/tickets/{id}/status"]), {"patch"})
+        for path in (
+            "/api/v1/tickets/{id}/dispatch",
+            "/api/v1/tickets/{id}/start-route",
+            "/api/v1/tickets/{id}/start",
+            "/api/v1/tickets/{id}/complete",
+            "/api/v1/tickets/{id}/cancel",
+            "/api/v1/tickets/{id}/delay",
+            "/api/v1/tickets/{id}/reopen",
+            "/api/v1/tickets/{id}/window-change",
+        ):
+            self.assertEqual(set(paths[path]), {"post"})
+            self.assertIn({"BearerAuth": []}, paths[path]["post"]["security"])
         operation = paths["/api/v1/tickets"]["get"]
         parameters = {param["name"]: param for param in operation["parameters"]}
         self.assertEqual(

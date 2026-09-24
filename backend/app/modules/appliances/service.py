@@ -1,9 +1,11 @@
 """Business logic and domain operations for appliances and warehouse stock."""
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.modules.appliances import repository
+from app.modules.appliances import inventory, repository
 from app.modules.appliances.enums import ApplianceType
+from app.modules.appliances.models import TicketApplianceState
 from app.modules.appliances.schemas import (
     ApplianceCreate,
     ApplianceRead,
@@ -36,8 +38,15 @@ class TicketNotFoundError(Exception):
     pass
 
 
-class InsufficientStockError(Exception):
-    pass
+class EquipmentConflict(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+class InsufficientStockError(EquipmentConflict):
+    def __init__(self, message: str):
+        super().__init__("insufficient_stock", message)
 
 
 class ApplianceAlreadyAttachedError(Exception):
@@ -58,6 +67,17 @@ class CannotReduceStockBelowReservedError(Exception):
 
 class TicketAlreadyClosedError(Exception):
     pass
+
+
+class AllocationLockedError(Exception):
+    pass
+
+
+def _check_allocation_in_office(session: Session, ticket_id: int, appliance_id: int) -> None:
+    if session.get(TicketApplianceState, (ticket_id, appliance_id)) is not None:
+        raise AllocationLockedError(
+            "Оборудование заявки уже выдано инженеру или списано: сначала оформите возврат"
+        )
 
 
 def _check_foreman_ticket_access(
@@ -272,6 +292,7 @@ def update_ticket_appliance(
     ta = repository.get_ticket_appliance(session, ticket_id, appliance_id)
     if ta is None:
         raise TicketApplianceNotFoundError("Оборудование не прикреплено к данной заявке")
+    _check_allocation_in_office(session, ticket_id, appliance_id)
 
     appliance = repository.get_appliance(session, appliance_id)
     if appliance is None:
@@ -320,10 +341,39 @@ def remove_ticket_appliance(
     ta = repository.get_ticket_appliance(session, ticket_id, appliance_id)
     if ta is None:
         raise TicketApplianceNotFoundError("Оборудование не прикреплено к данной заявке")
+    _check_allocation_in_office(session, ticket_id, appliance_id)
 
     repository.delete_ticket_appliance(session, ta)
 
 
-def on_ticket_status_completed(session: Session, ticket_id: int) -> None:
-    """Consume non-tool equipment from office stocks upon ticket completion."""
-    repository.consume_ticket_appliances_on_completed(session, ticket_id)
+def on_ticket_status_completed(
+    session: Session,
+    ticket_id: int,
+    actor_id: int | None = None,
+    *,
+    event_id: int | None = None,
+    execution_cycle: int | None = None,
+) -> None:
+    """Consume physical equipment once and keep the execution-cycle ledger in sync."""
+    if event_id is None or execution_cycle is None:
+        row = session.execute(
+            text(
+                """
+            SELECT last_event_id, execution_cycle
+            FROM tickets
+            WHERE id = :ticket_id
+                """
+            ),
+            {"ticket_id": ticket_id},
+        ).one()
+        event_id = event_id or row[0]
+        execution_cycle = execution_cycle or row[1]
+    inventory.consume_on_completion(session, ticket_id, actor_id)
+    if event_id is None or execution_cycle is None:
+        return
+    repository.consume_ticket_appliances_on_completed(
+        session,
+        ticket_id,
+        event_id=event_id,
+        execution_cycle=execution_cycle,
+    )

@@ -1,6 +1,6 @@
 """Normalize work types, tickets and planning requirements
 
-Revision ID: 0015
+Revision ID: 0015_ticket_norm
 Revises: 0014
 Create Date: 2026-09-23 12:00:00.000000
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "0015"
+revision = "0015_ticket_norm"
 down_revision = "0014"
 branch_labels = None
 depends_on = None

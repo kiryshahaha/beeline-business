@@ -1,0 +1,44 @@
+meta {
+  name: Начать маршрут исполнителя
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{execution_ticket_id}}/start-route
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+headers {
+  Idempotency-Key: execution-start-route
+}
+
+body:json {
+  {
+    "expected_revision": 4,
+    "occurred_at": "{{execution_occurred_at}}",
+    "worker_id": {{worker_two_id}},
+    "location_id": {{location_id}},
+    "payload": {}
+  }
+}
+
+script:pre-request {
+  bru.setVar("execution_occurred_at", new Date().toISOString());
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Исполнитель находится в пути", function () {
+    expect(res.getBody().state).to.equal("en_route");
+    expect(res.getBody().revision).to.equal(5);
+  });
+}

@@ -18,7 +18,7 @@ class ExecutionPolicy(BaseModel):
 
     policy_version: Literal[1] = 1
     timezone: Literal["Europe/Moscow"] = "Europe/Moscow"
-    visit_window: Literal["whole_service"] = "whole_service"
+    visit_window: Literal["service_start_in_window", "whole_service"] = "service_start_in_window"
     window_end_inclusive: Literal[True] = True
     service_duration: Literal["configured_estimate_or_work_plus_documents"] = (
         "configured_estimate_or_work_plus_documents"
@@ -26,7 +26,7 @@ class ExecutionPolicy(BaseModel):
     travel: Literal["provider_minutes_rounded_up_no_norm_floor"] = (
         "provider_minutes_rounded_up_no_norm_floor"
     )
-    route_end: Literal["return_to_brigade_office"] = "return_to_brigade_office"
+    route_end: Literal["return_to_brigade_office", "open_end"] = "return_to_brigade_office"
     shift_end: Literal["hard_including_return"] = "hard_including_return"
     eligible_tickets: Literal["unassigned_planned"] = "unassigned_planned"
     eligible_workers: Literal["unstarted_shift_without_overlapping_assignment"] = (
@@ -55,18 +55,31 @@ class ExecutionPolicy(BaseModel):
     def start_window(
         self, start: datetime, end: datetime, epoch: datetime, duration: int, horizon: int
     ) -> list[int]:
-        return [
-            max(0, math.ceil((start - epoch).total_seconds() / 60)),
-            min(horizon, math.floor((end - epoch).total_seconds() / 60) - duration),
-        ]
+        """Return the allowed service-start interval [lower, upper] in minutes from epoch.
+
+        Semantics (service_start_in_window):
+          lower = ceil(window_start)  rounded UP to preserve feasibility
+          upper = floor(window_end)   rounded DOWN to preserve feasibility
+        Duration is NOT subtracted from upper here; instead eligibility.py checks
+        that service_start + duration <= shift_end for each worker candidate.
+        Rounding direction is intentional: lower up keeps the window inclusive,
+        upper down keeps it inclusive on the end — both guarantee the solver
+        cannot schedule outside the client's promised window.
+        """
+        lower = max(0, math.ceil((start - epoch).total_seconds() / 60))
+        upper = min(horizon, math.floor((end - epoch).total_seconds() / 60))
+        return [lower, upper]
 
     def penalty(self, vehicles: int, horizon: int) -> int:
         return vehicles * horizon + 1
 
 
 def execution_policy(settings=None) -> ExecutionPolicy:
+    open_end = getattr(settings, "planning_open_end", False) if settings else False
     return ExecutionPolicy(
-        search_time_limit_seconds=settings.planning_solve_time_limit_seconds if settings else 5
+        visit_window="service_start_in_window",
+        route_end="open_end" if open_end else "return_to_brigade_office",
+        search_time_limit_seconds=settings.planning_solve_time_limit_seconds if settings else 5,
     )
 
 

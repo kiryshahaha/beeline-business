@@ -11,14 +11,14 @@ from app.core.config import get_settings
 from app.modules.analytics.router import router as analytics_router
 from app.modules.appliances.router import (
     appliances_router,
+    equipment_journal_router,
     office_stock_router,
     ticket_appliances_router,
+    worker_equipment_router,
 )
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.schemas import (
     LOGIN_REQUEST_EXAMPLE,
-    REFRESH_TOKEN_REQUEST_EXAMPLE,
-    TOKEN_RESPONSE_EXAMPLE,
 )
 from app.modules.brigades.router import router as brigades_router
 from app.modules.calendar_feed.router import router as calendar_router
@@ -35,7 +35,7 @@ from app.modules.schedule.router import router as schedule_router
 from app.modules.tickets.router import router as tickets_router
 from app.modules.tickets.schemas import TICKET_CREATE_EXAMPLE, TICKET_READ_EXAMPLE
 from app.modules.users.router import router as users_router
-from app.modules.users.router import skills_router
+from app.modules.users.router import skills_router, workers_router
 from app.modules.users.schemas import (
     USER_CREATE_OBSERVER_EXAMPLE,
     USER_CREATE_WORKER_EXAMPLE,
@@ -107,6 +107,7 @@ app.include_router(planning_router)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(skills_router)
+app.include_router(workers_router)
 app.include_router(offices_router)
 app.include_router(office_stock_router)
 app.include_router(appliances_router)
@@ -114,6 +115,8 @@ app.include_router(brigades_router)
 app.include_router(work_types_router)
 app.include_router(tickets_router)
 app.include_router(ticket_appliances_router)
+app.include_router(worker_equipment_router)
+app.include_router(equipment_journal_router)
 app.include_router(calendar_router)
 app.include_router(comments_router)
 app.include_router(notifications_router)
@@ -157,10 +160,6 @@ def openapi_with_examples() -> dict:
         schemas["WorkerSkillRead"]["examples"] = [WORKER_SKILL_EXAMPLE]
     if "LoginRequest" in schemas:
         schemas["LoginRequest"]["examples"] = [LOGIN_REQUEST_EXAMPLE]
-    if "RefreshTokenRequest" in schemas:
-        schemas["RefreshTokenRequest"]["examples"] = [REFRESH_TOKEN_REQUEST_EXAMPLE]
-    if "TokenResponse" in schemas:
-        schemas["TokenResponse"]["examples"] = [TOKEN_RESPONSE_EXAMPLE]
 
     return schema
 

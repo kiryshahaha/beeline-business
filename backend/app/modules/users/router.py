@@ -1,29 +1,134 @@
 """HTTP endpoints for users, worker profiles, and skills."""
 
+from datetime import UTC, date, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session
 from app.modules.auth.dependencies import get_current_user, require_roles
+from app.modules.execution import day_state
+from app.modules.execution.schemas import WorkerDayStateRead, WorkerUnavailableCommand
 from app.modules.users import service
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import (
     UserCreate,
     UserRead,
     UserUpdate,
+    WorkerLineStatusRead,
+    WorkerLineStatusUpdate,
     WorkerSkillCreate,
     WorkerSkillRead,
 )
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 skills_router = APIRouter(prefix="/api/v1/worker/skills", tags=["skills"])
+workers_router = APIRouter(prefix="/api/v1/workers", tags=["workers"])
 
 DatabaseSession = Annotated[Session, Depends(get_session)]
 CurrentUser = Annotated[UserRead, Depends(get_current_user)]
 RequireObserver = Annotated[UserRead, Depends(require_roles(UserRole.OBSERVER))]
+IdempotencyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
+
+
+@workers_router.put(
+    "/{worker_id}/line-status",
+    response_model=WorkerLineStatusRead,
+    responses={404: {"description": "Исполнитель не найден"}},
+)
+def update_worker_line_status(
+    worker_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    data: WorkerLineStatusUpdate,
+    session: DatabaseSession,
+    current_user: RequireObserver,
+    idempotency_key: IdempotencyHeader = None,
+) -> WorkerLineStatusRead:
+    """Снять исполнителя с линии либо вручную вернуть его в доступные."""
+    try:
+        return service.update_worker_line_status(
+            session,
+            worker_id,
+            data.is_on_line,
+            actor_id=current_user.id,
+            idempotency_key=idempotency_key.strip() if idempotency_key else None,
+        )
+    except service.WorkerNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Исполнитель не найден",
+        ) from error
+    except Exception as error:
+        from app.modules.execution.service import IdempotencyConflict
+
+        if isinstance(error, IdempotencyConflict):
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "idempotency_conflict", "event_id": error.event_id},
+            ) from error
+        raise
+
+
+@workers_router.post("/{worker_id}/unavailable", response_model=WorkerDayStateRead)
+def mark_worker_unavailable(
+    worker_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    data: WorkerUnavailableCommand,
+    session: DatabaseSession,
+    current_user: RequireObserver,
+    idempotency_key: IdempotencyHeader = None,
+) -> WorkerDayStateRead:
+    if idempotency_key is None or not idempotency_key.strip() or len(idempotency_key) > 128:
+        raise HTTPException(
+            status_code=422, detail="Требуется непустой Idempotency-Key длиной до 128 символов"
+        )
+    try:
+        state, _ = day_state.mark_worker_unavailable(
+            session,
+            worker_id,
+            data,
+            actor_id=current_user.id,
+            idempotency_key=idempotency_key.strip(),
+        )
+        return state
+    except day_state.WorkerNotFound as error:
+        raise HTTPException(status_code=404, detail="Исполнитель не найден") from error
+    except day_state.DistrictNotFound as error:
+        raise HTTPException(status_code=404, detail="Район не найден") from error
+    except day_state.DayStateRevisionConflict as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "current_revision": error.current_revision},
+        ) from error
+    except day_state.IdempotencyConflict as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "idempotency_conflict", "event_id": error.event_id},
+        ) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@workers_router.get("/{worker_id}/day-state", response_model=WorkerDayStateRead)
+def get_worker_day_state(
+    worker_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    session: DatabaseSession,
+    _: RequireObserver,
+    district_id: Annotated[int, Query(ge=1, le=2_147_483_647)],
+    route_date: Annotated[date | None, Query(alias="date")] = None,
+    at: Annotated[datetime | None, Query()] = None,
+) -> WorkerDayStateRead:
+    if route_date is None:
+        raise HTTPException(status_code=422, detail="Требуется date")
+    if at is not None and (at.tzinfo is None or at.utcoffset() is None):
+        raise HTTPException(status_code=422, detail="Параметр at должен содержать часовой пояс")
+    moment = at or datetime.now(UTC)
+    try:
+        return day_state.day_state_at(session, worker_id, district_id, route_date, moment)
+    except day_state.WorkerNotFound as error:
+        raise HTTPException(status_code=404, detail="Исполнитель не найден") from error
+    except day_state.DistrictNotFound as error:
+        raise HTTPException(status_code=404, detail="Район не найден") from error
 
 
 @router.get("/me", response_model=UserRead)
@@ -134,6 +239,13 @@ def update_user(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Для назначения роли worker нужны смена и хотя бы один навык",
         ) from error
+    except IntegrityError as error:
+        # Leaving the worker role deletes the profile; units on hand must not vanish with it.
+        if getattr(error.orig, "sqlstate", None) != "23503":
+            raise
+        raise HTTPException(
+            409, "У исполнителя есть оборудование на руках или история маршрутов"
+        ) from error
 
 
 @router.delete(
@@ -168,7 +280,7 @@ def delete_user(
             detail="Нельзя удалить бригадира, пока он руководит бригадой",
         ) from error
     except IntegrityError as error:
-        if getattr(error.orig, "sqlstate", None) != "23503":
+        if getattr(error.orig, "sqlstate", None) not in ("23503", "23001"):
             raise
         raise HTTPException(
             409, "Пользователь связан с историей маршрутов или правилами работ"

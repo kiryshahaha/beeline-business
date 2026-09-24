@@ -16,6 +16,14 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/tickets/{id}",
             "/api/v1/tickets/{id}/assignees",
             "/api/v1/tickets/{id}/status",
+            "/api/v1/tickets/{id}/dispatch",
+            "/api/v1/tickets/{id}/start-route",
+            "/api/v1/tickets/{id}/start",
+            "/api/v1/tickets/{id}/complete",
+            "/api/v1/tickets/{id}/cancel",
+            "/api/v1/tickets/{id}/delay",
+            "/api/v1/tickets/{id}/reopen",
+            "/api/v1/tickets/{id}/window-change",
             "/api/v1/tickets/{id}/comments",
             "/api/v1/notifications",
             "/api/v1/notifications/push-subscriptions",
@@ -25,6 +33,9 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/users",
             "/api/v1/users/me",
             "/api/v1/users/{id}",
+            "/api/v1/workers/{worker_id}/line-status",
+            "/api/v1/workers/{worker_id}/unavailable",
+            "/api/v1/workers/{worker_id}/day-state",
             "/api/v1/worker/skills",
             "/api/v1/brigades",
             "/api/v1/brigades/{id}",
@@ -37,6 +48,7 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/analytics/recent-activity",
             "/api/v1/reports/tickets/export",
             "/api/v1/planning/policy",
+            "/api/v1/planning/days/{district_id}/{route_date}/redirect",
         ]
         for path in expected_paths:
             self.assertIn(path, paths, f"Path {path} missing in OpenAPI schema")
@@ -58,6 +70,9 @@ class OpenApiTests(unittest.TestCase):
         )
 
         protected_operations = (
+            paths["/api/v1/workers/{worker_id}/line-status"]["put"],
+            paths["/api/v1/workers/{worker_id}/unavailable"]["post"],
+            paths["/api/v1/workers/{worker_id}/day-state"]["get"],
             paths["/api/v1/tickets/{id}/assignees"]["put"],
             paths["/api/v1/tickets/{id}/status"]["patch"],
             paths["/api/v1/tickets/{id}/comments"]["get"],
@@ -67,6 +82,18 @@ class OpenApiTests(unittest.TestCase):
             paths["/api/v1/notifications/push-subscriptions"]["delete"],
         )
         self.assertTrue(all(operation.get("security") for operation in protected_operations))
+        execution_operations = (
+            paths["/api/v1/tickets/{id}/dispatch"]["post"],
+            paths["/api/v1/tickets/{id}/start-route"]["post"],
+            paths["/api/v1/tickets/{id}/start"]["post"],
+            paths["/api/v1/tickets/{id}/complete"]["post"],
+            paths["/api/v1/tickets/{id}/cancel"]["post"],
+            paths["/api/v1/tickets/{id}/delay"]["post"],
+            paths["/api/v1/tickets/{id}/reopen"]["post"],
+            paths["/api/v1/tickets/{id}/window-change"]["post"],
+            paths["/api/v1/planning/days/{district_id}/{route_date}/redirect"]["post"],
+        )
+        self.assertTrue(all(operation.get("security") for operation in execution_operations))
         activity_operation = paths["/api/v1/analytics/recent-activity"]["get"]
         self.assertIn({"BearerAuth": []}, activity_operation["security"])
         self.assertEqual(
@@ -127,8 +154,6 @@ class OpenApiTests(unittest.TestCase):
             "WorkerSkillCreate",
             "WorkerSkillRead",
             "LoginRequest",
-            "RefreshTokenRequest",
-            "TokenResponse",
         ):
             self.assertIn(schema_name, schemas)
             self.assertIn("examples", schemas[schema_name])

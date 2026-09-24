@@ -49,7 +49,7 @@ class PlanningDatasetTests(DatabaseTestCase):
                             self.assertTrue(routes)
                             if scenario == "rejections":
                                 self.assertEqual(
-                                    {r["reason"] for r in prepared["unassigned"]},
+                                    {r["reason"]["code"] for r in prepared["unassigned"]},
                                     {
                                         "ticket_not_planned",
                                         "unknown_work_type",

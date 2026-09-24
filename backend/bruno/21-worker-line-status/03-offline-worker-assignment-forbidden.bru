@@ -1,0 +1,29 @@
+meta {
+  name: Нельзя назначить снятого с линии инженера
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{base_url}}/api/v1/tickets/{{created_ticket_id}}/assignees
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"worker_ids":[{{worker_id}}]}
+}
+
+assert {
+  res.status: eq 422
+}
+
+tests {
+  test("API объясняет запрет назначения", function () {
+    expect(res.getBody().detail).to.equal("Один или несколько исполнителей сняты с линии");
+  });
+}

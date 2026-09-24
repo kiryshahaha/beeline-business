@@ -18,6 +18,7 @@
     "work_type_planning_rules": 3,
     "workers": 240,
     "buildings": 3334,
+    "divisions": 12,
     "work_type_required_appliances": 3,
     "work_type_required_skills": 3,
     "worker_skill_assignments": 480,
@@ -31,7 +32,11 @@
     "ticket_appliances": 8750,
     "ticket_assignments": 7500,
     "ticket_comments": 3333,
+    "work_events": 1,
+    "worker_day_states": 1,
     "brigade_members": 240,
+    "day_plan_revisions": 1,
+    "equipment_movements": 1,
     "routes": 3472
   },
   "scenarios": [
@@ -46,17 +51,17 @@
   ],
   "files": {
     "dataset.zip": {
-      "bytes": 512090,
-      "sha256": "e76ea77e52f3817462f3bf86ebdd121171d73a1106bf0300ca22fde9e0e53ac8"
+      "bytes": 578331,
+      "sha256": "acffcb3ed8e8733fec16120c3f861047812458befcd991c356e74da4c1e59107"
     },
     "dataset.xlsx": {
-      "bytes": 1919713,
-      "sha256": "a9d656a4b7d08354b41e7b2e5c950f7dd27aaea74985c3e8181649365ca7842c"
+      "bytes": 2202000,
+      "sha256": "caa1d7ef96ef42b3cea938fd46c045892abfb94d90551b846f23bdf72c96be9b"
     }
   },
   "notes": [
     "Все имена, адреса, заявки и комментарии вымышлены. Координаты служат тестовыми точками.",
-    "urgent_example отмечен в названии: поле приоритета пока отсутствует в модели заявок.",
+    "urgent_example отмечен только в названии: используются обычные категория и приоритет, отдельный SLA не задан.",
     "equipment_shortage: нулевой остаток позиции 26; невозможные резервы вынесены в отрицательные тесты.",
     "Маршруты — сохранённые примеры, а не результат оптимизации или доказательство выполнимости.",
     "Импортированные учётные записи не имеют известного пароля; пароль задаётся отдельно."

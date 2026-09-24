@@ -1,0 +1,40 @@
+meta {
+  name: Комплект к выдаче по назначенным заявкам
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/workers/{{equipment_worker_id}}/equipment?date=2030-01-15
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+script:pre-request {
+  bru.setVar("equipment_worker_id", JSON.parse(bru.getVar("planning_worker_ids"))[0]);
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  if (res.getStatus() === 200) bru.setVar("equipment_kit_lines", res.getBody().to_issue.length);
+}
+
+tests {
+  test("Комплект собран из заявок инженера, склад его покрывает", () => {
+    const b = res.getBody();
+    expect(b.to_issue.length).to.be.above(0);
+    for (const line of b.to_issue) {
+      expect(line.purpose).to.equal("ticket");
+      expect(line.ticket_id).to.be.a("number");
+    }
+    expect(b.shortages).to.have.lengthOf(0);
+    expect(b.items).to.have.lengthOf(0);
+  });
+}

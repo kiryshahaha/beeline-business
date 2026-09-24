@@ -3,6 +3,7 @@
 from datetime import datetime, time
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum,
@@ -75,6 +76,11 @@ class Worker(Base):
         ),
         default=TransportType.WALKING,
         server_default=TransportType.WALKING.value,
+    )
+    is_on_line: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default="true",
     )
 
     __table_args__ = (

@@ -23,6 +23,7 @@ class ExchangeRoundtripTests(DatabaseTestCase):
     def setUpClass(cls):
         super().setUpClass()
         data = generate_dataset(seed=800, tickets=80, workers=12, days=2)
+        data["workers"][0]["is_on_line"] = False
         data["notification_events"][0]["data"]["actor_id"] = 1
         data["notification_events"][0]["websocket_delivered_at"] = None
         data["notification_events"][0]["push_delivered_at"] = None
@@ -84,6 +85,10 @@ class ExchangeRoundtripTests(DatabaseTestCase):
                 self.assertEqual(
                     [r["transport_type"] for r in source["workers"]],
                     [r["transport_type"] for r in destination["workers"]],
+                )
+                self.assertEqual(
+                    [r["is_on_line"] for r in source["workers"]],
+                    [r["is_on_line"] for r in destination["workers"]],
                 )
                 event = destination["notification_events"][0]
                 self.assertEqual(

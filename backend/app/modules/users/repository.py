@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 USER_SELECT_COLUMNS = """
     u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
     u.created_at, u.updated_at,
-    w.workshift_start, w.workshift_end, w.transport_type,
+    w.workshift_start, w.workshift_end, w.transport_type, w.is_on_line,
     b.id AS brigade_id, b.name AS brigade_name,
     COALESCE(
         array_remove(array_agg(ws.skill ORDER BY ws.skill), NULL),
@@ -26,7 +26,7 @@ USER_SELECT_JOINS = """
 USER_SELECT_GROUP_BY = """
     GROUP BY u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
              u.created_at, u.updated_at, w.workshift_start, w.workshift_end,
-             w.transport_type, b.id, b.name
+             w.transport_type, w.is_on_line, b.id, b.name
 """
 
 
@@ -274,3 +274,100 @@ def foreman_manages_brigade(session: Session, user_id: int) -> bool:
         text("SELECT EXISTS(SELECT 1 FROM brigades WHERE foreman_id = :user_id)"),
         {"user_id": user_id},
     ).scalar_one()
+
+
+def lock_worker_line_status(session: Session, worker_id: int) -> RowMapping | None:
+    return (
+        session.execute(
+            text("""
+                SELECT user_id, is_on_line, workshift_start, workshift_end
+                FROM workers
+                WHERE user_id = :worker_id
+                FOR UPDATE
+            """),
+            {"worker_id": worker_id},
+        )
+        .mappings()
+        .one_or_none()
+    )
+
+
+def update_worker_line_status(session: Session, worker_id: int, is_on_line: bool) -> None:
+    session.execute(
+        text("""
+            UPDATE workers
+            SET is_on_line = :is_on_line
+            WHERE user_id = :worker_id
+        """),
+        {"worker_id": worker_id, "is_on_line": is_on_line},
+    )
+
+
+def release_planned_assignments(session: Session, worker_id: int) -> list[int]:
+    return sorted(
+        session.execute(
+            text("""
+                DELETE FROM ticket_assignments AS assignment
+                USING tickets AS ticket
+                WHERE assignment.ticket_id = ticket.id
+                  AND assignment.worker_id = :worker_id
+                  AND ticket.status = 'planned'
+                  AND ticket.lifecycle_state IN ('waiting_assignment', 'assigned')
+                RETURNING assignment.ticket_id
+            """),
+            {"worker_id": worker_id},
+        )
+        .scalars()
+        .all()
+    )
+
+
+def clear_planned_times_without_assignees(session: Session, ticket_ids: list[int]) -> None:
+    if not ticket_ids:
+        return
+    session.execute(
+        text("""
+            UPDATE tickets AS ticket
+            SET planned_start_at = NULL,
+                planned_end_at = NULL,
+                updated_at = now()
+            WHERE ticket.id = ANY(:ticket_ids)
+              AND ticket.status = 'planned'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM ticket_assignments AS assignment
+                  WHERE assignment.ticket_id = ticket.id
+              )
+        """),
+        {"ticket_ids": ticket_ids},
+    )
+
+
+def list_worker_day_contexts(session: Session, worker_id: int) -> list[RowMapping]:
+    return list(
+        session.execute(
+            text(
+                """
+                SELECT DISTINCT building.district_id,
+                    COALESCE(
+                        route.route_date,
+                        (ticket.visit_window_start AT TIME ZONE 'Europe/Moscow')::date
+                    )
+                    AS route_date
+                FROM ticket_assignments AS assignment
+                JOIN tickets AS ticket ON ticket.id = assignment.ticket_id
+                JOIN locations AS location ON location.id = ticket.location_id
+                JOIN buildings AS building ON building.id = location.building_id
+                LEFT JOIN routes AS route
+                    ON route.worker_id = assignment.worker_id
+                   AND route.route_date =
+                       (ticket.visit_window_start AT TIME ZONE 'Europe/Moscow')::date
+                WHERE assignment.worker_id = :worker_id
+                ORDER BY building.district_id, route_date
+                """
+            ),
+            {"worker_id": worker_id},
+        )
+        .mappings()
+        .all()
+    )
