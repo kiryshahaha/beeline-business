@@ -1,6 +1,4 @@
-"""Create and retrieve tickets without HTTP-specific exceptions."""
-
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from zoneinfo import ZoneInfo
 
@@ -15,10 +13,11 @@ from app.modules.execution.schemas import ExecutionCommand
 from app.modules.locations.schemas import LocationRead
 from app.modules.notifications.enums import NotificationKind
 from app.modules.tickets import repository
-from app.modules.tickets.enums import TicketStatus
+from app.modules.tickets.enums import TicketCategory, TicketStatus
 from app.modules.tickets.schemas import TicketCreate, TicketFields, TicketRead
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
+from app.modules.work_types import repository as work_types_repository
 
 MOSCOW = ZoneInfo("Europe/Moscow")
 
@@ -82,9 +81,19 @@ def list_tickets(
 
 def _ticket_from_row(details: RowMapping) -> TicketRead:
     """Build the same full response from either a single row or a row in a page."""
-    return TicketRead(
-        **TicketFields.model_validate(details).model_dump(),
+    category = details.get("category")
+    if category is not None and not isinstance(category, TicketCategory):
+        category = TicketCategory(category)
+    data = TicketFields.model_validate(details).model_dump()
+    data.update(
         id=details["id"],
+        work_type_id=details["work_type_id"],
+        category=category or TicketCategory.REPAIR,
+        priority=details.get("priority", 3),
+        received_at=details.get("received_at") or details["created_at"],
+        sla_deadline_at=details.get("sla_deadline_at"),
+        required_transport_type=details.get("required_transport_type"),
+        service_duration_source=details.get("service_duration_source"),
         state=details["state"],
         revision=details["revision"],
         execution_cycle=details["execution_cycle"],
@@ -114,6 +123,7 @@ def _ticket_from_row(details: RowMapping) -> TicketRead:
             longitude=details["longitude"],
         ),
     )
+    return TicketRead(**data)
 
 
 def create_ticket(
@@ -123,12 +133,80 @@ def create_ticket(
     actor_id: int | None = None,
     idempotency_key: str | None = None,
 ) -> TicketRead:
-    with session.begin():
+    with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         if repository.find_location_id(session, data.location_id) is None:
             raise LocationNotFoundError
         values = data.model_dump()
         values["status"] = data.status.value
+
+        # Resolve work_type_id and WorkType metadata
+        work_type_id = data.work_type_id
+        work_type_row = None
+        if work_type_id is not None:
+            work_type_row = work_types_repository.find_work_type(session, work_type_id)
+            if work_type_row is None:
+                raise ValueError("Вид работ не найден")
+            if not values.get("work_type"):
+                values["work_type"] = work_type_row["name"]
+        elif data.work_type:
+            work_type_id = work_types_repository.find_id_by_name(session, data.work_type)
+            if work_type_id is None:
+                work_type_id = work_types_repository.find_id_by_code(session, data.work_type)
+            if work_type_id is not None:
+                work_type_row = work_types_repository.find_work_type(session, work_type_id)
+            else:
+                # Create a dynamic work type for legacy/testing string
+                category = "repair"
+                lower_wt = data.work_type.lower()
+                if "авар" in lower_wt:
+                    category = "emergency"
+                elif "подключ" in lower_wt or "настройк" in lower_wt:
+                    category = "connection"
+                elif "дозаказ" in lower_wt:
+                    category = "additional"
+
+                work_priority = (
+                    1 if category == "emergency" else (2 if category == "connection" else 3)
+                )
+                work_type_id = work_types_repository.add_work_type(
+                    session,
+                    {
+                        "name": data.work_type,
+                        "travel_minutes": 20,
+                        "work_minutes": 30,
+                        "documents_minutes": 0,
+                        "category": category,
+                        "default_priority": work_priority,
+                    },
+                )
+                work_type_row = work_types_repository.find_work_type(session, work_type_id)
+            values["work_type_id"] = work_type_id
+
+        # Defaults for category, priority, received_at, duration_source
+        if not values.get("category"):
+            values["category"] = (
+                work_type_row["category"] if work_type_row else TicketCategory.REPAIR.value
+            )
+        elif isinstance(values["category"], TicketCategory):
+            values["category"] = values["category"].value
+
+        if not values.get("priority"):
+            values["priority"] = work_type_row["default_priority"] if work_type_row else 3
+
+        if not values.get("received_at"):
+            values["received_at"] = datetime.now(UTC)
+
+        if not values.get("sla_deadline_at") and values["category"] == "emergency":
+            values["sla_deadline_at"] = values["received_at"] + timedelta(hours=24)
+
+        if values.get("required_transport_type") is not None:
+            values["required_transport_type"] = (
+                values["required_transport_type"].value
+                if hasattr(values["required_transport_type"], "value")
+                else str(values["required_transport_type"])
+            )
+
         values["lifecycle_state"] = {
             TicketStatus.PLANNED: TicketLifecycleState.WAITING_ASSIGNMENT.value,
             TicketStatus.IN_PROGRESS: TicketLifecycleState.IN_PROGRESS.value,
@@ -173,7 +251,7 @@ def create_ticket(
 def replace_assignees(
     session: Session, ticket_id: int, worker_ids: list[int], *, actor_id: int | None = None
 ) -> TicketRead:
-    with session.begin():
+    with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         return replace_assignees_in_transaction(session, ticket_id, worker_ids, actor_id=actor_id)
 
@@ -241,7 +319,7 @@ def update_ticket_status(
 ) -> TicketRead:
     if current_user.role == UserRole.FOREMAN:
         raise PermissionDeniedError
-    with session.begin():
+    with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         ticket = repository.lock_ticket(session, ticket_id)
         if ticket is None:

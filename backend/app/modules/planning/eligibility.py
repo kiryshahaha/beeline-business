@@ -25,7 +25,9 @@ def at(epoch: datetime, minutes: int) -> datetime:
     return epoch + timedelta(minutes=minutes)
 
 
-def candidate_reason(ticket, window, duration, skills, allocations, worker, epoch):
+def candidate_reason(
+    ticket, window, duration, skills, allocations, worker, epoch, required_transport_type=None
+):
     """First failed hard rule for one engineer; the order goes from qualification to time."""
     day = epoch.date()
     missing = sorted(skills - worker["skill_ids"])
@@ -34,6 +36,15 @@ def candidate_reason(ticket, window, duration, skills, allocations, worker, epoc
     offices = sorted({a["office_id"] for a in allocations})
     if any(office != worker["office_id"] for office in offices):
         return reasons.office_mismatch(worker["office_id"], offices)
+    if required_transport_type and worker["transport_type"] != required_transport_type:
+        return reasons.explain(
+            "required_transport_mismatch",
+            "transport",
+            "Транспорт инженера не совпадает с обязательным транспортом заявки",
+            constraint="required_transport_type",
+            observed={"transport_type": worker["transport_type"]},
+            required={"transport_type": required_transport_type},
+        )
     # service_start must be in [window[0], window[1]] AND in shift;
     # service_end (start + duration) must fit within shift_end.
     lower = max(window[0], worker["window"][0])
@@ -154,6 +165,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                     else {}
                 ),
                 "profile": PROFILES[worker["transport_type"]],
+                "transport_type": worker["transport_type"],
                 "window": [
                     math.ceil((available_at - epoch).total_seconds() / 60),
                     math.floor((end - epoch).total_seconds() / 60),
@@ -166,7 +178,8 @@ def prepare(snapshot: dict, now: datetime) -> dict:
             continue
         workers.append(worker)
     horizon = max((w["window"][1] for w in workers), default=1440)
-    types = {x["name"].strip().lower(): x for x in snapshot["work_types"]}
+    types_by_id = {x["id"]: x for x in snapshot["work_types"]}
+    types_by_name = {x["name"].strip().lower(): x for x in snapshot["work_types"]}
     rules = {x["work_type_id"]: x for x in snapshot["rules"]}
     stock = {(x["office_id"], x["appliance_id"]): x["stock"] for x in snapshot["stocks"]}
     reserved = {
@@ -178,7 +191,16 @@ def prepare(snapshot: dict, now: datetime) -> dict:
     for ticket in snapshot["tickets"]:
         ticket = dict(ticket)
         tid = ticket["id"]
-        work_type = types.get(ticket["work_type"].strip().lower())
+        raw_wt = ticket.get("work_type")
+        raw_clean = raw_wt.strip().lower() if raw_wt else None
+        if raw_clean in ("unknown", "unknown_work_type") or (
+            raw_clean and "unconfigured" in raw_clean
+        ):
+            work_type = None
+        else:
+            work_type = types_by_id.get(ticket.get("work_type_id")) or (
+                types_by_name.get(raw_clean) if raw_clean else None
+            )
         rule = rules.get(work_type["id"]) if work_type else None
         location = locations.get(ticket["location_id"])
         allocations = [a for a in snapshot["allocations"] if a["ticket_id"] == tid]
@@ -202,7 +224,15 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 else work_type["work_minutes"] + work_type["documents_minutes"]
             )
             window_start = dt(ticket["visit_window_start"])
+            if ticket.get("received_at"):
+                received = dt(ticket["received_at"])
+                if received > window_start:
+                    window_start = received
             window_end = dt(ticket["visit_window_end"])
+            if ticket.get("sla_deadline_at"):
+                sla = dt(ticket["sla_deadline_at"])
+                if sla < window_end:
+                    window_end = sla
             window = policy.start_window(window_start, window_end, epoch, duration, horizon)
             required = [
                 a for a in snapshot["required_appliances"] if a["work_type_id"] == work_type["id"]
@@ -212,6 +242,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 for s in snapshot["required_skills"]
                 if s["work_type_id"] == work_type["id"]
             }
+            req_transport = ticket.get("required_transport_type")
             not_reserved = [
                 (a["appliance_id"], allocated.get(a["appliance_id"], 0), a["quantity"])
                 for a in required
@@ -244,8 +275,22 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 reason = reasons.stock_inconsistent(not_issuable, names)
             else:
                 allowed = []
+                candidate_ticket = dict(
+                    ticket,
+                    visit_window_start=window_start.isoformat(),
+                    visit_window_end=window_end.isoformat(),
+                )
                 for v, w in enumerate(workers):
-                    why = candidate_reason(ticket, window, duration, skills, allocations, w, epoch)
+                    why = candidate_reason(
+                        candidate_ticket,
+                        window,
+                        duration,
+                        skills,
+                        allocations,
+                        w,
+                        epoch,
+                        req_transport,
+                    )
                     if why:
                         candidates.append({"worker_id": w["user_id"], "reason": why})
                     else:
@@ -257,6 +302,9 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                         duration=duration,
                         allowed=allowed,
                         duration_source=rule["service_duration_source"],
+                        category=ticket.get("category") or work_type.get("category") or "repair",
+                        priority=ticket.get("priority") or work_type.get("default_priority") or 3,
+                        work_type_id=work_type["id"],
                         rejected=candidates,
                         required_skill_ids=sorted(skills),
                         allocations=[
@@ -291,3 +339,10 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         "unassigned": unassigned,
         "excluded_workers": excluded_workers,
     }
+
+
+def check_eligibility(snapshot: dict, now: datetime | None = None) -> dict:
+    """Convenience helper to evaluate candidate eligibility and exclusions."""
+    if now is None:
+        now = datetime.min.replace(tzinfo=MOSCOW)
+    return prepare(snapshot, now)

@@ -17,7 +17,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IntegerIdMixin
 from app.modules.execution.enums import TicketLifecycleState
-from app.modules.tickets.enums import TicketStatus
+from app.modules.tickets.enums import TicketCategory, TicketStatus
+from app.modules.users.enums import TransportType
 
 
 class Ticket(IntegerIdMixin, Base):
@@ -28,7 +29,37 @@ class Ticket(IntegerIdMixin, Base):
     )
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text)
-    work_type: Mapped[str] = mapped_column(String(100))
+    work_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    work_type_id: Mapped[int | None] = mapped_column(
+        ForeignKey("work_types.id", ondelete="RESTRICT"), index=True, nullable=True
+    )
+    category: Mapped[TicketCategory] = mapped_column(
+        Enum(
+            TicketCategory,
+            values_callable=lambda categories: [category.value for category in categories],
+            native_enum=False,
+            create_constraint=True,
+            name="ticket_category",
+        ),
+        default=TicketCategory.REPAIR,
+        server_default=TicketCategory.REPAIR.value,
+    )
+    priority: Mapped[int] = mapped_column(default=3, server_default="3")
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    sla_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    required_transport_type: Mapped[TransportType | None] = mapped_column(
+        Enum(
+            TransportType,
+            values_callable=lambda values: [value.value for value in values],
+            native_enum=False,
+            create_constraint=True,
+            name="ticket_required_transport_type",
+        ),
+        nullable=True,
+    )
+    service_duration_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     status: Mapped[TicketStatus] = mapped_column(
         Enum(
             TicketStatus,
@@ -74,7 +105,18 @@ class Ticket(IntegerIdMixin, Base):
     __table_args__ = (
         CheckConstraint("title = btrim(title) AND title <> ''", name="title_not_blank"),
         CheckConstraint(
-            "work_type = btrim(work_type) AND work_type <> ''", name="work_type_not_blank"
+            "work_type IS NULL OR (work_type = btrim(work_type) AND work_type <> '')",
+            name="work_type_not_blank",
+        ),
+        CheckConstraint("priority >= 1", name="priority_positive"),
+        CheckConstraint(
+            "sla_deadline_at IS NULL OR sla_deadline_at > received_at",
+            name="sla_deadline_after_received",
+        ),
+        CheckConstraint(
+            "service_duration_source IS NULL OR "
+            "service_duration_source IN ('ticket_estimate', 'work_norm')",
+            name="ticket_duration_source",
         ),
         CheckConstraint("visit_window_end > visit_window_start", name="visit_window_order"),
         CheckConstraint(
@@ -88,6 +130,7 @@ class Ticket(IntegerIdMixin, Base):
         Index("ix_tickets_status_planned_start", status, planned_start_at),
         Index("ix_tickets_lifecycle_state", lifecycle_state),
         Index("ix_tickets_visit_window_start", visit_window_start),
+        Index("ix_tickets_category_priority", category, priority),
     )
 
 

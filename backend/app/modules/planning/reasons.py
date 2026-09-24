@@ -39,6 +39,7 @@ LABELS = {
     "window_outside_shift": "окно вне смены",
     "service_after_shift_end": "работа не успевает до конца смены",
     "unreachable_by_transport": "адрес недоступен для его транспорта",
+    "required_transport_mismatch": "не подходит обязательный транспорт",
     "address_unreachable": "адрес недостижим",
     "arrival_after_window": "не успевает к окну",
     "return_after_shift_end": "не успевает завершить маршрут до конца смены",
