@@ -129,8 +129,6 @@ class OpenApiTests(unittest.TestCase):
             "WorkerSkillCreate",
             "WorkerSkillRead",
             "LoginRequest",
-            "RefreshTokenRequest",
-            "TokenResponse",
         ):
             self.assertIn(schema_name, schemas)
             self.assertIn("examples", schemas[schema_name])

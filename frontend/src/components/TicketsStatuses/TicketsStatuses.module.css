@@ -1,0 +1,183 @@
+.container {
+    background-color: rgba(118, 118, 128, 0.18);
+    backdrop-filter: blur(4px);
+    display: inline-flex;
+    flex-direction: column;
+    padding: 12px;
+    border-radius: 16px;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    overflow: hidden;
+    height: 60px;
+    /* Изначальная высота таблетки */
+    box-sizing: border-box;
+}
+
+.container.expanded {
+    height: 50vh;
+    /* border-radius: 28px; */
+    cursor: default;
+}
+
+.pillsWrapper {
+    display: inline-flex;
+    flex-direction: row;
+    gap: 4px;
+    align-items: center;
+}
+
+.content {
+    margin-top: 20px;
+    opacity: 0;
+    visibility: hidden;
+    color: #fff;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    width: 0;           /* Трюк: обнуляем собственную ширину контента... */
+    min-width: 100%;    /* ...и заставляем его растянуться ровно по ширине родителя (фильтров) */
+    transition: opacity 0.2s ease, visibility 0s linear 0.4s;
+}
+
+.container.expanded .content {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.3s ease 0.2s, visibility 0s linear 0s;
+}
+
+.ticketsList {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    height: 100%;
+    padding-right: 4px;
+}
+
+/* Кастомный скроллбар */
+.ticketsList::-webkit-scrollbar {
+    width: 4px;
+}
+.ticketsList::-webkit-scrollbar-track {
+    background: transparent;
+}
+.ticketsList::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+}
+
+@keyframes slideUpFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.ticketCard {
+    background: #2C2C2E;
+    border-radius: 12px;
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    opacity: 0;
+    animation: slideUpFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.ticketRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.ticketName {
+    font-size: 15px;
+    font-weight: 600;
+    color: #FFFFFF;
+}
+
+.ticketBadges {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-end;
+}
+
+.ticketStatusBadge {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: 600;
+}
+
+.ticketStatusBadge.planned { background: rgba(120, 120, 128, 0.36); color: #FF9230; }
+.ticketStatusBadge.in_progress { background: rgba(120, 120, 128, 0.36); color: var(--beeline); }
+.ticketStatusBadge.completed { background: rgba(120, 120, 128, 0.36); color: #30D158; }
+.ticketStatusBadge.wont_fix { background: rgba(120, 120, 128, 0.36); color: #FF4245; }
+
+.ticketAddress {
+    font-size: 14px;
+    color: #FFFFFF;
+    /* margin-bottom: 2px; */
+}
+
+.ticketFooter {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.ticketTime {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #FFFFFF;
+}
+
+.ticketType {
+    font-size: 13px;
+    color: rgba(235, 235, 245, 0.6);
+}
+
+.statusContainer {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 16px;
+    border-radius: 100px;
+    font-size: 15px;
+    font-weight: 500;
+    transition: opacity 0.2s ease;
+}
+
+.statusContainer.inactive {
+    opacity: 0.4;
+}
+
+.statusContainer.interactive {
+    cursor: pointer;
+}
+
+.all {
+    background-color: var(--beeline);
+    color: #FFFFFF;
+}
+
+.urgent {
+    background-color: transparent;
+    color: #FF4245;
+}
+
+.completed {
+    background-color: #ECFDF5;
+    color: #047857;
+}

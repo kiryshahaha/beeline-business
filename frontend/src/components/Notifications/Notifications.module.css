@@ -1,0 +1,27 @@
+.container {
+    position: relative;
+    padding: 12px;
+    background-color: var(--tertiary);
+    backdrop-filter: blur(4px);
+    border-radius: 100px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.container:hover {
+    background-color: rgba(118, 118, 128, 0.25);
+}
+
+.unreadBadge {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    width: 8px;
+    height: 8px;
+    background-color: #FF3B30;
+    border-radius: 50%;
+    border: 2px solid var(--tertiary); /* Имитация выреза вокруг точки */
+}

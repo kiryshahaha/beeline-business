@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/providers/AuthProvider";
+import { apiFetch } from "@/lib/apiFetch";
 
 export function useTickets({
   status,
@@ -7,8 +9,10 @@ export function useTickets({
   limit = 20,
   offset = 0,
 } = {}) {
-  const { data: tickets, ...ticketsData } = useQuery({
-    queryKey: ["ticketsList", status, city_id, district_id, limit, offset],
+  const { token } = useAuth();
+
+  const { data: tickets = [], ...ticketsData } = useQuery({
+    queryKey: ["ticketsList", token, status, city_id, district_id, limit, offset],
 
     queryFn: async () => {
       const urlParams = new URLSearchParams({
@@ -19,15 +23,9 @@ export function useTickets({
         offset: String(offset),
       });
 
-      const rawRes = await fetch(
-        `${process.env.NEXT_PUBLIC_ENDPOINT}/tickets?${urlParams}`,
-      );
-
-      if (!rawRes.ok) {
-        throw new Error("Ошибка в получении записей");
-      }
-
-      return rawRes.json();
+      const res = await apiFetch(`/tickets?${urlParams}`, token);
+      if (!res.ok) throw new Error("Ошибка в получении заявок");
+      return res.json();
     },
   });
 
