@@ -367,7 +367,6 @@ class UsersAndAuthApiTests(DatabaseTestCase):
             cookies={"refresh_token": old_refresh},
         )
         self.assertEqual(refresh_res.status_code, 200)
-        new_tokens = refresh_res.json()
         new_refresh = refresh_res.cookies.get("refresh_token")
         self.assertNotEqual(old_refresh, new_refresh)
         self.assertIsNotNone(new_refresh)
