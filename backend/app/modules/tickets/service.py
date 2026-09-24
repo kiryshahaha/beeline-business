@@ -50,6 +50,10 @@ def _foreman_id(current_user: UserRead | None) -> int | None:
     return current_user.id if current_user and current_user.role == UserRole.FOREMAN else None
 
 
+def _worker_id(current_user: UserRead | None) -> int | None:
+    return current_user.id if current_user and current_user.role == UserRole.WORKER else None
+
+
 def get_ticket(session: Session, ticket_id: int, current_user: UserRead) -> TicketRead:
     details = repository.find_ticket(
         session,
