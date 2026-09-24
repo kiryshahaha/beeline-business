@@ -5,7 +5,7 @@ meta {
 }
 
 get {
-  url: {{base_url}}/api/v1/workers/{{worker_id}}/day-state?district_id={{district_id}}&date={{execution_route_date}}
+  url: {{base_url}}/api/v1/workers/{{worker_two_id}}/day-state?district_id={{district_id}}&date={{execution_route_date}}
   body: none
   auth: bearer
 }
@@ -18,11 +18,18 @@ assert {
   res.status: eq 200
 }
 
+script:post-response {
+  if (res.getStatus() === 200) {
+    bru.setVar("worker_day_revision", res.getBody().revision);
+  }
+}
+
 tests {
   test("Снимок рабочего дня содержит журнал событий", function () {
     const state = res.getBody();
-    expect(state.worker_id).to.equal(Number(bru.getVar("worker_id")));
+    expect(state.worker_id).to.equal(Number(bru.getVar("worker_two_id")));
     expect(state.route_date).to.equal(bru.getVar("execution_route_date"));
+    expect(state.revision).to.be.a("number").and.above(0);
     expect(state.event_ids).to.be.an("array").that.is.not.empty;
   });
 }

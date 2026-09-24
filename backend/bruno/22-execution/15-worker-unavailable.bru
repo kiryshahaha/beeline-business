@@ -5,7 +5,7 @@ meta {
 }
 
 post {
-  url: {{base_url}}/api/v1/workers/{{worker_id}}/unavailable
+  url: {{base_url}}/api/v1/workers/{{worker_two_id}}/unavailable
   body: json
   auth: bearer
 }
@@ -20,11 +20,11 @@ headers {
 
 body:json {
   {
-    "expected_revision": 5,
+    "expected_revision": {{worker_day_revision}},
     "occurred_at": "{{execution_unavailable_at}}",
     "district_id": {{district_id}},
     "route_date": "{{execution_route_date}}",
-    "worker_id": {{worker_id}},
+    "worker_id": {{worker_two_id}},
     "reason": "Инженер завершил смену раньше",
     "expected_available_at": "{{execution_available_at}}",
     "payload": {}
