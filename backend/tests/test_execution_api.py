@@ -129,6 +129,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 "estimated_duration_minutes": 60,
                 "actual_duration_minutes": None,
             },
+            headers=self._auth(self.observer),
         )
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()

@@ -102,6 +102,7 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
                 "visit_window_end": "2026-09-14T14:00:00+03:00",
                 "estimated_duration_minutes": 60,
             },
+            headers=self.auth(self.observer),
         )
         self.assertEqual(response.status_code, 201, response.text)
         ticket_id = response.json()["id"]
@@ -120,26 +121,46 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return [ticket["id"] for ticket in response.json()]
 
-    def test_anonymous_and_observer_keep_global_reads_and_brigade_filter(self):
-        for user in (None, self.observer):
-            with self.subTest(user=user):
-                self.assertEqual(
-                    self.listed_ids(user),
-                    [
-                        self.foreign_ticket,
-                        self.unassigned_ticket,
-                        self.own_ticket,
-                    ],
-                )
-                self.assertEqual(
-                    self.listed_ids(user, brigade_id=self.own_brigade),
-                    [self.own_ticket],
-                )
-                response = self.client.get(
-                    f"/api/v1/tickets/{self.foreign_ticket}",
-                    headers=self.auth(user) if user else {},
-                )
-                self.assertEqual(response.status_code, 200, response.text)
+    def test_observer_keeps_global_reads_and_brigade_filter(self):
+        self.assertEqual(
+            self.listed_ids(self.observer),
+            [
+                self.foreign_ticket,
+                self.unassigned_ticket,
+                self.own_ticket,
+            ],
+        )
+        self.assertEqual(
+            self.listed_ids(self.observer, brigade_id=self.own_brigade),
+            [self.own_ticket],
+        )
+        response = self.client.get(
+            f"/api/v1/tickets/{self.foreign_ticket}", headers=self.auth(self.observer)
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def test_worker_reads_only_assigned_tickets_in_lists_and_by_id(self):
+        self.assertEqual(self.listed_ids(self.worker), [self.own_ticket])
+        self.assertEqual(
+            self.listed_ids(
+                self.worker,
+                status="planned",
+                city_id=self.city_id,
+                district_id=self.district_id,
+                brigade_id=self.own_brigade,
+            ),
+            [self.own_ticket],
+        )
+        for ticket_id in (self.own_ticket,):
+            response = self.client.get(
+                f"/api/v1/tickets/{ticket_id}", headers=self.auth(self.worker)
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+        for ticket_id in (self.foreign_ticket, self.unassigned_ticket, 2147483647):
+            response = self.client.get(
+                f"/api/v1/tickets/{ticket_id}", headers=self.auth(self.worker)
+            )
+            self.assertEqual(response.status_code, 404, response.text)
 
     def test_foreman_scope_is_intersected_with_filter_before_pagination(self):
         self.assertEqual(self.listed_ids(self.foreman), [self.own_ticket])
@@ -227,7 +248,9 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
             headers=self.auth(self.foreman),
         )
         self.assertEqual(response.status_code, 403, response.text)
-        self.assertEqual(self.client.get(url).json()["status"], "planned")
+        current = self.client.get(url, headers=self.auth(self.observer))
+        self.assertEqual(current.status_code, 200, current.text)
+        self.assertEqual(current.json()["status"], "planned")
 
     def test_supplied_invalid_credentials_do_not_fall_back_to_anonymous(self):
         for authorization in ("Bearer invalid", "Basic invalid", "Bearer"):
@@ -239,5 +262,9 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
 
     def test_brigade_filter_validates_positive_int32(self):
         for value in (0, -1, 2147483648, "invalid"):
-            response = self.client.get("/api/v1/tickets", params={"brigade_id": value})
+            response = self.client.get(
+                "/api/v1/tickets",
+                params={"brigade_id": value},
+                headers=self.auth(self.observer),
+            )
             self.assertEqual(response.status_code, 422, response.text)

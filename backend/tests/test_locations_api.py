@@ -4,9 +4,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.security import create_access_token
 from app.db.models import Building, City, District, Entrance, Location, Street
 from app.db.session import get_session
 from app.main import app
+from app.modules.users.enums import UserRole
+from app.modules.users.schemas import UserCreate
+from app.modules.users.service import create_user
 from tests.support import DatabaseTestCase
 
 
@@ -20,7 +24,22 @@ class LocationsApiTests(DatabaseTestCase):
 
         app.dependency_overrides[get_session] = override_session
         self.addCleanup(app.dependency_overrides.pop, get_session)
-        self.client = self.enterContext(TestClient(app))
+        observer = create_user(
+            self.session,
+            UserCreate(
+                name="Тестовый",
+                surname="Наблюдатель",
+                username="locations_api_observer",
+                password="Password123!",
+                role=UserRole.OBSERVER,
+            ),
+        )
+        self.session.commit()
+        self.auth_headers = {
+            "Authorization": "Bearer "
+            + create_access_token({"sub": str(observer.id), "role": observer.role.value})
+        }
+        self.client = self.enterContext(TestClient(app, headers=self.auth_headers))
 
     def payload(self, **overrides):
         return {

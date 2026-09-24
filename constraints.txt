@@ -1,0 +1,4 @@
+# Backend and planner share one interpreter in integration checks.
+# OR-Tools 9.15 uses protobuf 6.x; the backend supports pandas 2.x.
+protobuf<7
+pandas<3

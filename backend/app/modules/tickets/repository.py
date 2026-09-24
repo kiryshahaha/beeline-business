@@ -53,6 +53,10 @@ FOREMAN_VISIBILITY_SQL = """
     )
 """
 
+WORKER_VISIBILITY_SQL = """
+    t.assigned_worker_id = :worker_id
+"""
+
 
 def ticket_exists(session: Session, ticket_id: int, *, foreman_id: int | None = None) -> bool:
     query = "SELECT EXISTS (SELECT 1 FROM tickets AS t WHERE t.id = :ticket_id"
@@ -222,13 +226,20 @@ def add_notification_events(
 
 
 def find_ticket(
-    session: Session, ticket_id: int, *, foreman_id: int | None = None
+    session: Session,
+    ticket_id: int,
+    *,
+    foreman_id: int | None = None,
+    worker_id: int | None = None,
 ) -> RowMapping | None:
     query = TICKET_SELECT_SQL + " WHERE t.id = :ticket_id"
     parameters = {"ticket_id": ticket_id}
     if foreman_id is not None:
         query += " AND " + FOREMAN_VISIBILITY_SQL
         parameters["foreman_id"] = foreman_id
+    if worker_id is not None:
+        query += " AND " + WORKER_VISIBILITY_SQL
+        parameters["worker_id"] = worker_id
     return (
         session.execute(
             text(query),
@@ -249,6 +260,7 @@ def find_tickets(
     offset: int,
     brigade_id: int | None = None,
     foreman_id: int | None = None,
+    worker_id: int | None = None,
 ) -> list[RowMapping]:
     conditions = []
     parameters: dict[str, object] = {"limit": limit, "offset": offset}
@@ -273,6 +285,9 @@ def find_tickets(
     if foreman_id is not None:
         conditions.append(FOREMAN_VISIBILITY_SQL)
         parameters["foreman_id"] = foreman_id
+    if worker_id is not None:
+        conditions.append(WORKER_VISIBILITY_SQL)
+        parameters["worker_id"] = worker_id
 
     # Only fixed SQL fragments are joined; every value is a bound parameter.
     query = TICKET_SELECT_SQL

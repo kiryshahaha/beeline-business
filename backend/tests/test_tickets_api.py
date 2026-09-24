@@ -7,11 +7,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.security import create_access_token
 from app.db.models import Building, City, District, Entrance, Location, Street, Ticket
 from app.db.session import get_session
 from app.main import app
 from app.modules.tickets import repository
 from app.modules.tickets.enums import TicketStatus
+from app.modules.users.enums import UserRole
+from app.modules.users.schemas import UserCreate
+from app.modules.users.service import create_user
 from tests.support import DatabaseTestCase
 
 
@@ -47,13 +51,29 @@ class TicketsApiTests(DatabaseTestCase):
         # Release the fixture savepoint; HTTP sessions share only the outer test transaction.
         self.session.commit()
 
+        observer = create_user(
+            self.session,
+            UserCreate(
+                name="Тестовый",
+                surname="Наблюдатель",
+                username="tickets_api_observer",
+                password="Password123!",
+                role=UserRole.OBSERVER,
+            ),
+        )
+        self.session.commit()
+        auth_headers = {
+            "Authorization": "Bearer "
+            + create_access_token({"sub": str(observer.id), "role": observer.role.value})
+        }
+
         def override_session():
             with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
                 yield session
 
         app.dependency_overrides[get_session] = override_session
         self.addCleanup(app.dependency_overrides.pop, get_session)
-        self.client = self.enterContext(TestClient(app))
+        self.client = self.enterContext(TestClient(app, headers=auth_headers))
 
     def save(self, instance):
         self.session.add(instance)
@@ -158,7 +178,8 @@ class TicketsApiTests(DatabaseTestCase):
 
     def test_failure_after_insert_rolls_back_ticket(self):
         with patch(
-            "app.modules.tickets.service.get_ticket", side_effect=RuntimeError("response failed")
+            "app.modules.tickets.service.get_ticket_unscoped",
+            side_effect=RuntimeError("response failed"),
         ):
             with self.assertRaisesRegex(RuntimeError, "response failed"):
                 self.create()

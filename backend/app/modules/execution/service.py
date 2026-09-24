@@ -224,10 +224,10 @@ def _require_reason(
 
 
 def _result(session: Session, ticket_id: int, event_id: int | None, revision: int, replayed: bool):
-    from app.modules.tickets.service import get_ticket
+    from app.modules.tickets.service import get_ticket_unscoped
 
     return ExecutionResult(
-        ticket=get_ticket(session, ticket_id),
+        ticket=get_ticket_unscoped(session, ticket_id),
         event_id=event_id,
         revision=revision,
         replayed=replayed,
