@@ -1,12 +1,11 @@
 services:
   db:
-    image: postgres:16-alpine
-    container_name: beeline_db
+    image: postgres:17
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-beeline}
       POSTGRES_USER: ${POSTGRES_USER:-beeline}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-beeline}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be generated for this environment}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -24,14 +23,13 @@ services:
     build:
       context: ./planner
       dockerfile: Dockerfile
-    container_name: beeline_planner
     environment:
       PLANNER_SERVICE_TOKEN: ${PLANNER_SERVICE_TOKEN:-}
     restart: unless-stopped
     ports:
       - "${PLANNER_PORT:-8001}:8001"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8001/health', timeout=4)"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -43,12 +41,13 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: beeline_backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-beeline}:${POSTGRES_PASSWORD:-beeline}@db:5432/${POSTGRES_DB:-beeline}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-beeline}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be generated for this environment}@db:5432/${POSTGRES_DB:-beeline}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set to a private value of at least 32 bytes}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      FIREBASE_ENABLED: ${FIREBASE_ENABLED:-false}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
       NOTIFICATION_DISPATCHER_ENABLED: ${NOTIFICATION_DISPATCHER_ENABLED:-true}
       NOTIFICATION_POLL_INTERVAL_SECONDS: ${NOTIFICATION_POLL_INTERVAL_SECONDS:-1.0}
       PLANNING_ENABLED: ${PLANNING_ENABLED:-false}
@@ -71,7 +70,7 @@ services:
       planner:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8000/ready', timeout=4)"]
       interval: 10s
       timeout: 5s
       retries: 3
