@@ -217,7 +217,10 @@ class ExecutionApiTests(DatabaseTestCase):
         )
         self.assertEqual(shifted.status_code, 200, shifted.text)
         self.assertEqual(shifted.json()["revision"], 3)
-        self.assertEqual(shifted.json()["visit_window_end"], "2030-01-15T17:00:00+00:00")
+        self.assertEqual(
+            datetime.fromisoformat(shifted.json()["visit_window_end"]),
+            datetime(2030, 1, 15, 17, tzinfo=UTC),
+        )
         with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
             window_event = (
                 session.execute(
@@ -253,20 +256,19 @@ class ExecutionApiTests(DatabaseTestCase):
         )
         self.assertEqual(route.json()["state"], "en_route")
 
-        with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
-            session.add(
-                DayPlanRevision(
-                    district_id=self.district_id,
-                    route_date=self.route_date,
-                    revision=1,
-                    actor_id=self.observer.id,
-                    fingerprint="a" * 64,
-                    diff={},
-                    result={},
-                    is_current=True,
-                )
+        self.session.add(
+            DayPlanRevision(
+                district_id=self.district_id,
+                route_date=self.route_date,
+                revision=1,
+                actor_id=self.observer.id,
+                fingerprint="a" * 64,
+                diff={},
+                result={},
+                is_current=True,
             )
-            session.flush()
+        )
+        self.session.commit()
         redirected = self.client.post(
             f"/api/v1/planning/days/{self.district_id}/{self.route_date}/redirect",
             json={

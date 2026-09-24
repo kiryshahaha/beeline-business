@@ -376,6 +376,7 @@ def _read_state(
                 "worker_id": worker_id,
                 "district_id": district_id,
                 "route_date": route_date,
+                "at": at,
             },
         ).scalars()
     )

@@ -282,8 +282,8 @@ def downgrade() -> None:
 
     op.drop_index("ix_tickets_last_event_id", table_name="tickets")
     op.drop_index("ix_tickets_lifecycle_state", table_name="tickets")
-    op.drop_constraint("ck_tickets_execution_cycle_positive", "tickets", type_="check")
-    op.drop_constraint("ck_tickets_revision_positive", "tickets", type_="check")
+    op.drop_constraint(op.f("ck_tickets_execution_cycle_positive"), "tickets", type_="check")
+    op.drop_constraint(op.f("ck_tickets_revision_positive"), "tickets", type_="check")
     op.drop_column("tickets", "last_event_id")
     op.drop_column("tickets", "cancel_reason")
     op.drop_column("tickets", "actual_completed_at")

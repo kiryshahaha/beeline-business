@@ -522,10 +522,6 @@ def reopen_ticket(
             text("DELETE FROM ticket_assignments WHERE ticket_id = :ticket_id"),
             {"ticket_id": ticket_id},
         )
-        session.execute(
-            text("DELETE FROM ticket_appliances WHERE ticket_id = :ticket_id"),
-            {"ticket_id": ticket_id},
-        )
         repository.attach_last_event(session, ticket_id, event_id)
         return _result(session, ticket_id, event_id, revision, False)
 

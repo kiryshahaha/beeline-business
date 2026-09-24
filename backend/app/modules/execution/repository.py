@@ -49,8 +49,8 @@ def find_event_by_key(session: Session, idempotency_key: str) -> RowMapping | No
         session.execute(
             text(
                 """
-                SELECT id, event_type, ticket_id, worker_id, district_id,
-                       occurred_at, recorded_at, previous_state, new_state,
+                SELECT id, event_type, ticket_id, worker_id, district_id, route_date,
+                       occurred_at, recorded_at, reason, previous_state, new_state,
                        before_revision, after_revision, idempotency_key, payload
                 FROM work_events
                 WHERE idempotency_key = :idempotency_key

@@ -19,7 +19,7 @@ class Brigade(IntegerIdMixin, Base):
         ForeignKey("offices.id", ondelete="RESTRICT"), nullable=False
     )
     division_id: Mapped[int] = mapped_column(
-        ForeignKey("divisions.id", ondelete="RESTRICT"), nullable=False
+        ForeignKey("divisions.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

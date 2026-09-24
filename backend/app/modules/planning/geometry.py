@@ -56,7 +56,7 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
     for route in routes:
         vehicle = route.vehicle_id
         worker = prepared["workers"][vehicle]
-        lines, legs, stops, visits = [], [], [], []
+        lines, legs, public_steps, stops, visits = [], [], [], [], []
         travel = distance = waiting_total = 0
         matrix = problem.matrices[worker["profile"]]
 
@@ -152,6 +152,7 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
                         "duration_source": ticket["duration_source"],
                     }
                 )
+            public_steps.append(step)
             stops.append(stop)
 
         properties = GeoapifyPathProperties(
@@ -182,8 +183,7 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
                     "geometry": {"type": "Point", "coordinates": position(step.node)},
                     "properties": {**stop, "sequence": i + 1},
                 }
-                for i, (step, stop) in enumerate(zip(route.steps, stops, strict=True))
-                if not (open_end and step.node in finish_nodes)
+                for i, (step, stop) in enumerate(zip(public_steps, stops, strict=True))
             ]
             if lines:
                 features.append(
