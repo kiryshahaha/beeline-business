@@ -33,10 +33,8 @@ def find_tickets_summary(
             """
             EXISTS (
                 SELECT 1
-                FROM ticket_assignments AS scope_assignment
-                JOIN brigade_members AS scope_member
-                    ON scope_member.worker_id = scope_assignment.worker_id
-                WHERE scope_assignment.ticket_id = t.id
+                FROM brigade_members AS scope_member
+            WHERE scope_member.worker_id = t.assigned_worker_id
                   AND scope_member.brigade_id = :brigade_id
             )
             """
@@ -47,12 +45,10 @@ def find_tickets_summary(
             """
             EXISTS (
                 SELECT 1
-                FROM ticket_assignments AS scope_assignment
-                JOIN brigade_members AS scope_member
-                    ON scope_member.worker_id = scope_assignment.worker_id
+                FROM brigade_members AS scope_member
                 JOIN brigades AS scope_brigade
                     ON scope_brigade.id = scope_member.brigade_id
-                WHERE scope_assignment.ticket_id = t.id
+                WHERE scope_member.worker_id = t.assigned_worker_id
                   AND scope_brigade.office_id = :office_id
             )
             """
@@ -64,19 +60,11 @@ def find_tickets_summary(
         SELECT
             COUNT(*) FILTER (
                 WHERE t.status = :planned_status
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM ticket_assignments AS open_assignment
-                      WHERE open_assignment.ticket_id = t.id
-                  )
+                  AND t.assigned_worker_id IS NULL
             ) AS open,
             COUNT(*) FILTER (
                 WHERE t.status = :planned_status
-                  AND EXISTS (
-                      SELECT 1
-                      FROM ticket_assignments AS assigned_ticket
-                      WHERE assigned_ticket.ticket_id = t.id
-                  )
+                  AND t.assigned_worker_id IS NOT NULL
             ) AS assigned,
             COUNT(*) FILTER (WHERE t.status = :in_progress_status) AS in_progress,
             COUNT(*) FILTER (WHERE t.status = :completed_status) AS completed
@@ -117,8 +105,7 @@ def find_brigades_workload(
             ) AS completed_today
         FROM brigades AS b
         LEFT JOIN brigade_members AS bm ON bm.brigade_id = b.id
-        LEFT JOIN ticket_assignments AS ta ON ta.worker_id = bm.worker_id
-        LEFT JOIN tickets AS t ON t.id = ta.ticket_id
+        LEFT JOIN tickets AS t ON t.assigned_worker_id = bm.worker_id
         {where_clause}
         GROUP BY b.id, b.name
         ORDER BY b.id ASC
@@ -193,10 +180,8 @@ ACTIVITY_FEED_SQL = """
 BRIGADE_SCOPE_SQL = """
     EXISTS (
         SELECT 1
-        FROM ticket_assignments AS scope_assignment
-        JOIN brigade_members AS scope_member
-            ON scope_member.worker_id = scope_assignment.worker_id
-        WHERE scope_assignment.ticket_id = t.id
+        FROM brigade_members AS scope_member
+            WHERE scope_member.worker_id = t.assigned_worker_id
           AND scope_member.brigade_id = :brigade_id
     )
 """

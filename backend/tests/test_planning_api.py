@@ -91,9 +91,10 @@ class PlanningApiTests(CommittedDatabaseTestCase):
 
     def counts(self):
         with Session(self.engine) as session:
-            return tuple(
-                session.scalar(select(func.count()).select_from(model))
-                for model in (Route, PlanningPlanRoute)
+            return (
+                session.scalar(select(func.count(Route.id))),
+                session.scalar(select(func.count(Ticket.id)).where(Ticket.assigned_worker_id.is_not(None))),
+                session.scalar(select(func.count()).select_from(PlanningPlanRoute))
             )
 
     def test_preview_is_read_only_for_domain_and_apply_is_atomic_idempotent(self):
@@ -242,7 +243,7 @@ class PlanningApiTests(CommittedDatabaseTestCase):
     def test_failure_during_assignments_rolls_back_routes_and_notifications(self):
         plan = self.preview()
         with patch.object(
-            service, "replace_assignees_in_transaction", side_effect=RuntimeError("failure")
+            service, "update_assignment_in_transaction", side_effect=RuntimeError("failure")
         ):
             with self.assertRaises(RuntimeError):
                 service.apply_plan(self.engine, UUID(plan["plan_id"]), lambda: self.now)
@@ -256,7 +257,7 @@ class PlanningApiTests(CommittedDatabaseTestCase):
             )
             self.assertEqual(response.status_code, status, response.text)
         for update_values in (
-            {"worker_ids": []},
+            {"worker_id": None},
             {"ticket_ids": [True]},
             {"ticket_ids": [1, 1]},
             {"time_matrix": []},

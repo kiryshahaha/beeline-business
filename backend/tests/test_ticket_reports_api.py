@@ -80,8 +80,8 @@ class TicketExportApiTests(DatabaseTestCase):
                 "estimated_duration_minutes",
                 "actual_duration_minutes",
                 "created_at",
-                "updated_at",
-                "assignee_ids",
+                "assigned_worker_id",
+                "is_pinned",
                 "city_id",
                 "city",
                 "district_id",
@@ -151,7 +151,7 @@ class TicketExportApiTests(DatabaseTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         rows = list(csv.DictReader(io.StringIO(response.content.decode("utf-8-sig"))))
         self.assertGreater(len(rows), 0)
-        self.assertTrue(all(row["assignee_ids"] for row in rows))
+        self.assertTrue(all(row["assigned_worker_id"] for row in rows))
 
     def test_export_requires_observer_and_valid_format(self):
         self.assertEqual(

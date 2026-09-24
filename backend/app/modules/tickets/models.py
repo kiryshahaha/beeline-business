@@ -85,7 +85,7 @@ class Ticket(IntegerIdMixin, Base):
         nullable=False,
     )
     assigned_worker_id: Mapped[int | None] = mapped_column(
-        ForeignKey("workers.user_id", ondelete="RESTRICT"), index=True, nullable=True
+        ForeignKey("workers.user_id", ondelete="SET NULL"), index=True, nullable=True
     )
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 

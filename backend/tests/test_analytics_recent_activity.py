@@ -178,8 +178,8 @@ class RecentActivityApiTests(DatabaseTestCase):
         if worker_id is not None:
             self.connection.execute(
                 text(
-                    "INSERT INTO ticket_assignments (ticket_id, worker_id) "
-                    "VALUES (:ticket_id, :worker_id)"
+                    "UPDATE tickets SET assigned_worker_id = :worker_id "
+                    "WHERE id = :ticket_id"
                 ),
                 {"ticket_id": ticket_id, "worker_id": worker_id},
             )
@@ -369,7 +369,7 @@ class RecentActivityApiTests(DatabaseTestCase):
         self.assertEqual(
             self.client.put(
                 f"/api/v1/tickets/{ticket_id}/assignees",
-                json={"worker_ids": [self.worker_one.id]},
+                json={"worker_id": self.worker_one.id},
             ).status_code,
             200,
         )

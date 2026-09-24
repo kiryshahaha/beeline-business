@@ -72,15 +72,14 @@ def find_feed_tickets(session: Session, worker_id: int, since: datetime) -> list
                     b.id AS building_id, b.number AS building_number, b.block,
                     l.entrance_id, e.number AS entrance_number,
                     l.floor, l.apartment, l.latitude, l.longitude
-                FROM ticket_assignments AS ta
-                JOIN tickets AS t ON t.id = ta.ticket_id
+                FROM tickets AS t
                 JOIN locations AS l ON l.id = t.location_id
                 JOIN buildings AS b ON b.id = l.building_id
                 JOIN streets AS s ON s.id = b.street_id
                 JOIN cities AS c ON c.id = s.city_id
                 JOIN districts AS d ON d.id = b.district_id
                 LEFT JOIN entrances AS e ON e.id = l.entrance_id
-                WHERE ta.worker_id = :worker_id
+                WHERE t.assigned_worker_id = :worker_id
                   AND t.planned_start_at IS NOT NULL
                   AND t.planned_end_at >= :since
                 ORDER BY t.planned_start_at, t.id

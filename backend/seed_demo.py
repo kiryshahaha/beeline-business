@@ -603,9 +603,7 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
         worker_id = worker_ids[index % len(worker_ids)]
         session.execute(
             text("""
-                INSERT INTO ticket_assignments (ticket_id, worker_id)
-                VALUES (:ticket_id, :worker_id)
-                ON CONFLICT DO NOTHING
+                UPDATE tickets SET assigned_worker_id = :worker_id WHERE id = :ticket_id
             """),
             {"ticket_id": result.ticket_id, "worker_id": worker_id},
         )

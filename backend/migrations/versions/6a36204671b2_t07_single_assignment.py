@@ -29,7 +29,7 @@ def upgrade() -> None:
         "workers",
         ["assigned_worker_id"],
         ["user_id"],
-        ondelete="RESTRICT",
+        ondelete="SET NULL",
     )
     op.create_index(
         op.f("ix_tickets_assigned_worker_id"), "tickets", ["assigned_worker_id"], unique=False

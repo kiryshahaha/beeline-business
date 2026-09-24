@@ -92,8 +92,8 @@ class ScheduleApiTests(DatabaseTestCase):
             "Юг-1", self.south_foreman, self.south, [self.south_worker]
         )
 
-        self.shared_ticket = self.new_ticket(
-            [self.day_worker, self.south_worker],
+        self.south_ticket = self.new_ticket(
+            [self.south_worker],
             moscow(17, 14),
             moscow(17, 15),
             TicketStatus.COMPLETED,
@@ -210,7 +210,7 @@ class ScheduleApiTests(DatabaseTestCase):
             [interval(moscow(16, 22), moscow(17, 6)), interval(moscow(17, 22), moscow(18, 6))],
         )
         self.assertEqual(
-            [ticket["id"] for ticket in day["tickets"]], [self.day_ticket, self.shared_ticket]
+            [ticket["id"] for ticket in day["tickets"]], [self.day_ticket]
         )
         self.assertEqual(
             day["tickets"][0],
@@ -235,7 +235,7 @@ class ScheduleApiTests(DatabaseTestCase):
         south = self.workers(data["brigades"][1])[self.south_worker.id]
         self.assertEqual(
             [(ticket["id"], ticket["status"]) for ticket in south["tickets"]],
-            [(self.shared_ticket, "completed")],
+            [(self.south_ticket, "completed")],
         )
         (free,) = data["unassigned_workers"]
         self.assertEqual(free["id"], self.free_worker.id)

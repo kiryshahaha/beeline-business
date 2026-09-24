@@ -143,7 +143,7 @@ class WorkerEquipmentApiTests(DatabaseTestCase):
         )
         if worker is not None:
             self.connection.execute(
-                text("INSERT INTO ticket_assignments (ticket_id, worker_id) VALUES (:t, :w)"),
+                text("UPDATE tickets SET assigned_worker_id = :w WHERE id = :t"),
                 {"t": ticket_id, "w": worker.id},
             )
         for appliance_id, quantity in equipment.items():
@@ -345,7 +345,7 @@ class WorkerEquipmentApiTests(DatabaseTestCase):
         assigned = self.call(
             "PUT",
             f"/api/v1/tickets/{self.install}/assignees",
-            json={"worker_ids": [self.first.id]},
+            json={"worker_id": self.first.id},
         )
         self.assertEqual(assigned.status_code, 200, assigned.text)
         for action, key in (
@@ -440,7 +440,7 @@ class WorkerEquipmentApiTests(DatabaseTestCase):
     def test_reassignment_keeps_units_where_they_physically_are(self):
         self.issue(self.first, "morning")
         url = f"/api/v1/tickets/{self.install}/assignees"
-        held = self.call("PUT", url, json={"worker_ids": [self.second.id]})
+        held = self.call("PUT", url, json={"worker_id": self.second.id})
         self.assertEqual(held.status_code, 409, held.text)
         self.assertEqual(held.json()["detail"]["code"], "equipment_held_by_worker")
         self.assertEqual(held.json()["detail"]["holder_worker_id"], self.first.id)
@@ -448,7 +448,7 @@ class WorkerEquipmentApiTests(DatabaseTestCase):
         self.reserve(self.router, 2)
         self.reserve(self.tool, 1)
         self.issue(self.second, "second-morning")
-        moved = self.call("PUT", url, json={"worker_ids": [self.second.id]})
+        moved = self.call("PUT", url, json={"worker_id": self.second.id})
         self.assertEqual(moved.status_code, 200, moved.text)
         self.assertEqual(self.hands(self.first)[self.router], (2, 0, 2))
         self.assertEqual(self.hands(self.second)[self.router], (2, 2, 0))
@@ -458,7 +458,7 @@ class WorkerEquipmentApiTests(DatabaseTestCase):
         urgent = self.ticket(yesterday, None, {self.tv_box: 1})
         self.session.commit()
         response = self.call(
-            "PUT", f"/api/v1/tickets/{urgent}/assignees", json={"worker_ids": [self.first.id]}
+            "PUT", f"/api/v1/tickets/{urgent}/assignees", json={"worker_id": self.first.id}
         )
         self.assertEqual(response.status_code, 409, response.text)
         self.assertEqual(response.json()["detail"]["code"], "equipment_not_on_hand")
@@ -467,7 +467,7 @@ class WorkerEquipmentApiTests(DatabaseTestCase):
         self.reserve(self.tv_box, 1)
         self.issue(self.first, "top-up", day=yesterday)
         response = self.call(
-            "PUT", f"/api/v1/tickets/{urgent}/assignees", json={"worker_ids": [self.first.id]}
+            "PUT", f"/api/v1/tickets/{urgent}/assignees", json={"worker_id": self.first.id}
         )
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(self.stock(self.tv_box), (4, 1))
@@ -475,7 +475,7 @@ class WorkerEquipmentApiTests(DatabaseTestCase):
         later = self.ticket(self.day, None, {self.tv_box: 1})
         self.session.commit()
         response = self.call(
-            "PUT", f"/api/v1/tickets/{later}/assignees", json={"worker_ids": [self.second.id]}
+            "PUT", f"/api/v1/tickets/{later}/assignees", json={"worker_id": self.second.id}
         )
         self.assertEqual(response.status_code, 200, response.text)
 

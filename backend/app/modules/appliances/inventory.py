@@ -218,9 +218,7 @@ def ticket_lines(session: Session, worker_id: int, day: date) -> list[dict]:
         text(f"""
             SELECT ta.ticket_id, ta.appliance_id, ta.office_id, ta.quantity
             FROM ticket_appliances ta
-            JOIN tickets t ON t.id = ta.ticket_id
-            JOIN ticket_assignments asg
-              ON asg.ticket_id = ta.ticket_id AND asg.worker_id = :worker
+            JOIN tickets t ON t.id = ta.ticket_id AND t.assigned_worker_id = :worker
             LEFT JOIN ticket_appliance_states s
               ON s.ticket_id = ta.ticket_id AND s.appliance_id = ta.appliance_id
             WHERE s.ticket_id IS NULL AND t.status IN ('planned', 'in_progress')

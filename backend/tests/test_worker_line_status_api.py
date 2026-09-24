@@ -136,8 +136,8 @@ class WorkerLineStatusApiTests(DatabaseTestCase):
         return list(
             self.session.execute(
                 text(
-                    "SELECT worker_id FROM ticket_assignments "
-                    "WHERE ticket_id=:ticket_id ORDER BY worker_id"
+                    "SELECT assigned_worker_id FROM tickets "
+                    "WHERE id=:ticket_id AND assigned_worker_id IS NOT NULL"
                 ),
                 {"ticket_id": ticket_id},
             ).scalars()
@@ -156,7 +156,7 @@ class WorkerLineStatusApiTests(DatabaseTestCase):
             },
         )
         self.assertEqual(self.assigned_workers(self.planned_ticket), [])
-        self.assertEqual(self.assigned_workers(self.shared_planned_ticket), [self.other_worker.id])
+        self.assertEqual(self.assigned_workers(self.shared_planned_ticket), [])
         for ticket_id in (
             self.in_progress_ticket,
             self.completed_ticket,
@@ -173,7 +173,7 @@ class WorkerLineStatusApiTests(DatabaseTestCase):
             {"ticket_id": self.shared_planned_ticket},
         ).one()
         self.assertEqual(tuple(solo_plan), (None, None))
-        self.assertTrue(all(shared_plan))
+        self.assertEqual(tuple(shared_plan), (None, None))
         self.assertEqual(
             self.session.execute(
                 text("SELECT count(*) FROM routes WHERE worker_id=:worker_id"),
@@ -260,7 +260,7 @@ class WorkerLineStatusApiTests(DatabaseTestCase):
 
         blocked = self.client.put(
             assignment_url,
-            json={"worker_ids": [self.other_worker.id, self.worker.id]},
+            json={"worker_id": self.worker.id, "is_pinned": False},
             headers=self.auth(self.observer),
         )
         self.assertEqual(blocked.status_code, 422, blocked.text)
@@ -268,18 +268,18 @@ class WorkerLineStatusApiTests(DatabaseTestCase):
             blocked.json(),
             {"detail": "Один или несколько исполнителей сняты с линии"},
         )
-        self.assertEqual(self.assigned_workers(self.shared_planned_ticket), [self.other_worker.id])
+        self.assertEqual(self.assigned_workers(self.shared_planned_ticket), [])
 
         self.assertEqual(self.update_line_status(True).status_code, 200)
         assigned = self.client.put(
             assignment_url,
-            json={"worker_ids": [self.other_worker.id, self.worker.id]},
+            json={"worker_id": self.worker.id, "is_pinned": False},
             headers=self.auth(self.observer),
         )
         self.assertEqual(assigned.status_code, 200, assigned.text)
         self.assertEqual(
-            assigned.json()["assignee_ids"],
-            sorted([self.worker.id, self.other_worker.id]),
+            assigned.json()["assigned_worker_id"],
+            self.worker.id,
         )
 
     def test_failure_rolls_back_status_and_released_assignments(self):

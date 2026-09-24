@@ -15,8 +15,8 @@ def is_worker_assigned(session: Session, ticket_id: int, worker_id: int) -> bool
         session.execute(
             text("""
                 SELECT EXISTS (
-                    SELECT 1 FROM ticket_assignments
-                    WHERE ticket_id = :ticket_id AND worker_id = :worker_id
+                    SELECT 1 FROM tickets
+                        WHERE id = :ticket_id AND assigned_worker_id = :worker_id
                 )
             """),
             {"ticket_id": ticket_id, "worker_id": worker_id},

@@ -57,7 +57,7 @@ class TicketCommentsApiTests(DatabaseTestCase):
         self.ticket_id = ticket.json()["id"]
         assigned = self.client.put(
             f"/api/v1/tickets/{self.ticket_id}/assignees",
-            json={"worker_ids": [self.worker.id]},
+            json={"worker_id": self.worker.id},
             headers=self.auth(self.observer),
         )
         self.assertEqual(assigned.status_code, 200, assigned.text)
@@ -208,7 +208,7 @@ class TicketCommentsApiTests(DatabaseTestCase):
         comment = self.create_comment(self.worker)
         assigned = self.client.put(
             f"/api/v1/tickets/{self.ticket_id}/assignees",
-            json={"worker_ids": []},
+            json={"worker_id": None},
             headers=self.auth(self.observer),
         )
         self.assertEqual(assigned.status_code, 200, assigned.text)
