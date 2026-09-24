@@ -61,26 +61,14 @@ def find_tickets_summary(
                         SELECT 1 FROM ticket_assignments AS unassigned_scope
                         WHERE unassigned_scope.ticket_id = t.id
                     )
-                    AND (
-                        t.service_area_id IN (
-                            SELECT bld_sa.id
-                            FROM offices AS off
-                            JOIN locations AS off_loc ON off_loc.id = off.location_id
-                            JOIN buildings AS off_bld ON off_bld.id = off_loc.building_id
-                            JOIN service_areas AS bld_sa
-                              ON bld_sa.code = 'district_' || off_bld.district_id
-                            WHERE off.id = :office_id
-                        )
-                        OR EXISTS (
-                            SELECT 1
-                            FROM locations AS t_loc
-                            JOIN buildings AS t_bld ON t_bld.id = t_loc.building_id
-                            JOIN offices AS off ON off.id = :office_id
-                            JOIN locations AS off_loc ON off_loc.id = off.location_id
-                            JOIN buildings AS off_bld ON off_bld.id = off_loc.building_id
-                            WHERE t_loc.id = t.location_id
-                              AND t_bld.district_id = off_bld.district_id
-                        )
+                    AND t.service_area_id IN (
+                        SELECT bld_sa.id
+                        FROM offices AS off
+                        JOIN locations AS off_loc ON off_loc.id = off.location_id
+                        JOIN buildings AS off_bld ON off_bld.id = off_loc.building_id
+                        JOIN service_areas AS bld_sa
+                          ON bld_sa.code = 'district_' || off_bld.district_id
+                        WHERE off.id = :office_id
                     )
                 )
             )

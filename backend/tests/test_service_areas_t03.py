@@ -26,6 +26,7 @@ from app.db.models import (
     Building,
     City,
     District,
+    Division,
     Entrance,
     Location,
     Office,
@@ -416,8 +417,14 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
         )
 
         # Brigade
+        self.division = self.save(Division(district_id=self.district_north.id))
         self.brigade = self.save(
-            Brigade(name="Бригада Север", foreman_id=self.observer.id, office_id=self.office.id)
+            Brigade(
+                name="Бригада Север",
+                foreman_id=self.observer.id,
+                office_id=self.office.id,
+                division_id=self.division.id,
+            )
         )
         self.save(BrigadeMember(brigade_id=self.brigade.id, worker_id=self.worker_north.id))
 
@@ -426,10 +433,10 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
             WorkType(
                 code="fiber_install",
                 name="Монтаж ВОЛС",
-                category="installation",
-                norm_minutes=60,
+                category="repair",
                 travel_minutes=20,
-                doc_minutes=10,
+                work_minutes=30,
+                documents_minutes=10,
             )
         )
 

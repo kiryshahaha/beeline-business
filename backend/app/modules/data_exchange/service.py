@@ -228,7 +228,9 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                             )
                             for key, target in (
                                 ("ticket_id", "tickets"),
-                                ("worker_id", "workers"),
+                                # worker_id is a user_id; map via users which is always
+                                # processed early regardless of topological sort order.
+                                ("worker_id", "users"),
                                 ("actor_id", "users"),
                             ):
                                 if key in values.get("data", {}):
