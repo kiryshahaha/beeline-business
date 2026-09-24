@@ -168,7 +168,7 @@ def delete_user(
             detail="Нельзя удалить бригадира, пока он руководит бригадой",
         ) from error
     except IntegrityError as error:
-        if getattr(error.orig, "sqlstate", None) != "23503":
+        if getattr(error.orig, "sqlstate", None) not in ("23503", "23001"):
             raise
         raise HTTPException(
             409, "Пользователь связан с историей маршрутов или правилами работ"
