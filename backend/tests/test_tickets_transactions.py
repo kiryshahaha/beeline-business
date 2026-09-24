@@ -5,8 +5,13 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
+from app.core.security import create_access_token
 from app.main import app
+from app.modules.users.enums import UserRole
+from app.modules.users.schemas import UserCreate
+from app.modules.users.service import create_user
 from seed_demo import run_seed
 from tests.support import CommittedDatabaseTestCase
 
@@ -20,6 +25,22 @@ class TicketsTransactionTests(CommittedDatabaseTestCase):
             self.initial_ticket_count = connection.execute(
                 text("SELECT count(*) FROM tickets")
             ).scalar_one()
+        with Session(self.engine) as session:
+            observer = create_user(
+                session,
+                UserCreate(
+                    name="Тестовый",
+                    surname="Наблюдатель",
+                    username="ticket_transaction_observer",
+                    password="Password123!",
+                    role=UserRole.OBSERVER,
+                ),
+            )
+            session.commit()
+        self.auth_headers = {
+            "Authorization": "Bearer "
+            + create_access_token({"sub": str(observer.id), "role": observer.role.value})
+        }
         # Keep the application's real get_session dependency, pointing to our test engine.
         self.enterContext(patch("app.db.session.get_engine", return_value=self.engine))
         self.client = self.enterContext(TestClient(app, raise_server_exceptions=False))
@@ -35,7 +56,7 @@ class TicketsTransactionTests(CommittedDatabaseTestCase):
         }
 
     def test_post_is_committed_and_visible_to_an_independent_connection(self):
-        response = self.client.post("/api/v1/tickets", json=self.payload)
+        response = self.client.post("/api/v1/tickets", json=self.payload, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201, response.text)
         ticket_id = response.json()["id"]
         with self.engine.connect() as connection:
@@ -51,19 +72,23 @@ class TicketsTransactionTests(CommittedDatabaseTestCase):
                 .one()
             )
         self.assertEqual(dict(row), {key: self.payload[key] for key in row})
-        fetched = self.client.get(response.headers["Location"])
+        fetched = self.client.get(response.headers["Location"], headers=self.auth_headers)
         self.assertEqual(fetched.status_code, 200, fetched.text)
         self.assertEqual(fetched.json(), response.json())
 
     def test_failed_response_rolls_back_and_next_request_can_commit(self):
-        with patch("app.modules.tickets.service.get_ticket", side_effect=RuntimeError("failed")):
-            failed = self.client.post("/api/v1/tickets", json=self.payload)
+        with patch(
+            "app.modules.tickets.service.get_ticket_unscoped", side_effect=RuntimeError("failed")
+        ):
+            failed = self.client.post(
+                "/api/v1/tickets", json=self.payload, headers=self.auth_headers
+            )
         self.assertEqual(failed.status_code, 500)
         with self.engine.connect() as connection:
             count = connection.execute(text("SELECT count(*) FROM tickets")).scalar_one()
         self.assertEqual(count, self.initial_ticket_count)
 
-        response = self.client.post("/api/v1/tickets", json=self.payload)
+        response = self.client.post("/api/v1/tickets", json=self.payload, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201, response.text)
         with self.engine.connect() as connection:
             count = connection.execute(text("SELECT count(*) FROM tickets")).scalar_one()

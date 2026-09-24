@@ -19,7 +19,7 @@ from app.db.models import (
     TicketComment,
 )
 from app.modules.tickets.enums import TicketStatus
-from app.modules.tickets.service import get_ticket
+from app.modules.tickets.service import get_ticket_unscoped
 from seed_demo import DEMO_VISITS, MOSCOW_TIME, seed_data
 from tests.support import DatabaseTestCase
 
@@ -53,9 +53,13 @@ class SeedDemoTests(DatabaseTestCase):
             district = self.session.get(District, building.district_id)
             self.assertEqual(district.name, visit.district)
             self.assertEqual(district.city_id, building.city_id)
-            self.assertEqual(get_ticket(self.session, ticket.id).location.district_id, district.id)
+            self.assertEqual(
+                get_ticket_unscoped(self.session, ticket.id).location.district_id, district.id
+            )
             self.assertEqual(result.address, visit.address)
-            self.assertEqual(get_ticket(self.session, ticket.id).location.address, visit.address)
+            self.assertEqual(
+                get_ticket_unscoped(self.session, ticket.id).location.address, visit.address
+            )
             local_start = ticket.visit_window_start.astimezone(MOSCOW_TIME)
             self.assertEqual(local_start.date(), self.visit_date)
             self.assertEqual(local_start.hour, visit.start_hour)
@@ -88,7 +92,7 @@ class SeedDemoTests(DatabaseTestCase):
         self.assertEqual(assignment_count, len(DEMO_VISITS))
         self.assertEqual(comment_count, len(DEMO_VISITS))
         self.assertTrue(
-            all(get_ticket(self.session, item.ticket_id).assignee_ids for item in first)
+            all(get_ticket_unscoped(self.session, item.ticket_id).assignee_ids for item in first)
         )
 
         first_comment = self.session.scalars(
