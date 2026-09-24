@@ -1,0 +1,54 @@
+meta {
+  name: Подтвердить новое окно визита
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{execution_ticket_id}}/window-change
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+headers {
+  Idempotency-Key: execution-window-change
+}
+
+body:json {
+  {
+    "expected_revision": 2,
+    "occurred_at": "{{execution_occurred_at}}",
+    "reason": "Клиент подтвердил новое окно",
+    "new_window_start": "{{execution_new_window_start}}",
+    "new_window_end": "{{execution_new_window_end}}",
+    "payload": {}
+  }
+}
+
+script:pre-request {
+  const now = Date.now();
+  bru.setVar("execution_occurred_at", new Date(now).toISOString());
+  bru.setVar("execution_new_window_start", new Date(now + 2 * 60 * 60 * 1000).toISOString());
+  bru.setVar("execution_new_window_end", new Date(now + 6 * 60 * 60 * 1000).toISOString());
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Сохранено новое окно и увеличена ревизия", function () {
+    const ticket = res.getBody();
+    expect(ticket.revision).to.equal(3);
+    expect(new Date(ticket.visit_window_start).getTime()).to.equal(
+      new Date(bru.getVar("execution_new_window_start")).getTime()
+    );
+    expect(new Date(ticket.visit_window_end).getTime()).to.equal(
+      new Date(bru.getVar("execution_new_window_end")).getTime()
+    );
+  });
+}

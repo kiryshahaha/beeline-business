@@ -9,6 +9,17 @@ from app.modules.notifications.enums import NotificationKind
 TICKET_SELECT_SQL = """
     SELECT
         t.id, t.location_id, t.title, t.description, t.work_type, t.status,
+        CASE
+            WHEN t.lifecycle_state = 'waiting_assignment' AND t.status = 'in_progress'
+                THEN 'in_progress'
+            WHEN t.lifecycle_state = 'waiting_assignment' AND t.status = 'completed'
+                THEN 'completed'
+            WHEN t.lifecycle_state = 'waiting_assignment' AND t.status = 'wont_fix'
+                THEN 'cancelled'
+            ELSE t.lifecycle_state
+        END AS state,
+        t.revision, t.execution_cycle,
+        t.actual_started_at, t.actual_completed_at, t.cancel_reason, t.last_event_id,
         t.visit_window_start, t.visit_window_end, t.planned_start_at, t.planned_end_at,
         t.estimated_duration_minutes, t.actual_duration_minutes,
         t.created_at, t.updated_at,
@@ -70,11 +81,11 @@ def add_ticket(session: Session, values: dict[str, object]) -> int:
     return session.execute(
         text("""
             INSERT INTO tickets (
-                location_id, title, description, work_type, status,
+                location_id, title, description, work_type, status, lifecycle_state,
                 visit_window_start, visit_window_end, planned_start_at, planned_end_at,
                 estimated_duration_minutes, actual_duration_minutes
             ) VALUES (
-                :location_id, :title, :description, :work_type, :status,
+                :location_id, :title, :description, :work_type, :status, :lifecycle_state,
                 :visit_window_start, :visit_window_end, :planned_start_at, :planned_end_at,
                 :estimated_duration_minutes, :actual_duration_minutes
             )
@@ -88,7 +99,9 @@ def lock_ticket(session: Session, ticket_id: int) -> RowMapping | None:
     return (
         session.execute(
             text("""
-                SELECT id, title, status
+                SELECT id, title, status, lifecycle_state, revision, execution_cycle,
+                       location_id, visit_window_start, visit_window_end,
+                       planned_start_at, planned_end_at
                 FROM tickets
                 WHERE id = :ticket_id
                 FOR UPDATE

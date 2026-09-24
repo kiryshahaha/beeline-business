@@ -1,5 +1,6 @@
 """Explicit model registry for Alembic; domain modules do not import one another."""
 
+from app.modules.appliances.execution_models import EquipmentMovement
 from app.modules.appliances.models import (
     Appliance,
     ApplianceMovement,
@@ -18,9 +19,12 @@ from app.modules.comments.models import TicketComment
 from app.modules.data_exchange.models import DataImport
 from app.modules.districts.models import District
 from app.modules.entrances.models import Entrance
+from app.modules.execution.day_models import WorkerDayState
+from app.modules.execution.models import Division, WorkEvent
 from app.modules.locations.models import Location
 from app.modules.notifications.models import NotificationEvent, PushSubscription
 from app.modules.offices.models import Office  # noqa: F401
+from app.modules.planning.day_models import DayPlanRevision
 from app.modules.planning.models import PlanningPlan, PlanningPlanRoute
 from app.modules.routing.models import Route
 from app.modules.streets.models import Street
@@ -44,6 +48,7 @@ __all__ = [
     "ApplianceMovement",
     "ApplianceOperation",
     "ApplianceStock",
+    "EquipmentMovement",
     "OfficeKitReserve",
     "TicketApplianceState",
     "WorkerAppliance",
@@ -53,6 +58,7 @@ __all__ = [
     "CalendarToken",
     "City",
     "District",
+    "Division",
     "DataImport",
     "Entrance",
     "Location",
@@ -69,10 +75,13 @@ __all__ = [
     "Worker",
     "WorkerSkill",
     "WorkerSkillAssignment",
+    "WorkEvent",
+    "WorkerDayState",
     "WorkType",
     "WorkTypePlanningRule",
     "WorkTypeRequiredSkill",
     "WorkTypeRequiredAppliance",
     "PlanningPlan",
     "PlanningPlanRoute",
+    "DayPlanRevision",
 ]

@@ -3,7 +3,7 @@
   "route_date": "2030-01-15",
   "files": {
     "mixed.zip": {
-      "sha256": "12767a2f7350511e54a27b778e5f4c46fb82a51c3cd4803f1d17061a3f7ffb57",
+      "sha256": "3a30dfdc686b0cd403a889695772273a95d61130bb687f577e1946dd977a9ed5",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -15,6 +15,7 @@
         "work_type_planning_rules": 3,
         "workers": 4,
         "buildings": 24,
+        "divisions": 12,
         "work_type_required_appliances": 3,
         "work_type_required_skills": 3,
         "worker_skill_assignments": 12,
@@ -28,12 +29,16 @@
         "ticket_appliances": 24,
         "ticket_assignments": 0,
         "ticket_comments": 0,
+        "work_events": 1,
+        "worker_day_states": 1,
         "brigade_members": 4,
+        "day_plan_revisions": 1,
+        "equipment_movements": 1,
         "routes": 0
       }
     },
     "mixed.xlsx": {
-      "sha256": "4dfe25e580596ca6e52afbbf0d7673fe49c273e1ba373fd7d0d688fe4ccc6ee6",
+      "sha256": "69e83b2a6330b8984c06b196f8ae0548beeb75cfe492122c120a7b5683c474e6",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -45,6 +50,7 @@
         "work_type_planning_rules": 3,
         "workers": 4,
         "buildings": 24,
+        "divisions": 12,
         "work_type_required_appliances": 3,
         "work_type_required_skills": 3,
         "worker_skill_assignments": 12,
@@ -58,12 +64,16 @@
         "ticket_appliances": 24,
         "ticket_assignments": 0,
         "ticket_comments": 0,
+        "work_events": 1,
+        "worker_day_states": 1,
         "brigade_members": 4,
+        "day_plan_revisions": 1,
+        "equipment_movements": 1,
         "routes": 0
       }
     },
     "duplicate_coordinates.zip": {
-      "sha256": "8f5aa750c2a2c0a26bbdeb9336a67836013e2d20434b84f4cf8515bb4ab3af6c",
+      "sha256": "e0949d0cde3ebe8f0417ee9fc7e899bd5e5e0f7a95b30f2b8af2e57128f8a023",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -75,6 +85,7 @@
         "work_type_planning_rules": 3,
         "workers": 4,
         "buildings": 24,
+        "divisions": 12,
         "work_type_required_appliances": 3,
         "work_type_required_skills": 3,
         "worker_skill_assignments": 12,
@@ -88,12 +99,16 @@
         "ticket_appliances": 24,
         "ticket_assignments": 0,
         "ticket_comments": 0,
+        "work_events": 1,
+        "worker_day_states": 1,
         "brigade_members": 4,
+        "day_plan_revisions": 1,
+        "equipment_movements": 1,
         "routes": 0
       }
     },
     "duplicate_coordinates.xlsx": {
-      "sha256": "bcb97831c89c53ed9a67074346a0df1de74c2e248be11b2b0bc598ae60486bd0",
+      "sha256": "0b4462bec9f5bf05a75e5c7d1f6b03e0374a41ccd5bc748e4ad7e2e2f88b6639",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -105,6 +120,7 @@
         "work_type_planning_rules": 3,
         "workers": 4,
         "buildings": 24,
+        "divisions": 12,
         "work_type_required_appliances": 3,
         "work_type_required_skills": 3,
         "worker_skill_assignments": 12,
@@ -118,12 +134,16 @@
         "ticket_appliances": 24,
         "ticket_assignments": 0,
         "ticket_comments": 0,
+        "work_events": 1,
+        "worker_day_states": 1,
         "brigade_members": 4,
+        "day_plan_revisions": 1,
+        "equipment_movements": 1,
         "routes": 0
       }
     },
     "night.zip": {
-      "sha256": "5776c8ae1b4945dfcf16d3cdd4f2a33faefc6eecf4ba8b8034d6afd26e5cde1e",
+      "sha256": "ee54f8fc49aae841bef144cb4dc1be1aeab38243cd3168eb44b4418c47ccff50",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -135,6 +155,7 @@
         "work_type_planning_rules": 3,
         "workers": 4,
         "buildings": 24,
+        "divisions": 12,
         "work_type_required_appliances": 3,
         "work_type_required_skills": 3,
         "worker_skill_assignments": 12,
@@ -148,12 +169,16 @@
         "ticket_appliances": 24,
         "ticket_assignments": 0,
         "ticket_comments": 0,
+        "work_events": 1,
+        "worker_day_states": 1,
         "brigade_members": 4,
+        "day_plan_revisions": 1,
+        "equipment_movements": 1,
         "routes": 0
       }
     },
     "night.xlsx": {
-      "sha256": "d33809a4a6cd3b9f7250bd20f07e4b502126b03c700a8d1a4d33ad086cd6f46c",
+      "sha256": "d72fef1c04ede43c3788b91002b31948b2c3a61ed4fa75d8719df0e27303ae58",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -165,6 +190,7 @@
         "work_type_planning_rules": 3,
         "workers": 4,
         "buildings": 24,
+        "divisions": 12,
         "work_type_required_appliances": 3,
         "work_type_required_skills": 3,
         "worker_skill_assignments": 12,
@@ -178,12 +204,16 @@
         "ticket_appliances": 24,
         "ticket_assignments": 0,
         "ticket_comments": 0,
+        "work_events": 1,
+        "worker_day_states": 1,
         "brigade_members": 4,
+        "day_plan_revisions": 1,
+        "equipment_movements": 1,
         "routes": 0
       }
     },
     "rejections.zip": {
-      "sha256": "70a9511072a7fbdb817394a6347bffbe03e19a05d8326f342e039ab47aa63cfd",
+      "sha256": "e16060151f32b38f7445d9c618336de7b05b0854e1de027fd6868ce1e841cf0e",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -195,6 +225,7 @@
         "work_type_planning_rules": 3,
         "workers": 4,
         "buildings": 24,
+        "divisions": 12,
         "work_type_required_appliances": 3,
         "work_type_required_skills": 3,
         "worker_skill_assignments": 12,
@@ -208,12 +239,16 @@
         "ticket_appliances": 23,
         "ticket_assignments": 0,
         "ticket_comments": 0,
+        "work_events": 1,
+        "worker_day_states": 1,
         "brigade_members": 4,
+        "day_plan_revisions": 1,
+        "equipment_movements": 1,
         "routes": 0
       }
     },
     "rejections.xlsx": {
-      "sha256": "a7a97c8414977530336f4e0d2ed78fbda0fe6ce0860d7e01446395e60210eb49",
+      "sha256": "05f8dca75407bcbd7bb9337aa9e9f9c98b769b97754e2ca89cde69291df19b09",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -225,6 +260,7 @@
         "work_type_planning_rules": 3,
         "workers": 4,
         "buildings": 24,
+        "divisions": 12,
         "work_type_required_appliances": 3,
         "work_type_required_skills": 3,
         "worker_skill_assignments": 12,
@@ -238,12 +274,16 @@
         "ticket_appliances": 23,
         "ticket_assignments": 0,
         "ticket_comments": 0,
+        "work_events": 1,
+        "worker_day_states": 1,
         "brigade_members": 4,
+        "day_plan_revisions": 1,
+        "equipment_movements": 1,
         "routes": 0
       }
     },
     "overload.zip": {
-      "sha256": "82393dc9468da9e60421105a2a5bf41ffc5e67a105ebe40c9ec9eda592d38b1e",
+      "sha256": "c347785e3edf2e87c85e6c50d549fb5af3ad980dd540cc771742b057eb9f4cfd",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -255,6 +295,7 @@
         "work_type_planning_rules": 3,
         "workers": 4,
         "buildings": 24,
+        "divisions": 12,
         "work_type_required_appliances": 3,
         "work_type_required_skills": 3,
         "worker_skill_assignments": 12,
@@ -268,12 +309,16 @@
         "ticket_appliances": 50,
         "ticket_assignments": 0,
         "ticket_comments": 0,
+        "work_events": 1,
+        "worker_day_states": 1,
         "brigade_members": 4,
+        "day_plan_revisions": 1,
+        "equipment_movements": 1,
         "routes": 0
       }
     },
     "overload.xlsx": {
-      "sha256": "1dc0941bbab02bc23485449af2ac24e41ba67b8bc11171849507d9a20d8beb92",
+      "sha256": "0f6d26af0f131b6a1287138f9bdb60e324672a5a27baa10501452e01d41e61c9",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -285,6 +330,7 @@
         "work_type_planning_rules": 3,
         "workers": 4,
         "buildings": 24,
+        "divisions": 12,
         "work_type_required_appliances": 3,
         "work_type_required_skills": 3,
         "worker_skill_assignments": 12,
@@ -298,12 +344,16 @@
         "ticket_appliances": 50,
         "ticket_assignments": 0,
         "ticket_comments": 0,
+        "work_events": 1,
+        "worker_day_states": 1,
         "brigade_members": 4,
+        "day_plan_revisions": 1,
+        "equipment_movements": 1,
         "routes": 0
       }
     },
     "volume.zip": {
-      "sha256": "f79ef7fbbc2266983774173607d5a723e6f64391aad76f0fd2929651cbc193b3",
+      "sha256": "5cfbdcbce752250fa06ae550a3c2538a39574cfd857e79a0467de03363af443f",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -315,6 +365,7 @@
         "work_type_planning_rules": 3,
         "workers": 20,
         "buildings": 24,
+        "divisions": 12,
         "work_type_required_appliances": 3,
         "work_type_required_skills": 3,
         "worker_skill_assignments": 60,
@@ -328,12 +379,16 @@
         "ticket_appliances": 50,
         "ticket_assignments": 0,
         "ticket_comments": 0,
+        "work_events": 1,
+        "worker_day_states": 1,
         "brigade_members": 20,
+        "day_plan_revisions": 1,
+        "equipment_movements": 1,
         "routes": 0
       }
     },
     "volume.xlsx": {
-      "sha256": "124a00bafed2a82e4636c77bcf84e1492a5f4935fd94ddb9b9eee0440b7e64f9",
+      "sha256": "a0df44bc98866eddec9a42712d4168dea016d18bc3447f18e75b27ab4806ca70",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -345,6 +400,7 @@
         "work_type_planning_rules": 3,
         "workers": 20,
         "buildings": 24,
+        "divisions": 12,
         "work_type_required_appliances": 3,
         "work_type_required_skills": 3,
         "worker_skill_assignments": 60,
@@ -358,7 +414,11 @@
         "ticket_appliances": 50,
         "ticket_assignments": 0,
         "ticket_comments": 0,
+        "work_events": 1,
+        "worker_day_states": 1,
         "brigade_members": 20,
+        "day_plan_revisions": 1,
+        "equipment_movements": 1,
         "routes": 0
       }
     }

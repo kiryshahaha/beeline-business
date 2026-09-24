@@ -59,6 +59,8 @@ LEGACY = {
     "not_selected_by_solver": ("search", "Решатель не включил заявку в план"),
     "invalid_worker_role": ("data", "Пользователь не является инженером"),
     "worker_offline": ("availability", "Инженер снят с линии"),
+    "worker_unavailable": ("availability", "Инженер недоступен до конца смены"),
+    "worker_en_route": ("availability", "Инженер уже направляется к заявке"),
     "missing_office": ("data", "Инженер не привязан к офису"),
     "shift_already_started": ("availability", "Смена уже началась"),
     "unsupported_transport_profile": ("transport", "Неподдерживаемый транспорт"),
@@ -153,6 +155,28 @@ def worker_offline():
         constraint="is_on_line",
         observed={"is_on_line": False},
         required={"is_on_line": True},
+    )
+
+
+def worker_unavailable(expected_available_at=None):
+    return explain(
+        "worker_unavailable",
+        "availability",
+        "Инженер недоступен до конца смены",
+        constraint="eligible_workers=available_for_remaining_shift",
+        observed={"expected_available_at": iso(expected_available_at)}
+        if expected_available_at is not None
+        else None,
+    )
+
+
+def worker_en_route(ticket_id=None):
+    return explain(
+        "worker_en_route",
+        "availability",
+        "Инженер уже направляется к заявке",
+        constraint="eligible_workers=without_active_execution",
+        ids={"ticket_ids": [ticket_id]} if ticket_id is not None else None,
     )
 
 

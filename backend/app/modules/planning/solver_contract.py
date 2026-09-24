@@ -5,7 +5,7 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Minute = Annotated[int, Field(strict=True, ge=0, le=2880)]
-Index = Annotated[int, Field(strict=True, ge=0, le=69)]
+Index = Annotated[int, Field(strict=True, ge=0, le=99)]
 Cost = Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
 
 
@@ -14,8 +14,8 @@ class StrictModel(BaseModel):
 
 
 class Matrix(StrictModel):
-    time_minutes: list[list[Cost | None]] = Field(min_length=1, max_length=70)
-    distance_meters: list[list[Cost | None]] = Field(min_length=1, max_length=70)
+    time_minutes: list[list[Cost | None]] = Field(min_length=1, max_length=100)
+    distance_meters: list[list[Cost | None]] = Field(min_length=1, max_length=100)
 
 
 class SolveRequest(StrictModel):
@@ -112,6 +112,6 @@ class SolveResponse(StrictModel):
     status: Literal["FEASIBLE", "OPTIMAL", "INFEASIBLE", "NOT_SOLVED"]
     solver_status_code: Annotated[int, Field(strict=True, ge=0, le=100)]
     routes: list[Route] = Field(default_factory=list, max_length=20)
-    dropped_nodes: list[Index] = Field(default_factory=list, max_length=70)
+    dropped_nodes: list[Index] = Field(default_factory=list, max_length=100)
     total_cost: Cost = 0
     total_distance: Cost = 0

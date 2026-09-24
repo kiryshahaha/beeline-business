@@ -1,10 +1,15 @@
 """User management, skill catalog, and worker profile service."""
 
-from sqlalchemy import RowMapping
+from datetime import UTC, datetime, time
+from hashlib import sha256
+
+from sqlalchemy import RowMapping, text
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
 from app.core.security import hash_password
+from app.modules.execution.day_state import mark_worker_unavailable
+from app.modules.execution.schemas import WorkerUnavailableCommand
 from app.modules.users import repository
 from app.modules.users.enums import TransportType, UserRole
 from app.modules.users.schemas import (
@@ -155,7 +160,12 @@ def get_all_skills(session: Session) -> list[WorkerSkillRead]:
 
 
 def update_worker_line_status(
-    session: Session, worker_id: int, is_on_line: bool
+    session: Session,
+    worker_id: int,
+    is_on_line: bool,
+    *,
+    actor_id: int | None = None,
+    idempotency_key: str | None = None,
 ) -> WorkerLineStatusRead:
     with session.begin():
         lock_planning_mutation(session)
@@ -163,11 +173,61 @@ def update_worker_line_status(
         if worker is None:
             raise WorkerNotFoundError
 
-        repository.update_worker_line_status(session, worker_id, is_on_line)
         released_ticket_ids: list[int] = []
         if not is_on_line:
-            released_ticket_ids = repository.release_planned_assignments(session, worker_id)
-            repository.clear_planned_times_without_assignees(session, released_ticket_ids)
+            if worker["is_on_line"]:
+                contexts = repository.list_worker_day_contexts(session, worker_id)
+                for context in contexts:
+                    current = session.execute(
+                        text(
+                            """
+                            SELECT revision
+                            FROM worker_day_states
+                            WHERE worker_id = :worker_id
+                              AND district_id = :district_id
+                              AND route_date = :route_date
+                            FOR UPDATE
+                            """
+                        ),
+                        {
+                            "worker_id": worker_id,
+                            "district_id": context["district_id"],
+                            "route_date": context["route_date"],
+                        },
+                    ).scalar_one_or_none()
+                    command = WorkerUnavailableCommand.model_construct(
+                        expected_revision=current or 1,
+                        occurred_at=datetime.combine(context["route_date"], time(12), UTC),
+                        reason="line_status",
+                        expected_available_at=None,
+                        worker_id=worker_id,
+                        district_id=context["district_id"],
+                        route_date=context["route_date"],
+                        payload={"source": "line_status"},
+                    )
+                    context_key = (
+                        f"{idempotency_key or f'line-status:{worker_id}'}:"
+                        f"{context['district_id']}:{context['route_date']}"
+                    )
+                    if len(context_key) > 128:
+                        context_key = sha256(context_key.encode()).hexdigest()
+                    _, released = mark_worker_unavailable(
+                        session,
+                        worker_id,
+                        command,
+                        actor_id=actor_id or worker_id,
+                        idempotency_key=context_key,
+                    )
+                    released_ticket_ids.extend(released)
+                repository.update_worker_line_status(session, worker_id, False)
+            else:
+                return WorkerLineStatusRead(
+                    worker_id=worker_id,
+                    is_on_line=False,
+                    released_ticket_ids=[],
+                )
+        else:
+            repository.update_worker_line_status(session, worker_id, True)
 
         return WorkerLineStatusRead(
             worker_id=worker_id,

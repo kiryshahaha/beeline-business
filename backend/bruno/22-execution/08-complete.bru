@@ -1,0 +1,44 @@
+meta {
+  name: Завершить заявку
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{execution_ticket_id}}/complete
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+headers {
+  Idempotency-Key: execution-complete
+}
+
+body:json {
+  {
+    "expected_revision": 7,
+    "occurred_at": "{{execution_occurred_at}}",
+    "worker_id": {{worker_two_id}},
+    "location_id": {{location_id}},
+    "payload": {}
+  }
+}
+
+script:pre-request {
+  bru.setVar("execution_occurred_at", new Date().toISOString());
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Заявка завершена", function () {
+    expect(res.getBody().state).to.equal("completed");
+    expect(res.getBody().revision).to.equal(8);
+  });
+}

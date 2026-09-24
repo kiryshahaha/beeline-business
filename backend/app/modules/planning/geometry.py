@@ -56,7 +56,7 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
     for route in routes:
         vehicle = route.vehicle_id
         worker = prepared["workers"][vehicle]
-        lines, legs, stops, visits = [], [], [], []
+        lines, legs, public_steps, stops, visits = [], [], [], [], []
         travel = distance = waiting_total = 0
         matrix = problem.matrices[worker["profile"]]
 
@@ -152,6 +152,7 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
                         "duration_source": ticket["duration_source"],
                     }
                 )
+            public_steps.append(step)
             stops.append(stop)
 
         properties = GeoapifyPathProperties(
@@ -182,8 +183,7 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
                     "geometry": {"type": "Point", "coordinates": position(step.node)},
                     "properties": {**stop, "sequence": i + 1},
                 }
-                for i, (step, stop) in enumerate(zip(route.steps, stops, strict=True))
-                if not (open_end and step.node in finish_nodes)
+                for i, (step, stop) in enumerate(zip(public_steps, stops, strict=True))
             ]
             if lines:
                 features.append(
@@ -214,8 +214,8 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
                 "worker_id": worker["user_id"],
                 "transport_type": worker["transport_type"],
                 "routing_mode": worker["profile"],
-                "start_location_id": worker["location_id"],
-                "end_location_id": worker["location_id"],
+                "start_location_id": worker.get("start_location_id", worker["location_id"]),
+                "end_location_id": worker.get("end_location_id", worker["location_id"]),
                 "departure_at": departure_at,
                 "return_at": return_at,
                 "distance_meters": distance,

@@ -63,6 +63,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
     for i in range(1, 13):
         add("districts", id=i, city_id=(i - 1) // 4 + 1, name=f"Тестовый район {i}")
         add("streets", id=i, city_id=(i - 1) // 4 + 1, name=f"Вымышленная улица {i}")
+        add("divisions", id=i, district_id=i)
     location_count = max(24, (tickets + 2) // 3)
     for i in range(1, location_count + 1):
         district = (i - 1) % 12 + 1
@@ -122,6 +123,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             name=f"Синтетическая бригада {seed}-{i}",
             foreman_id=i + 2,
             office_id=i,
+            division_id=i,
         )
     for i in range(1, 28):
         add(
@@ -170,6 +172,12 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             # the small fixture; other scenarios retain the full address distribution.
             location = 17 * ((i // 8) % (location_count // 17) + 1)
         status = ("planned", "in_progress", "completed", "wont_fix")[(i // 8) % 4]
+        lifecycle_state = {
+            "planned": "waiting_assignment",
+            "in_progress": "in_progress",
+            "completed": "completed",
+            "wont_fix": "cancelled",
+        }[status]
         add(
             "tickets",
             id=i,
@@ -193,6 +201,14 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             + timedelta(minutes=30 if scenario == "overlapping_windows" else 240),
             estimated_duration_minutes=duration,
             actual_duration_minutes=duration + i % 20 if status == "completed" else None,
+            lifecycle_state=lifecycle_state,
+            revision=1,
+            execution_cycle=1,
+            actual_started_at=start if status in ("in_progress", "completed") else None,
+            actual_completed_at=(
+                start + timedelta(minutes=duration) if status == "completed" else None
+            ),
+            cancel_reason="Синтетическая отмена" if status == "wont_fix" else None,
             planned_start_at=start + timedelta(minutes=10)
             if status in ("in_progress", "completed")
             else None,
@@ -229,6 +245,63 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
                 websocket_delivered_at=stamp,
                 push_delivered_at=stamp,
             )
+    add(
+        "work_events",
+        id=1,
+        event_type="new_ticket",
+        ticket_id=1,
+        worker_id=9,
+        district_id=1,
+        route_date=start_date,
+        occurred_at=stamp,
+        recorded_at=stamp,
+        actor_id=1,
+        previous_state=None,
+        new_state="waiting_assignment",
+        before_revision=None,
+        after_revision=1,
+        idempotency_key=f"synthetic-{seed}-ticket-1",
+        payload={"ticket_id": 1},
+    )
+    add(
+        "worker_day_states",
+        id=1,
+        worker_id=9,
+        district_id=1,
+        route_date=start_date,
+        revision=1,
+        available=True,
+        last_location_id=1,
+        created_at=stamp,
+        updated_at=stamp,
+    )
+    add(
+        "equipment_movements",
+        id=1,
+        ticket_id=1,
+        execution_cycle=1,
+        appliance_id=1,
+        office_id=1,
+        event_id=1,
+        movement="consume",
+        quantity=1,
+        created_at=stamp,
+    )
+    add(
+        "day_plan_revisions",
+        id=1,
+        district_id=1,
+        route_date=start_date,
+        revision=1,
+        previous_revision=None,
+        event_id=1,
+        actor_id=1,
+        fingerprint=hashlib.sha256(f"synthetic-{seed}".encode()).hexdigest(),
+        diff={},
+        result={},
+        is_current=True,
+        created_at=stamp,
+    )
     # Saved routes are fixture snapshots, not an assertion that the optimizer found these plans.
     for w in range(workers):
         for day_index in range(days):

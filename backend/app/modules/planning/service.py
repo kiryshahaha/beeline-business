@@ -8,6 +8,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
+from app.modules.planning.day_models import DayPlanRevision
 from app.modules.planning.diagnostics import (
     diagnose_dropped,
     estimate_resources,
@@ -108,6 +109,8 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
             "state": "ready",
             "outcome": outcome(routes, unassigned),
             "route_date": request.route_date,
+            "district_id": snapshot.get("district_id"),
+            "day_revision": snapshot.get("current_day_revision"),
             "timezone": "Europe/Moscow",
             "expires_at": expires,
             "solver_status": solution.status if solution else None,
@@ -192,6 +195,16 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
         if plan.state == "expired" or plan.expires_at <= clock():
             plan.state = "expired"
             error = PlanningError("plan_expired", 409)
+        elif (
+            request.base_day_revision is not None
+            and current.get("current_day_revision") != request.base_day_revision
+        ):
+            plan.state = "stale"
+            error = PlanningError(
+                "day_revision_stale",
+                409,
+                current_revision=current.get("current_day_revision"),
+            )
         elif plan.state != "ready" or fingerprint(current) != plan.input_fingerprint:
             plan.state = "stale"
             error = PlanningError("plan_stale", 409)
@@ -220,7 +233,12 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                 for stop in route.stops:
                     if stop.ticket_id is None:
                         continue
-                    replace_assignees_in_transaction(session, stop.ticket_id, [route.worker_id])
+                    replace_assignees_in_transaction(
+                        session,
+                        stop.ticket_id,
+                        [route.worker_id],
+                        actor_id=plan.created_by,
+                    )
                     ticket = session.get(Ticket, stop.ticket_id)
                     ticket.planned_start_at = datetime.fromisoformat(
                         visits[stop.ticket_id]["service_start_at"]
@@ -245,11 +263,51 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                 ],
                 "assigned_ticket_ids": ticket_ids,
             }
+            district_id = current.get("district_id")
+            revision_row = None
+            if district_id is not None:
+                previous_revision = current.get("current_day_revision") or 0
+                session.execute(
+                    text(
+                        """
+                        UPDATE day_plan_revisions
+                        SET is_current = false
+                        WHERE district_id = :district_id
+                          AND route_date = :route_date
+                          AND is_current
+                        """
+                    ),
+                    {"district_id": district_id, "route_date": request.route_date},
+                )
+                revision_row = DayPlanRevision(
+                    district_id=district_id,
+                    route_date=request.route_date,
+                    revision=previous_revision + 1,
+                    previous_revision=previous_revision or None,
+                    actor_id=plan.created_by,
+                    fingerprint="pending",
+                    diff={"assigned_ticket_ids": ticket_ids},
+                    result=result,
+                    is_current=True,
+                )
+                result["day_revision"] = revision_row.revision
+                revision_row.result = result
+                plan.result_snapshot = {
+                    **plan.result_snapshot,
+                    "public": {
+                        **plan.result_snapshot["public"],
+                        "day_revision": revision_row.revision,
+                    },
+                }
+                session.add(revision_row)
+                session.flush()
             applied_fingerprint = fingerprint(
                 load_snapshot(
                     session, request, policy_snapshot=recorded_policy(plan.input_snapshot)
                 )
             )
+            if revision_row is not None:
+                revision_row.fingerprint = applied_fingerprint
             plan.applied_at = clock()
             plan.applied_fingerprint = applied_fingerprint
             plan.apply_result = result

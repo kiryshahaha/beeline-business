@@ -12,11 +12,22 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
     policy = prepared.get("policy") or execution_policy(settings)
     open_end: bool = prepared.get("open_end", False)
     workers, tickets = prepared["workers"], prepared["tickets"]
+    v = len(workers)
+    anchored = any(
+        "start_location_id" in worker or "end_location_id" in worker for worker in workers
+    )
+    open_end = open_end or anchored
     # Depot (start) nodes — one per worker.
-    depot_nodes = [{"kind": "depot", "location_id": w["location_id"]} for w in workers]
+    depot_nodes = [
+        {"kind": "depot", "location_id": w.get("start_location_id", w["location_id"])}
+        for w in workers
+    ]
     # Finish nodes — separate when open_end, same index as depot otherwise.
     if open_end:
-        finish_nodes = [{"kind": "finish", "location_id": w["location_id"]} for w in workers]
+        finish_nodes = [
+            {"kind": "finish", "location_id": w.get("end_location_id", w["location_id"])}
+            for w in workers
+        ]
     else:
         finish_nodes = depot_nodes  # same objects; starts == ends
     task_nodes = [{"kind": "ticket", "location_id": t["location_id"], "ticket": t} for t in tickets]

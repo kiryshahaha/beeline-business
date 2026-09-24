@@ -1,0 +1,44 @@
+meta {
+  name: Начать работу на адресе
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{execution_ticket_id}}/start
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+headers {
+  Idempotency-Key: execution-start
+}
+
+body:json {
+  {
+    "expected_revision": 5,
+    "occurred_at": "{{execution_occurred_at}}",
+    "worker_id": {{worker_two_id}},
+    "location_id": {{location_id}},
+    "payload": {}
+  }
+}
+
+script:pre-request {
+  bru.setVar("execution_occurred_at", new Date().toISOString());
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Работа начата", function () {
+    expect(res.getBody().state).to.equal("in_progress");
+    expect(res.getBody().revision).to.equal(6);
+  });
+}

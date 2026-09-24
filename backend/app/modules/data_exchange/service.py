@@ -235,6 +235,20 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                                     values["data"][key] = _remap(
                                         target, values["data"][key], tables, ids
                                     )
+                        if name == "divisions":
+                            existing = (
+                                session.execute(
+                                    select(table).where(
+                                        table.c.district_id == values["district_id"]
+                                    )
+                                )
+                                .mappings()
+                                .one_or_none()
+                            )
+                            if existing is not None:
+                                ids[name][source_id] = existing["id"]
+                                inserted[name].append(dict(existing))
+                                continue
                         record = dict(
                             session.execute(table.insert().values(**values).returning(table))
                             .mappings()

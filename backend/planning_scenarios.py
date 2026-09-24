@@ -17,6 +17,12 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
     data = generate_dataset(
         seed=seed, start_date=ROUTE_DATE, tickets=count, workers=workers, days=1
     )
+    # A day plan belongs to one district. Keep the fixture geographically rich
+    # while placing every location and office in district 1.
+    for building in data["buildings"]:
+        building.update(city_id=1, district_id=1, street_id=1)
+    for brigade in data["brigades"]:
+        brigade["division_id"] = 1
     for skill in data["worker_skills"]:
         skill["skill"] += f" [planning {seed}]"
     for name in ("ticket_assignments", "ticket_comments", "notification_events", "routes"):
@@ -45,6 +51,13 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
         worker = data["workers"][i % workers]
         ticket.update(
             status="planned",
+            lifecycle_state="waiting_assignment",
+            revision=1,
+            execution_cycle=1,
+            actual_started_at=None,
+            actual_completed_at=None,
+            cancel_reason=None,
+            last_event_id=None,
             work_type=work_type["name"],
             title=f"[planning:{scenario}] {i + 1}",
             visit_window_start=start,
