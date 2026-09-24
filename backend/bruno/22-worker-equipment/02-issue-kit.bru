@@ -1,0 +1,43 @@
+meta {
+  name: Выдать комплект до выезда
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/workers/{{equipment_worker_id}}/equipment/issue
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"operation_key":"bruno-kit-2030-01-15","date":"2030-01-15"}
+}
+
+assert {
+  res.status: eq 200
+  res.body.kind: eq issue
+  res.body.already_applied: eq false
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    bru.setVar("equipment_issue_id", res.getBody().id);
+    bru.setVar("equipment_return_ticket_id", res.getBody().movements[0].ticket_id);
+  }
+}
+
+tests {
+  test("Каждая позиция перемещена со склада офиса инженеру", () => {
+    const b = res.getBody();
+    expect(b.movements).to.have.lengthOf(Number(bru.getVar("equipment_kit_lines")));
+    for (const m of b.movements) {
+      expect(m.from_office_id).to.be.a("number");
+      expect(m.to_worker_id).to.equal(Number(bru.getVar("equipment_worker_id")));
+    }
+  });
+}

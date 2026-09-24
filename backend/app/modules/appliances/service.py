@@ -3,8 +3,9 @@
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.modules.appliances import repository
+from app.modules.appliances import inventory, repository
 from app.modules.appliances.enums import ApplianceType
+from app.modules.appliances.models import TicketApplianceState
 from app.modules.appliances.schemas import (
     ApplianceCreate,
     ApplianceRead,
@@ -66,6 +67,17 @@ class CannotReduceStockBelowReservedError(Exception):
 
 class TicketAlreadyClosedError(Exception):
     pass
+
+
+class AllocationLockedError(Exception):
+    pass
+
+
+def _check_allocation_in_office(session: Session, ticket_id: int, appliance_id: int) -> None:
+    if session.get(TicketApplianceState, (ticket_id, appliance_id)) is not None:
+        raise AllocationLockedError(
+            "Оборудование заявки уже выдано инженеру или списано: сначала оформите возврат"
+        )
 
 
 def _check_foreman_ticket_access(
@@ -280,6 +292,7 @@ def update_ticket_appliance(
     ta = repository.get_ticket_appliance(session, ticket_id, appliance_id)
     if ta is None:
         raise TicketApplianceNotFoundError("Оборудование не прикреплено к данной заявке")
+    _check_allocation_in_office(session, ticket_id, appliance_id)
 
     appliance = repository.get_appliance(session, appliance_id)
     if appliance is None:
@@ -328,6 +341,7 @@ def remove_ticket_appliance(
     ta = repository.get_ticket_appliance(session, ticket_id, appliance_id)
     if ta is None:
         raise TicketApplianceNotFoundError("Оборудование не прикреплено к данной заявке")
+    _check_allocation_in_office(session, ticket_id, appliance_id)
 
     repository.delete_ticket_appliance(session, ta)
 
@@ -335,11 +349,12 @@ def remove_ticket_appliance(
 def on_ticket_status_completed(
     session: Session,
     ticket_id: int,
+    actor_id: int | None = None,
     *,
     event_id: int | None = None,
     execution_cycle: int | None = None,
 ) -> None:
-    """Consume non-tool equipment from office stocks upon ticket completion."""
+    """Consume physical equipment once and keep the execution-cycle ledger in sync."""
     if event_id is None or execution_cycle is None:
         row = session.execute(
             text(
@@ -353,8 +368,9 @@ def on_ticket_status_completed(
         ).one()
         event_id = event_id or row[0]
         execution_cycle = execution_cycle or row[1]
-    if event_id is None:
-        raise ValueError("Для списания нужен идентификатор события завершения")
+    inventory.consume_on_completion(session, ticket_id, actor_id)
+    if event_id is None or execution_cycle is None:
+        return
     repository.consume_ticket_appliances_on_completed(
         session,
         ticket_id,

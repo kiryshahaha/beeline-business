@@ -1,7 +1,16 @@
 """Explicit model registry for Alembic; domain modules do not import one another."""
 
 from app.modules.appliances.execution_models import EquipmentMovement
-from app.modules.appliances.models import Appliance, ApplianceStock, TicketAppliance
+from app.modules.appliances.models import (
+    Appliance,
+    ApplianceMovement,
+    ApplianceOperation,
+    ApplianceStock,
+    OfficeKitReserve,
+    TicketAppliance,
+    TicketApplianceState,
+    WorkerAppliance,
+)
 from app.modules.brigades.models import Brigade, BrigadeMember
 from app.modules.buildings.models import Building
 from app.modules.calendar_feed.models import CalendarToken
@@ -36,8 +45,13 @@ from app.modules.work_types.models import (
 
 __all__ = [
     "Appliance",
+    "ApplianceMovement",
+    "ApplianceOperation",
     "ApplianceStock",
     "EquipmentMovement",
+    "OfficeKitReserve",
+    "TicketApplianceState",
+    "WorkerAppliance",
     "Building",
     "Brigade",
     "BrigadeMember",

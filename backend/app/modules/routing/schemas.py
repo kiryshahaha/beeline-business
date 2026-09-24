@@ -157,6 +157,11 @@ class RouteCreate(StrictModel):
 
 class StopProperties(RouteStop):
     sequence: PositiveInt32
+    service_start_at: AwareDatetime | None = None
+    service_end_at: AwareDatetime | None = None
+    waiting_minutes: int | None = None
+    effective_service_minutes: int | None = None
+    duration_source: Literal["ticket_estimate", "work_norm"] | None = None
 
 
 class Point(StrictModel):
@@ -203,7 +208,14 @@ class RouteGeoJSON(StrictModel):
         RouteCreate(
             worker_id=self.properties.worker_id,
             route_date=self.properties.route_date,
-            stops=[RouteStop(**f.properties.model_dump(exclude={"sequence"})) for f in stops],
+            stops=[
+                RouteStop(
+                    location_id=f.properties.location_id,
+                    ticket_id=f.properties.ticket_id,
+                    arrival_at=f.properties.arrival_at,
+                )
+                for f in stops
+            ],
         )
         if paths:
             if isinstance(paths[0].properties, GeoapifyPathProperties):

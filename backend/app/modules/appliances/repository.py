@@ -111,6 +111,10 @@ def get_reserved_stock_for_office(
         WHERE ta.office_id = :office_id
           AND ta.appliance_id = :appliance_id
           AND t.status IN ('planned', 'in_progress')
+          AND NOT EXISTS (
+              SELECT 1 FROM ticket_appliance_states s
+              WHERE s.ticket_id = ta.ticket_id AND s.appliance_id = ta.appliance_id
+          )
     """
     params: dict[str, Any] = {"office_id": office_id, "appliance_id": appliance_id}
     if exclude_ticket_id is not None:
@@ -140,6 +144,10 @@ def list_office_stocks(session: Session, office_id: int) -> list[dict[str, Any]]
             JOIN tickets t ON t.id = ta.ticket_id
             WHERE ta.office_id = :office_id
               AND t.status IN ('planned', 'in_progress')
+              AND NOT EXISTS (
+                  SELECT 1 FROM ticket_appliance_states s
+                  WHERE s.ticket_id = ta.ticket_id AND s.appliance_id = ta.appliance_id
+              )
             GROUP BY ta.appliance_id
         ) r ON r.appliance_id = a.id
         WHERE a.is_active = TRUE
@@ -253,7 +261,7 @@ def find_ticket_default_office_id(session: Session, ticket_id: int) -> int | Non
 def consume_ticket_appliances_on_completed(
     session: Session, ticket_id: int, *, event_id: int, execution_cycle: int
 ) -> None:
-    """Deduct consumables (all except TOOL) from physical stock upon ticket completion."""
+    """Record consumables for this execution cycle after physical inventory is updated."""
     query = """
         SELECT ta.office_id, ta.appliance_id, ta.quantity, a.type
         FROM ticket_appliances ta
@@ -283,27 +291,6 @@ def consume_ticket_appliances_on_completed(
             ).scalar_one_or_none()
             if existing_movement is not None:
                 continue
-            stock = session.execute(
-                text(
-                    """
-                    SELECT stock
-                    FROM appliance_stocks
-                    WHERE office_id = :office_id
-                      AND appliance_id = :appliance_id
-                    FOR UPDATE
-                    """
-                ),
-                {
-                    "office_id": row["office_id"],
-                    "appliance_id": row["appliance_id"],
-                },
-            ).scalar_one_or_none()
-            if stock is None or stock < row["quantity"]:
-                from app.modules.appliances.service import InsufficientStockError
-
-                raise InsufficientStockError(
-                    f"Недостаточно оборудования на складе: appliance_id={row['appliance_id']}"
-                )
             movement_id = session.execute(
                 text(
                     """
@@ -330,27 +317,4 @@ def consume_ticket_appliances_on_completed(
             ).scalar_one_or_none()
             if movement_id is None:
                 continue
-            updated_stock = session.execute(
-                text(
-                    """
-                    UPDATE appliance_stocks
-                    SET stock = stock - :quantity
-                    WHERE office_id = :office_id
-                      AND appliance_id = :appliance_id
-                      AND stock >= :quantity
-                    RETURNING stock
-                    """
-                ),
-                {
-                    "office_id": row["office_id"],
-                    "appliance_id": row["appliance_id"],
-                    "quantity": row["quantity"],
-                },
-            ).scalar_one_or_none()
-            if updated_stock is None:
-                from app.modules.appliances.service import InsufficientStockError
-
-                raise InsufficientStockError(
-                    f"Недостаточно оборудования на складе: appliance_id={row['appliance_id']}"
-                )
     session.flush()

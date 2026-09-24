@@ -239,6 +239,13 @@ def update_user(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Для назначения роли worker нужны смена и хотя бы один навык",
         ) from error
+    except IntegrityError as error:
+        # Leaving the worker role deletes the profile; units on hand must not vanish with it.
+        if getattr(error.orig, "sqlstate", None) != "23503":
+            raise
+        raise HTTPException(
+            409, "У исполнителя есть оборудование на руках или история маршрутов"
+        ) from error
 
 
 @router.delete(

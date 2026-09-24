@@ -1,0 +1,15 @@
+meta {
+  name: Без токена оборудование инженера не читается
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{base_url}}/api/v1/workers/{{equipment_worker_id}}/equipment
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 401
+}

@@ -4,6 +4,7 @@ import math
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from app.modules.planning import reasons
 from app.modules.planning.errors import PlanningError
 from app.modules.planning.policy import snapshot_policy
 
@@ -20,10 +21,42 @@ def dt(value: str) -> datetime:
     return datetime.fromisoformat(value)
 
 
+def at(epoch: datetime, minutes: int) -> datetime:
+    return epoch + timedelta(minutes=minutes)
+
+
+def candidate_reason(ticket, window, duration, skills, allocations, worker, epoch):
+    """First failed hard rule for one engineer; the order goes from qualification to time."""
+    day = epoch.date()
+    missing = sorted(skills - worker["skill_ids"])
+    if missing:
+        return reasons.missing_skill(missing, skills)
+    offices = sorted({a["office_id"] for a in allocations})
+    if any(office != worker["office_id"] for office in offices):
+        return reasons.office_mismatch(worker["office_id"], offices)
+    # service_start must be in [window[0], window[1]] AND in shift;
+    # service_end (start + duration) must fit within shift_end.
+    lower = max(window[0], worker["window"][0])
+    if lower > min(window[1], worker["window"][1]):
+        return reasons.window_outside_shift(
+            dt(ticket["visit_window_start"]),
+            dt(ticket["visit_window_end"]),
+            at(epoch, worker["window"][0]),
+            at(epoch, worker["window"][1]),
+            day,
+        )
+    if lower + duration > worker["window"][1]:
+        return reasons.service_after_shift(
+            at(epoch, lower), duration, at(epoch, worker["window"][1]), day
+        )
+    return None
+
+
 def prepare(snapshot: dict, now: datetime) -> dict:
     policy = snapshot_policy(snapshot)
     request = snapshot["request"]
     epoch = datetime.combine(datetime.fromisoformat(request["route_date"]).date(), time(), MOSCOW)
+    day = epoch.date()
     missing = {
         "ticket_ids": sorted(set(request["ticket_ids"]) - {t["id"] for t in snapshot["tickets"]}),
         "worker_ids": sorted(
@@ -55,25 +88,35 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         day_state = day_states.get(wid)
         reason = None
         if roles.get(wid) != "worker":
-            reason = "invalid_worker_role"
+            reason = reasons.invalid_worker_role(roles.get(wid))
         elif day_state and not day_state["available"]:
-            reason = "worker_unavailable"
+            reason = reasons.worker_unavailable(
+                dt(day_state["expected_available_at"])
+                if day_state.get("expected_available_at")
+                else None
+            )
         elif not worker["is_on_line"]:
-            reason = "worker_offline"
+            reason = reasons.worker_offline()
         elif not office:
-            reason = "missing_office"
+            reason = reasons.missing_office()
         elif not location or location["latitude"] is None or location["longitude"] is None:
-            reason = "missing_coordinates"
+            reason = reasons.office_without_coordinates(office["id"], office["location_id"])
         elif start <= now and not (day_state and day_state.get("last_location_id")):
-            reason = "shift_already_started"
+            reason = reasons.shift_already_started(start, now, day)
         elif day_state and day_state.get("current_ticket_id"):
             reason = (
-                "worker_en_route"
+                reasons.worker_en_route(day_state["current_ticket_id"])
                 if day_state.get("current_destination_id") is not None
-                else "worker_busy"
+                else reasons.explain(
+                    "worker_busy",
+                    "availability",
+                    "Инженер выполняет активную заявку",
+                    constraint="eligible_workers=without_active_execution",
+                    ids={"ticket_ids": [day_state["current_ticket_id"]]},
+                )
             )
         elif worker["transport_type"] not in PROFILES:
-            reason = "unsupported_transport_profile"
+            reason = reasons.unsupported_transport(worker["transport_type"], PROFILES)
         else:
             for assignment in snapshot["assignments"]:
                 job = busy.get(assignment["ticket_id"])
@@ -82,7 +125,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 a = dt(job["planned_start_at"] or job["visit_window_start"])
                 b = dt(job["planned_end_at"] or job["visit_window_end"])
                 if job["status"] == "in_progress" or (a < end and start < b):
-                    reason = "worker_busy"
+                    reason = reasons.worker_busy(job, a, b, day)
                     break
         if reason:
             excluded_workers.append({"worker_id": wid, "reason": reason})
@@ -130,6 +173,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         (x["office_id"], x["appliance_id"]): x["quantity"] for x in snapshot["reservations"]
     }
     appliances = {x["id"]: x for x in snapshot["appliances"]}
+    names = {x["id"]: x["name"] for x in snapshot["appliances"]}
     tickets, unassigned = [], []
     for ticket in snapshot["tickets"]:
         ticket = dict(ticket)
@@ -139,30 +183,27 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         location = locations.get(ticket["location_id"])
         allocations = [a for a in snapshot["allocations"] if a["ticket_id"] == tid]
         allocated = {a["appliance_id"]: a["quantity"] for a in allocations}
-        reason = None
+        assigned = sorted(a["worker_id"] for a in snapshot["assignments"] if a["ticket_id"] == tid)
+        reason, candidates = None, []
         if ticket["status"] != "planned":
-            reason = "ticket_not_planned"
-        elif any(a["ticket_id"] == tid for a in snapshot["assignments"]):
-            reason = "already_assigned"
+            reason = reasons.ticket_not_planned(ticket["status"])
+        elif assigned:
+            reason = reasons.already_assigned(assigned)
         elif not location or location["latitude"] is None or location["longitude"] is None:
-            reason = "missing_coordinates"
+            reason = reasons.ticket_without_coordinates(ticket["location_id"])
         elif not work_type:
-            reason = "unknown_work_type"
+            reason = reasons.unknown_work_type(ticket["work_type"])
         elif not rule:
-            reason = "work_requirements_not_configured"
+            reason = reasons.requirements_not_configured(work_type)
         if reason is None:
             duration = (
                 ticket["estimated_duration_minutes"]
                 if rule["service_duration_source"] == "ticket_estimate"
                 else work_type["work_minutes"] + work_type["documents_minutes"]
             )
-            window = policy.start_window(
-                dt(ticket["visit_window_start"]),
-                dt(ticket["visit_window_end"]),
-                epoch,
-                duration,
-                horizon,
-            )
+            window_start = dt(ticket["visit_window_start"])
+            window_end = dt(ticket["visit_window_end"])
+            window = policy.start_window(window_start, window_end, epoch, duration, horizon)
             required = [
                 a for a in snapshot["required_appliances"] if a["work_type_id"] == work_type["id"]
             ]
@@ -171,47 +212,82 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 for s in snapshot["required_skills"]
                 if s["work_type_id"] == work_type["id"]
             }
-            if not 0 < duration <= 2880:
-                reason = "invalid_service_duration"
-            elif window[0] > window[1]:
-                reason = "outside_shift_horizon"
-            elif any(allocated.get(a["appliance_id"], 0) < a["quantity"] for a in required):
-                reason = "equipment_not_reserved"
-            elif any(
-                not appliances.get(a["appliance_id"], {}).get("is_active", False)
+            not_reserved = [
+                (a["appliance_id"], allocated.get(a["appliance_id"], 0), a["quantity"])
+                for a in required
+                if allocated.get(a["appliance_id"], 0) < a["quantity"]
+            ]
+            not_issuable = [
+                {
+                    "office_id": a["office_id"],
+                    "appliance_id": a["appliance_id"],
+                    "stock": stock.get((a["office_id"], a["appliance_id"]), 0),
+                    "reserved": reserved.get((a["office_id"], a["appliance_id"]), 0),
+                    "is_active": appliances.get(a["appliance_id"], {}).get("is_active", False),
+                }
+                for a in allocations
+                if not appliances.get(a["appliance_id"], {}).get("is_active", False)
                 or reserved.get((a["office_id"], a["appliance_id"]), 0)
                 > stock.get((a["office_id"], a["appliance_id"]), 0)
-                for a in allocations
-            ):
-                reason = "stock_inconsistent"
+            ]
+            if not 0 < duration <= 2880:
+                reason = reasons.invalid_duration(
+                    duration, rule["service_duration_source"], work_type
+                )
+            elif window[0] > window[1]:
+                reason = reasons.outside_horizon(
+                    window_start, window_end, epoch, at(epoch, horizon), day
+                )
+            elif not_reserved:
+                reason = reasons.equipment_not_reserved(not_reserved, names)
+            elif not_issuable:
+                reason = reasons.stock_inconsistent(not_issuable, names)
             else:
-                allowed = [
-                    v
-                    for v, w in enumerate(workers)
-                    if skills <= w["skill_ids"]
-                    and all(a["office_id"] == w["office_id"] for a in allocations)
-                    and max(window[0], w["window"][0]) <= min(window[1], w["window"][1] - duration)
-                ]
-                if not allowed:
-                    reason = "no_eligible_worker"
-                else:
+                allowed = []
+                for v, w in enumerate(workers):
+                    why = candidate_reason(ticket, window, duration, skills, allocations, w, epoch)
+                    if why:
+                        candidates.append({"worker_id": w["user_id"], "reason": why})
+                    else:
+                        allowed.append(v)
+                nobody = sorted(skills - set().union(*(w["skill_ids"] for w in workers)))
+                if allowed:
                     ticket.update(
                         window=window,
                         duration=duration,
                         allowed=allowed,
                         duration_source=rule["service_duration_source"],
+                        rejected=candidates,
+                        required_skill_ids=sorted(skills),
+                        allocations=[
+                            {
+                                "appliance_id": a["appliance_id"],
+                                "office_id": a["office_id"],
+                                "quantity": a["quantity"],
+                            }
+                            for a in allocations
+                        ],
                     )
+                elif not workers:
+                    reason = reasons.no_available_workers(len(excluded_workers))
+                elif nobody:
+                    reason = reasons.skill_nobody_has(nobody, skills, len(workers))
+                else:
+                    reason = reasons.no_eligible_worker(candidates)
         if reason:
-            unassigned.append({"ticket_id": tid, "reason": reason})
+            unassigned.append({"ticket_id": tid, "reason": reason, "candidates": candidates})
         else:
             tickets.append(ticket)
+    open_end = policy.route_end == "open_end"
     return {
         "policy": policy,
         "epoch": epoch,
         "horizon": horizon,
+        "open_end": open_end,
         "workers": workers,
         "tickets": tickets,
         "locations": locations,
+        "appliance_names": names,
         "unassigned": unassigned,
         "excluded_workers": excluded_workers,
     }

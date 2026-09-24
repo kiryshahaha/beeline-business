@@ -10,21 +10,40 @@ from app.modules.planning.solver_contract import SolveRequest
 
 async def build_problem(prepared: dict, provider, settings) -> tuple[SolveRequest, list[dict]]:
     policy = prepared.get("policy") or execution_policy(settings)
+    open_end: bool = prepared.get("open_end", False)
     workers, tickets = prepared["workers"], prepared["tickets"]
+    v = len(workers)
     anchored = any(
         "start_location_id" in worker or "end_location_id" in worker for worker in workers
     )
-    if anchored:
-        nodes = [
-            {"kind": "depot_start", "location_id": w.get("start_location_id", w["location_id"])}
-            for w in workers
-        ] + [
-            {"kind": "depot_end", "location_id": w.get("end_location_id", w["location_id"])}
+    open_end = open_end or anchored
+    # Depot (start) nodes — one per worker.
+    depot_nodes = [
+        {"kind": "depot", "location_id": w.get("start_location_id", w["location_id"])}
+        for w in workers
+    ]
+    # Finish nodes — separate when open_end, same index as depot otherwise.
+    if open_end:
+        finish_nodes = [
+            {"kind": "finish", "location_id": w.get("end_location_id", w["location_id"])}
             for w in workers
         ]
     else:
-        nodes = [{"kind": "depot", "location_id": w["location_id"]} for w in workers]
-    nodes += [{"kind": "ticket", "location_id": t["location_id"], "ticket": t} for t in tickets]
+        finish_nodes = depot_nodes  # same objects; starts == ends
+    task_nodes = [{"kind": "ticket", "location_id": t["location_id"], "ticket": t} for t in tickets]
+    # Node ordering: depots | (finishes if open_end) | tasks
+    if open_end:
+        nodes = depot_nodes + finish_nodes + task_nodes
+        v = len(workers)
+        starts = list(range(v))
+        ends = list(range(v, 2 * v))
+        task_offset = 2 * v
+    else:
+        nodes = depot_nodes + task_nodes
+        v = len(workers)
+        starts = list(range(v))
+        ends = list(range(v))
+        task_offset = v
     coordinates, coordinate_index, node_coordinates = [], {}, []
     for node in nodes:
         location = prepared["locations"][node["location_id"]]
@@ -74,20 +93,33 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
         }
         for p, matrix in matrices.items()
     }
-    v, horizon = len(workers), prepared["horizon"]
-    depot_count = 2 * v if anchored else v
+    horizon = prepared["horizon"]
+    # Time windows for depot and (when open_end) finish nodes are the vehicle window.
+    # Finish nodes in open_end have the full vehicle time window (any moment in shift is fine).
+    depot_windows = [w["window"] for w in workers]
+    finish_windows = [w["window"] for w in workers] if open_end else []
+    task_windows = [t["window"] for t in tickets]
+    depot_service = [0] * v
+    finish_service = [0] * v if open_end else []
+    task_service = [t["duration"] for t in tickets]
+    depot_penalties = [0] * v
+    finish_penalties = [0] * v if open_end else []
+    task_penalties = [policy.penalty(v, horizon)] * len(tickets)
+    # allowed_vehicles keys are task node indices (strings).
+    allowed = {str(task_offset + i): t["allowed"] for i, t in enumerate(tickets)}
     request = SolveRequest(
         policy_version=policy.policy_version,
         num_vehicles=v,
-        starts=list(range(v)),
-        ends=list(range(v, 2 * v)) if anchored else list(range(v)),
+        starts=starts,
+        ends=ends,
+        open_end=open_end,
         vehicle_profiles=[w["profile"] for w in workers],
-        vehicle_time_windows=[w["window"] for w in workers],
+        vehicle_time_windows=depot_windows,
         matrices=expanded,
-        time_windows=[[0, horizon] for _ in range(depot_count)] + [t["window"] for t in tickets],
-        service_times=[0] * depot_count + [t["duration"] for t in tickets],
-        allowed_vehicles={str(depot_count + i): t["allowed"] for i, t in enumerate(tickets)},
-        penalties=[0] * depot_count + [policy.penalty(v, horizon)] * len(tickets),
+        time_windows=depot_windows + finish_windows + task_windows,
+        service_times=depot_service + finish_service + task_service,
+        allowed_vehicles=allowed,
+        penalties=depot_penalties + finish_penalties + task_penalties,
         time_capacity=horizon,
         slack_max=horizon,
         search_time_limit_s=policy.search_time_limit_seconds,

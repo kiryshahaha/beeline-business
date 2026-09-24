@@ -411,6 +411,7 @@ def apply_ticket_event(
             appliances_service.on_ticket_status_completed(
                 session,
                 ticket_id,
+                actor_id=actor_id,
                 event_id=event_id,
                 execution_cycle=ticket["execution_cycle"],
             )

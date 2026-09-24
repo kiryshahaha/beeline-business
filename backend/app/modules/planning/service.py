@@ -9,12 +9,20 @@ from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
 from app.modules.planning.day_models import DayPlanRevision
+from app.modules.planning.diagnostics import (
+    diagnose_dropped,
+    estimate_resources,
+    outcome,
+    plan_metrics,
+    visit_factors,
+)
 from app.modules.planning.eligibility import prepare
 from app.modules.planning.errors import PlanningError
 from app.modules.planning.geometry import build_routes
 from app.modules.planning.matrices import build_problem
 from app.modules.planning.models import PlanningPlan, PlanningPlanRoute
 from app.modules.planning.policy import execution_policy, snapshot_policy
+from app.modules.planning.reasons import legacy_public
 from app.modules.planning.repository import load_snapshot
 from app.modules.planning.schemas import PreviewRequest
 from app.modules.planning.snapshot import fingerprint, normalize
@@ -58,38 +66,40 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
     prepared = prepare(snapshot, clock())
     if not request.allow_partial and prepared["unassigned"]:
         raise PlanningError("incomplete_plan", unassigned=prepared["unassigned"])
-    if not prepared["tickets"]:
-        raise PlanningError(
-            "no_feasible_assignments",
-            unassigned=prepared["unassigned"],
-            excluded_workers=prepared["excluded_workers"],
-        )
-    try:
-        async with asyncio.timeout(settings.planning_total_timeout_seconds):
-            async with provider_factory() as provider:
-                problem, nodes = await build_problem(prepared, provider, settings)
-                solution = await planner.solve(problem)
-                validate_solution(problem, solution)
-                unassigned = prepared["unassigned"] + [
-                    {"ticket_id": nodes[node]["ticket"]["id"], "reason": "not_selected_by_solver"}
-                    for node in solution.dropped_nodes
-                ]
-                if not request.allow_partial and unassigned:
-                    raise PlanningError("incomplete_plan", unassigned=unassigned)
-                routes, creates = await build_routes(
-                    prepared,
-                    problem,
-                    nodes,
-                    solution,
-                    provider,
-                    settings,
-                )
-                if not creates:
-                    raise PlanningError("no_feasible_assignments", unassigned=unassigned)
-    except TimeoutError as error:
-        raise PlanningError("planning_timeout", 504) from error
-    except GeoapifyRoutingError as error:
-        raise PlanningError("routing_invalid_response", 502) from error
+    problem = solution = estimate = None
+    routes, creates, dropped = [], [], []
+    # When nothing passed the precheck the empty plan needs no provider or solver call.
+    if prepared["tickets"]:
+        try:
+            async with asyncio.timeout(settings.planning_total_timeout_seconds):
+                async with provider_factory() as provider:
+                    problem, nodes = await build_problem(prepared, provider, settings)
+                    solution = await planner.solve(problem)
+                    validate_solution(problem, solution)
+                    dropped = await asyncio.to_thread(
+                        diagnose_dropped, prepared, problem, nodes, solution
+                    )
+                    if not request.allow_partial and dropped:
+                        raise PlanningError(
+                            "incomplete_plan", unassigned=prepared["unassigned"] + dropped
+                        )
+                    routes, creates = await build_routes(
+                        prepared,
+                        problem,
+                        nodes,
+                        solution,
+                        provider,
+                        settings,
+                    )
+                    estimate = await asyncio.to_thread(
+                        estimate_resources, prepared, problem, nodes, dropped
+                    )
+        except TimeoutError as error:
+            raise PlanningError("planning_timeout", 504) from error
+        except GeoapifyRoutingError as error:
+            raise PlanningError("routing_invalid_response", 502) from error
+    unassigned = sorted(prepared["unassigned"] + dropped, key=lambda item: item["ticket_id"])
+    visit_factors(prepared, routes)
     plan_id = uuid4()
     expires = clock() + timedelta(seconds=settings.planning_preview_ttl_seconds)
     public = normalize(
@@ -97,15 +107,18 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
             "plan_id": str(plan_id),
             "planning_policy": snapshot["planning_policy"],
             "state": "ready",
+            "outcome": outcome(routes, unassigned),
             "route_date": request.route_date,
             "district_id": snapshot.get("district_id"),
             "day_revision": snapshot.get("current_day_revision"),
             "timezone": "Europe/Moscow",
             "expires_at": expires,
-            "solver_status": solution.status,
+            "solver_status": solution.status if solution else None,
+            "metrics": plan_metrics(request, prepared, routes, unassigned),
             "routes": routes,
             "unassigned": unassigned,
             "excluded_workers": prepared["excluded_workers"],
+            "resource_estimate": estimate,
             "warnings": ["estimated_transit"]
             if any(w["profile"] == "approximated_transit" for w in prepared["workers"])
             else [],
@@ -126,8 +139,8 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
                     result_snapshot={
                         "public": public,
                         "route_creates": creates,
-                        "problem": problem.model_dump(mode="json"),
-                        "solution": solution.model_dump(mode="json"),
+                        "problem": problem.model_dump(mode="json") if problem else None,
+                        "solution": solution.model_dump(mode="json") if solution else None,
                         "algorithm_version": 1,
                     },
                 )
@@ -143,7 +156,7 @@ def read_plan(engine, plan_id: UUID, clock=utc_now):
         plan = session.get(PlanningPlan, plan_id)
         if plan is None:
             raise PlanningError("plan_not_found", 404)
-        result = {**plan.result_snapshot["public"], "state": plan.state}
+        result = {**legacy_public(plan.result_snapshot["public"]), "state": plan.state}
         result["planning_policy"] = plan.input_snapshot.get("planning_policy")
         if plan.state == "ready" and plan.expires_at <= clock():
             result["state"] = "expired"
@@ -172,6 +185,8 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
             raise PlanningError("plan_not_found", 404)
         if plan.state == "applied":
             return {**plan.apply_result, "already_applied": True}
+        if not plan.result_snapshot["route_creates"]:
+            raise PlanningError("plan_has_no_assignments", 409)
         snapshot_policy(plan.input_snapshot)
         request = PreviewRequest.model_validate(plan.input_snapshot["request"])
         current = load_snapshot(
@@ -225,7 +240,9 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                         actor_id=plan.created_by,
                     )
                     ticket = session.get(Ticket, stop.ticket_id)
-                    ticket.planned_start_at = stop.arrival_at
+                    ticket.planned_start_at = datetime.fromisoformat(
+                        visits[stop.ticket_id]["service_start_at"]
+                    )
                     ticket.planned_end_at = datetime.fromisoformat(
                         visits[stop.ticket_id]["service_end_at"]
                     )
