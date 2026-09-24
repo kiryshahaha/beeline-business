@@ -484,9 +484,13 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
         ticket = create_ticket(
             self.session,
             TicketCreate(
+                title="Заявка Юг",
                 work_type_id=self.work_type.id,
                 location_id=self.loc_client_south.id,
                 service_area_id=self.area_south.id,
+                visit_window_start=EPOCH.replace(hour=10, minute=0),
+                visit_window_end=EPOCH.replace(hour=12, minute=0),
+                estimated_duration_minutes=60,
             ),
         )
         self.session.commit()
@@ -499,16 +503,23 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
             headers=headers,
         )
         self.assertEqual(response.status_code, 422)
-        self.assertIn("Service area mismatch", response.json()["detail"])
+        self.assertTrue(
+            "Service area mismatch" in response.json()["detail"]
+            or "участку обслуживания" in response.json()["detail"]
+        )
 
     def test_a05_manual_assignment_same_area_succeeds_200(self):
         # Create ticket in South area
         ticket = create_ticket(
             self.session,
             TicketCreate(
+                title="Заявка Юг",
                 work_type_id=self.work_type.id,
                 location_id=self.loc_client_south.id,
                 service_area_id=self.area_south.id,
+                visit_window_start=EPOCH.replace(hour=10, minute=0),
+                visit_window_end=EPOCH.replace(hour=12, minute=0),
+                estimated_duration_minutes=60,
             ),
         )
         self.session.commit()
@@ -543,9 +554,13 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
         ticket = create_ticket(
             self.session,
             TicketCreate(
+                title="Заявка Север",
                 work_type_id=self.work_type.id,
                 location_id=self.loc_office.id,
                 service_area_id=district_area.id,
+                visit_window_start=EPOCH.replace(hour=10, minute=0),
+                visit_window_end=EPOCH.replace(hour=12, minute=0),
+                estimated_duration_minutes=60,
             ),
         )
         self.assertIsNotNone(ticket.id)
