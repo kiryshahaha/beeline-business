@@ -39,7 +39,7 @@ def login(data: LoginRequest, response: Response, session: DatabaseSession) -> L
         httponly=True,
         samesite="strict",
         secure=False,  # поставьте True в продакшене (HTTPS)
-        max_age=tokens.expires_in * 2,  # запас: чуть дольше access
+        max_age=30 * 24 * 60 * 60,  # 30 дней
     )
     return LoginResponse(
         access_token=tokens.access_token,
@@ -76,7 +76,7 @@ def refresh_token(
         httponly=True,
         samesite="strict",
         secure=False,
-        max_age=tokens.expires_in * 2,
+        max_age=30 * 24 * 60 * 60,
     )
     return LoginResponse(
         access_token=tokens.access_token,

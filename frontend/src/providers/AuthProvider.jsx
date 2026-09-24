@@ -15,8 +15,13 @@ export function AuthProvider({ children }) {
     registerTokenSetter(setToken);
   }, []);
 
+  const restoreAttempted = React.useRef(false);
+
   // При монтировании пробуем восстановить сессию через refresh_token из httpOnly cookie
   useEffect(() => {
+    if (restoreAttempted.current) return;
+    restoreAttempted.current = true;
+
     const restoreSession = async () => {
       try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/auth/refresh`, {
