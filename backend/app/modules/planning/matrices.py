@@ -11,28 +11,37 @@ from app.modules.planning.solver_contract import SolveRequest
 async def build_problem(prepared: dict, provider, settings) -> tuple[SolveRequest, list[dict]]:
     policy = prepared.get("policy") or execution_policy(settings)
     open_end: bool = prepared.get("open_end", False)
+    route_end = prepared.get("route_end")
+    if route_end in ("return_to_start", "return_to_brigade_office"):
+        open_end = False
+    elif route_end in ("open", "open_end"):
+        open_end = True
+    elif route_end == "specific_finish":
+        open_end = False
     workers, tickets = prepared["workers"], prepared["tickets"]
     v = len(workers)
-    anchored = any(
-        "start_location_id" in worker or "end_location_id" in worker for worker in workers
-    )
-    open_end = open_end or anchored
     # Depot (start) nodes — one per worker.
     depot_nodes = [
         {"kind": "depot", "location_id": w.get("start_location_id", w["location_id"])}
         for w in workers
     ]
-    # Finish nodes — separate when open_end, same index as depot otherwise.
-    if open_end:
+    # Finish nodes — separate when open_end or specific_finish, same index as depot otherwise.
+    has_separate_finish = open_end or (route_end == "specific_finish")
+    if has_separate_finish:
         finish_nodes = [
-            {"kind": "finish", "location_id": w.get("end_location_id", w["location_id"])}
+            {
+                "kind": "finish",
+                "location_id": w.get("end_location_id")
+                or w.get("start_location_id")
+                or w["location_id"],
+            }
             for w in workers
         ]
     else:
-        finish_nodes = depot_nodes  # same objects; starts == ends
+        finish_nodes = depot_nodes  # return_to_start: starts == ends
     task_nodes = [{"kind": "ticket", "location_id": t["location_id"], "ticket": t} for t in tickets]
-    # Node ordering: depots | (finishes if open_end) | tasks
-    if open_end:
+    # Node ordering: depots | (finishes if separate) | tasks
+    if has_separate_finish:
         nodes = depot_nodes + finish_nodes + task_nodes
         v = len(workers)
         starts = list(range(v))
@@ -93,6 +102,13 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
         }
         for p, matrix in matrices.items()
     }
+    if open_end:
+        for p in profiles:
+            for j in range(v):
+                finish_node_idx = v + j
+                for i in range(len(nodes)):
+                    expanded[p]["time_minutes"][i][finish_node_idx] = 0
+                    expanded[p]["distance_meters"][i][finish_node_idx] = 0
     horizon = prepared["horizon"]
     # Time windows for depot and (when open_end) finish nodes are the vehicle window.
     # Finish nodes in open_end have the full vehicle time window (any moment in shift is fine).

@@ -27,6 +27,9 @@ class Ticket(IntegerIdMixin, Base):
     location_id: Mapped[int] = mapped_column(
         ForeignKey("locations.id", ondelete="RESTRICT"), index=True
     )
+    service_area_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_areas.id", ondelete="RESTRICT"), index=True, nullable=True
+    )
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text)
     work_type: Mapped[str | None] = mapped_column(String(100), nullable=True)

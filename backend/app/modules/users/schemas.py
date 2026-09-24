@@ -25,6 +25,10 @@ WORKER_PROFILE_CREATE_EXAMPLE = {
     "workshift_start": "09:00:00",
     "workshift_end": "18:00:00",
     "skills": ["Монтаж ВОЛС", "Настройка роутеров"],
+    "service_area_id": 1,
+    "start_location_id": 1,
+    "stock_office_id": 1,
+    "end_location_id": None,
 }
 
 WORKER_PROFILE_READ_EXAMPLE = {
@@ -33,6 +37,10 @@ WORKER_PROFILE_READ_EXAMPLE = {
     "workshift_end": "18:00:00",
     "skills": ["Монтаж ВОЛС", "Настройка роутеров"],
     "is_on_line": True,
+    "service_area_id": 1,
+    "start_location_id": 1,
+    "stock_office_id": 1,
+    "end_location_id": None,
 }
 
 WORKER_LINE_STATUS_UPDATE_EXAMPLE = {"is_on_line": False}
@@ -151,6 +159,18 @@ class WorkerProfileCreate(BaseModel):
     skills: list[
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
     ] = Field(min_length=1, description="Список профессиональных навыков исполнителя")
+    service_area_id: PositiveInt32 | None = Field(
+        default=None, description="Идентификатор обслуживаемого участка"
+    )
+    start_location_id: PositiveInt32 | None = Field(
+        default=None, description="Точка старта (например домашний адрес или офис)"
+    )
+    stock_office_id: PositiveInt32 | None = Field(
+        default=None, description="Офис/склад получения оборудования"
+    )
+    end_location_id: PositiveInt32 | None = Field(
+        default=None, description="Точка завершения смены при фиксированном финише"
+    )
 
     @field_validator("skills")
     @classmethod
@@ -182,6 +202,10 @@ class WorkerProfileRead(BaseModel):
     skills: list[str]
     transport_type: TransportType = TransportType.WALKING
     is_on_line: bool
+    service_area_id: PositiveInt32 | None = None
+    start_location_id: PositiveInt32 | None = None
+    stock_office_id: PositiveInt32 | None = None
+    end_location_id: PositiveInt32 | None = None
 
 
 class WorkerLineStatusUpdate(BaseModel):
@@ -308,6 +332,10 @@ class WorkerProfileUpdate(BaseModel):
         list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]]
         | None
     ) = None
+    service_area_id: PositiveInt32 | None = None
+    start_location_id: PositiveInt32 | None = None
+    stock_office_id: PositiveInt32 | None = None
+    end_location_id: PositiveInt32 | None = None
 
     @field_validator("skills")
     @classmethod

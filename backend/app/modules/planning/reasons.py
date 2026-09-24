@@ -379,6 +379,18 @@ def office_mismatch(worker_office, offices):
     )
 
 
+def service_area_mismatch(worker_area, ticket_area):
+    return explain(
+        "service_area_mismatch",
+        "area",
+        f"Участок инженера ({worker_area}) не совпадает с участком заявки ({ticket_area})",
+        constraint="territory=isolated_service_area",
+        ids={"service_area_ids": [ticket_area]},
+        observed={"service_area_id": worker_area},
+        required={"service_area_id": ticket_area},
+    )
+
+
 def window_outside_shift(window_start, window_end, shift_start, shift_end, day):
     return explain(
         "window_outside_shift",

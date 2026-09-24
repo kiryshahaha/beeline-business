@@ -42,6 +42,10 @@ class PermissionDeniedError(Exception):
     pass
 
 
+class ServiceAreaMismatchError(Exception):
+    pass
+
+
 def _foreman_id(current_user: UserRead | None) -> int | None:
     return current_user.id if current_user and current_user.role == UserRole.FOREMAN else None
 
@@ -213,6 +217,25 @@ def create_ticket(
             TicketStatus.COMPLETED: TicketLifecycleState.COMPLETED.value,
             TicketStatus.WONT_FIX: TicketLifecycleState.CANCELLED.value,
         }[data.status]
+        if not values.get("service_area_id"):
+            resolved_area = session.execute(
+                text(
+                    """
+                    SELECT sa.id
+                    FROM locations AS loc
+                    JOIN buildings AS b ON b.id = loc.building_id
+                    JOIN service_areas AS sa ON sa.code = 'district_' || b.district_id
+                    WHERE loc.id = :location_id
+                    LIMIT 1
+                    """
+                ),
+                {"location_id": values["location_id"]},
+            ).scalar_one_or_none()
+            if resolved_area is None:
+                resolved_area = session.execute(
+                    text("SELECT id FROM service_areas ORDER BY id LIMIT 1")
+                ).scalar_one_or_none()
+            values["service_area_id"] = resolved_area
         ticket_id = repository.add_ticket(session, values)
         district_id = session.execute(
             text(
@@ -267,6 +290,55 @@ def replace_assignees_in_transaction(
         raise WorkerNotFoundError
     if not all(worker_line_statuses.values()):
         raise WorkerOffLineError
+
+    if worker_ids:
+        t_area = ticket.get("service_area_id")
+        if t_area is None and ticket.get("location_id"):
+            t_area = session.execute(
+                text(
+                    """
+                    SELECT sa.id
+                    FROM locations AS loc
+                    JOIN buildings AS b ON b.id = loc.building_id
+                    JOIN service_areas AS sa ON sa.code = 'district_' || b.district_id
+                    WHERE loc.id = :location_id
+                    LIMIT 1
+                    """
+                ),
+                {"location_id": ticket["location_id"]},
+            ).scalar_one_or_none()
+
+        for wid in worker_ids:
+            worker_row = (
+                session.execute(
+                    text("SELECT service_area_id FROM workers WHERE user_id = :user_id"),
+                    {"user_id": wid},
+                )
+                .mappings()
+                .first()
+            )
+            w_area = worker_row["service_area_id"] if worker_row else None
+            if w_area is None:
+                w_area = session.execute(
+                    text(
+                        """
+                        SELECT sa.id
+                        FROM brigade_members AS bm
+                        JOIN brigades AS b ON b.id = bm.brigade_id
+                        JOIN offices AS off ON off.id = b.office_id
+                        JOIN locations AS loc ON loc.id = off.location_id
+                        JOIN buildings AS bld ON bld.id = loc.building_id
+                        JOIN service_areas AS sa ON sa.code = 'district_' || bld.district_id
+                        WHERE bm.worker_id = :wid
+                        LIMIT 1
+                        """
+                    ),
+                    {"wid": wid},
+                ).scalar_one_or_none()
+
+            if t_area is not None and w_area is not None and t_area != w_area:
+                raise ServiceAreaMismatchError
+
     from app.modules.appliances import inventory
 
     inventory.check_reassignment(session, ticket_id, worker_ids)

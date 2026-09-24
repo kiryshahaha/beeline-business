@@ -85,6 +85,10 @@ class TicketFields(BaseModel):
     location_id: PositiveInt32 = Field(
         description="ID существующего места выполнения. В примере замените 1 на ID из вашей БД."
     )
+    service_area_id: PositiveInt32 | None = Field(
+        default=None,
+        description="ID участка обслуживания.",
+    )
     title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     description: str | None = None
     work_type_id: PositiveInt32 | None = Field(
