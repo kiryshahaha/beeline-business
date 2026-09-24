@@ -235,7 +235,8 @@ class ExecutionApiTests(DatabaseTestCase):
             )
         self.assertEqual(window_event["reason"], "Клиент подтвердил новое окно")
         self.assertEqual(
-            window_event["payload"]["previous_window_end"], "2030-01-15T19:00:00+03:00"
+            datetime.fromisoformat(window_event["payload"]["previous_window_end"]),
+            datetime(2030, 1, 15, 16, tzinfo=UTC),
         )
         self.assertEqual(
             self._command(
