@@ -66,12 +66,9 @@ def refresh_access_token(session: Session, raw_token: str) -> TokenResponse:
 
     with session.begin():
         token_hash = hash_token(raw_token)
-        active_record = repository.find_active_refresh_token(session, token_hash)
-        if active_record is None or active_record["user_id"] != user_id:
+        consumed_record = repository.consume_active_refresh_token(session, token_hash, user_id)
+        if consumed_record is None:
             raise InvalidTokenError
-
-        # Rotate: invalidate used refresh token
-        repository.revoke_refresh_token(session, token_hash)
 
         user = users_repository.find_user_by_id(session, user_id)
         if user is None:

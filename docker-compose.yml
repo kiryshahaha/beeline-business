@@ -47,7 +47,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-beeline}:${POSTGRES_PASSWORD:-beeline}@db:5432/${POSTGRES_DB:-beeline}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-secret-key-change-in-production}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set to a private value of at least 32 bytes}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       NOTIFICATION_DISPATCHER_ENABLED: ${NOTIFICATION_DISPATCHER_ENABLED:-true}
       NOTIFICATION_POLL_INTERVAL_SECONDS: ${NOTIFICATION_POLL_INTERVAL_SECONDS:-1.0}

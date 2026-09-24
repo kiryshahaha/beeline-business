@@ -1,0 +1,26 @@
+meta {
+  name: Создание заявки требует авторизации
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "location_id": {{location_id}},
+    "title": "Анонимный запрос должен быть отклонён",
+    "work_type": "Диагностика",
+    "visit_window_start": "2026-09-24T10:00:00+03:00",
+    "visit_window_end": "2026-09-24T14:00:00+03:00",
+    "estimated_duration_minutes": 60
+  }
+}
+
+assert {
+  res.status: eq 401
+}

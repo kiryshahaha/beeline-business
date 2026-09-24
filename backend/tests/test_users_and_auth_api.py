@@ -392,6 +392,37 @@ class UsersAndAuthApiTests(DatabaseTestCase):
         )
         self.assertEqual(res_after_logout.status_code, 401)
 
+    def test_password_change_revokes_all_refresh_sessions(self):
+        tokens = self.get_auth_tokens("admin_observer", "ObserverPassword123!")
+        response = self.client.patch(
+            f"/api/v1/users/{self.observer.id}",
+            json={"password": "ObserverPassword456!"},
+            headers={"Authorization": f"Bearer {tokens['access_token']}"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        refresh = self.client.post(
+            "/api/v1/auth/refresh", cookies={"refresh_token": tokens["refresh_token"]}
+        )
+        self.assertEqual(refresh.status_code, 401)
+
+    def test_role_change_revokes_all_refresh_sessions(self):
+        worker = self.create_direct_user("role_change_worker", UserRole.WORKER)
+        self.session.commit()
+        tokens = self.get_auth_tokens("role_change_worker", "StrongPassword123!")
+
+        response = self.client.patch(
+            f"/api/v1/users/{worker.id}",
+            json={"role": "observer"},
+            headers=self.get_observer_header(),
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        refresh = self.client.post(
+            "/api/v1/auth/refresh", cookies={"refresh_token": tokens["refresh_token"]}
+        )
+        self.assertEqual(refresh.status_code, 401)
+
     def test_update_user_by_observer(self):
         observer_tokens = self.get_auth_tokens("admin_observer", "ObserverPassword123!")
         auth_header = {"Authorization": f"Bearer {observer_tokens['access_token']}"}

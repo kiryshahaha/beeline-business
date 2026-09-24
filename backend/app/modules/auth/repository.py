@@ -18,17 +18,22 @@ def add_refresh_token(
     )
 
 
-def find_active_refresh_token(session: Session, token_hash: str) -> RowMapping | None:
+def consume_active_refresh_token(
+    session: Session, token_hash: str, user_id: int
+) -> RowMapping | None:
+    """Revoke and return a live refresh row in one conditional write."""
     return (
         session.execute(
             text("""
-                SELECT id, user_id, token_hash, expires_at, created_at, revoked_at
-                FROM refresh_tokens
+                UPDATE refresh_tokens
+                SET revoked_at = now()
                 WHERE token_hash = :token_hash
+                  AND user_id = :user_id
                   AND revoked_at IS NULL
                   AND expires_at > now()
+                RETURNING id, user_id
             """),
-            {"token_hash": token_hash},
+            {"token_hash": token_hash, "user_id": user_id},
         )
         .mappings()
         .one_or_none()
