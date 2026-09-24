@@ -69,7 +69,10 @@ class UsersAndAuthApiTests(DatabaseTestCase):
             json={"username": username, "password": password},
         )
         self.assertEqual(response.status_code, 200)
-        return response.json()
+        tokens = response.json()
+        if "refresh_token" in response.cookies:
+            tokens["refresh_token"] = response.cookies["refresh_token"]
+        return tokens
 
     def create_direct_user(self, username: str, role: UserRole):
         worker_profile = None
@@ -361,31 +364,31 @@ class UsersAndAuthApiTests(DatabaseTestCase):
         # Refresh to get new token pair
         refresh_res = self.client.post(
             "/api/v1/auth/refresh",
-            json={"refresh_token": old_refresh},
+            cookies={"refresh_token": old_refresh},
         )
         self.assertEqual(refresh_res.status_code, 200)
-        new_tokens = refresh_res.json()
-        new_refresh = new_tokens["refresh_token"]
+        new_refresh = refresh_res.cookies.get("refresh_token")
         self.assertNotEqual(old_refresh, new_refresh)
+        self.assertIsNotNone(new_refresh)
 
         # Old refresh token is revoked
         res_old = self.client.post(
             "/api/v1/auth/refresh",
-            json={"refresh_token": old_refresh},
+            cookies={"refresh_token": old_refresh},
         )
         self.assertEqual(res_old.status_code, 401)
 
         # Logout with current refresh token
         logout_res = self.client.post(
             "/api/v1/auth/logout",
-            json={"refresh_token": new_refresh},
+            cookies={"refresh_token": new_refresh},
         )
         self.assertEqual(logout_res.status_code, 200)
 
         # Attempting refresh after logout fails
         res_after_logout = self.client.post(
             "/api/v1/auth/refresh",
-            json={"refresh_token": new_refresh},
+            cookies={"refresh_token": new_refresh},
         )
         self.assertEqual(res_after_logout.status_code, 401)
 

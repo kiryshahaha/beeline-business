@@ -17,8 +17,6 @@ from app.modules.appliances.router import (
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.schemas import (
     LOGIN_REQUEST_EXAMPLE,
-    REFRESH_TOKEN_REQUEST_EXAMPLE,
-    TOKEN_RESPONSE_EXAMPLE,
 )
 from app.modules.brigades.router import router as brigades_router
 from app.modules.calendar_feed.router import router as calendar_router
@@ -157,10 +155,6 @@ def openapi_with_examples() -> dict:
         schemas["WorkerSkillRead"]["examples"] = [WORKER_SKILL_EXAMPLE]
     if "LoginRequest" in schemas:
         schemas["LoginRequest"]["examples"] = [LOGIN_REQUEST_EXAMPLE]
-    if "RefreshTokenRequest" in schemas:
-        schemas["RefreshTokenRequest"]["examples"] = [REFRESH_TOKEN_REQUEST_EXAMPLE]
-    if "TokenResponse" in schemas:
-        schemas["TokenResponse"]["examples"] = [TOKEN_RESPONSE_EXAMPLE]
 
     return schema
 
