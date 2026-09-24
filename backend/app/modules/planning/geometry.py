@@ -141,7 +141,7 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
             if node["kind"] == "ticket":
                 ticket = node["ticket"]
                 service_end = service_start + timedelta(minutes=ticket["duration"])
-                
+
                 shift_end = epoch + timedelta(minutes=worker["window"][1])
                 limit = shift_end
                 if ticket.get("deadline_at"):
@@ -150,13 +150,15 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
                 if service_end > limit:
                     raise PlanningError("routing_estimate_changed", 502)
 
-                stop.update({
-                    "ticket_id": ticket["id"],
-                    "service_end_at": service_end.isoformat(),
-                    "waiting_minutes": wait_minutes,
-                    "effective_service_minutes": ticket["duration"],
-                    "duration_source": ticket["duration_source"],
-                })
+                stop.update(
+                    {
+                        "ticket_id": ticket["id"],
+                        "service_end_at": service_end.isoformat(),
+                        "waiting_minutes": wait_minutes,
+                        "effective_service_minutes": ticket["duration"],
+                        "duration_source": ticket["duration_source"],
+                    }
+                )
                 visits.append({**stop, "sequence": len(visits) + 1})
             public_steps.append(step)
             stops.append(stop)
