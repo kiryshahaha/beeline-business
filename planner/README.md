@@ -11,7 +11,7 @@ Backend передаёт матрицы времени/расстояния по
 
 ```sh
 python3.12 -m venv .venv
-.venv/bin/python -m pip install --no-cache-dir --only-binary=ortools --require-hashes -r planner/requirements.lock
+.venv/bin/python -m pip install --no-cache-dir --only-binary=ortools -c constraints.txt -r planner/requirements.txt
 PLANNER_SERVICE_TOKEN="ваш-случайный-внутренний-токен" .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
@@ -47,6 +47,5 @@ OPTIMAL возвращается только для соответствующ�
 .venv\Scripts\python tests/generate_strong.py
 ```
 
-OR-Tools закреплён на 9.15.6755 в `requirements.lock`; пакет устанавливается только
-из готового нативного колеса. Lock содержит хеши совместимых сборок, а CI завершится
-ошибкой, если бинарный пакет недоступен.
+OR-Tools закреплён на 9.15.6755 в `requirements.txt`; пакет устанавливается только
+из готового нативного колеса. CI завершится ошибкой, если бинарный пакет недоступен.

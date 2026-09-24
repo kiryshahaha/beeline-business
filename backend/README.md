@@ -274,8 +274,7 @@ backend/
 ├── tests/                     # проверки приложения, безопасности, токенов и БД
 ├── seed_demo.py               # заполнение демоданными (заявки, навыки, наблюдатели, исполнители, склад)
 ├── alembic.ini                # настройка миграций
-├── requirements.txt           # диапазоны зависимостей для генерации lock-файла
-├── requirements.lock          # закреплённые версии и хеши backend-зависимостей
+├── requirements.txt           # совместимые диапазоны backend-зависимостей
 ├── ruff.toml                  # настройки проверки и оформления Python-кода
 ├── .env.example               # пример переменных окружения
 ├── .gitignore                 # исключает окружение, секреты и временные файлы
@@ -1159,9 +1158,9 @@ ORDER BY d.name;
 
 ## Локальный запуск
 
-Текущие версии среды, lock-файлы и чистые команды Compose находятся в
+Текущие версии среды, зависимости и команды чистого запуска Compose описаны в
 [руководстве runtime](../docs/RUNTIME.md). Опорная конфигурация использует
-CPython 3.12, PostgreSQL 17 и хешированные lock-файлы backend/planner.
+CPython 3.12 и PostgreSQL 17.
 
 ## Настройка PostgreSQL
 
@@ -1489,15 +1488,15 @@ setup-node 7.0.0 и upload-artifact 4.6.2. Backend job использует Node
 
 | Шаг в Actions | Что проверяет |
 | --- | --- |
-| `Install dependencies` | Ставит `backend/requirements.lock` и `planner/requirements.lock` с проверкой хешей, затем запускает `pip check` |
+| `Install dependencies` | Ставит зависимости из `backend/requirements.txt` и `planner/requirements.txt` с общими ограничениями, затем запускает `pip check` |
 | `Check code with Ruff` | `python -m ruff check .` — ошибки и правила оформления Python-кода |
 | `Check formatting` | `python -m ruff format --check .` — соответствие форматированию без изменения файлов |
 | `Run tests with PostgreSQL` | `python -m unittest discover -s tests -v` — все тесты из `backend/tests` |
 
-Зависимости выбираются из lock-файлов, созданных по `requirements.txt` и
-`constraints.txt`. Кэш pip ускоряет скачивание, но версия и хеш каждого пакета
-проверяются независимо от содержимого кэша. Отдельный job устанавливает planner
-lock и проверяет нативный wheel OR-Tools.
+`requirements.txt` задают совместимые диапазоны прямых зависимостей, а
+`constraints.txt` согласует pandas и protobuf в общем окружении CI. Кэш pip
+ускоряет скачивание. Отдельный job устанавливает planner-зависимости и проверяет
+наличие нативного wheel OR-Tools.
 Если шаг завершается с ошибкой, job становится красной и следующие шаги не выполняются.
 При новом запуске для той же ветки или PR предыдущая незавершённая проверка отменяется.
 
@@ -1565,14 +1564,12 @@ workflow на Ubuntu в GitHub ещё не запускался.
 
 ## Установка зависимостей и их обновление
 
-`requirements.txt` содержит диапазоны исходных прямых зависимостей. Точные версии
-и SHA-256 хеши фиксируют `requirements.lock` для backend и planner. Firebase Admin
-и `icalendar` входят в backend lock, OR-Tools закреплён в planner lock; `constraints.txt`
-согласует pandas и protobuf для общего тестового окружения.
+`requirements.txt` задают диапазоны backend- и planner-зависимостей. Firebase Admin
+и `icalendar` указаны в backend-файле; OR-Tools закреплён на 9.15.6755 и ставится
+только из готового бинарного wheel. `constraints.txt` согласует pandas и protobuf
+для общего тестового окружения.
 
-Чистую установку, проверку lock-файлов и команды обновления описывает
-[руководство runtime](../docs/RUNTIME.md). CI и Docker устанавливают зависимости
-с `--require-hashes`; planner установка также требует готовый бинарный wheel OR-Tools.
+Команды локальной установки описаны в [руководстве runtime](../docs/RUNTIME.md).
 
 ## Снятие инженера с линии
 

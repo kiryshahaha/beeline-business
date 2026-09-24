@@ -6,8 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.lock .
-RUN pip install --no-cache-dir --only-binary=ortools --require-hashes -r requirements.lock
+COPY requirements.txt .
+RUN pip install --no-cache-dir --only-binary=ortools -r requirements.txt
 
 COPY . .
 

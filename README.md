@@ -59,10 +59,10 @@ Backend вызывает существующий /api/v1/solve через мо�
 
 ## Проверки
 
-Backend CI использует Python 3.12, PostgreSQL 17, Node 24 для Bruno и хешированные
-lock-файлы. Он запускает backend unittest, проверку seed/синтетических данных и
-Bruno E2E с настоящим planner. Подробный запуск и команды обновления lock-файлов
-описаны в [руководстве runtime](docs/RUNTIME.md); Bruno сценарии — в
+Backend CI использует Python 3.12, PostgreSQL 17 и Node 24 для Bruno. Он запускает
+backend unittest, проверку seed/синтетических данных и Bruno E2E с настоящим planner.
+Поддерживаемые версии и команды установки зависимостей описаны в
+[руководстве runtime](docs/RUNTIME.md); Bruno сценарии — в
 [backend/bruno](backend/bruno/README.md).
 
 ## Синтетические данные

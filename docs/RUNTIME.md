@@ -11,7 +11,7 @@
 | Docker Compose | Compose CLI 2.17.0 или новее; локальная проверка выполнена на 5.1.1 |
 | CI | GitHub Actions, `ubuntu-24.04`, Python 3.12, PostgreSQL 17, Node 24 для Bruno |
 
-Python lock-файлы совместимы с CPython 3.12. Установка OR-Tools требует готовое
+Python-зависимости рассчитаны на CPython 3.12. Установка OR-Tools требует готовое
 нативное колесо: Docker и CI используют Linux x86-64; пакет 9.15.6755 также публикует
 колёса для Linux ARM64, macOS ARM64/x86-64 и Windows x86-64.
 Для Node.js сверяйте [таблицу поддержки релизов](https://nodejs.org/en/about/previous-releases):
@@ -71,41 +71,28 @@ Compose `FIREBASE_ENABLED=false`, и отсутствие Google credentials н�
 Firebase. Секреты остаются в `.env` или secret store; файл `.env` уже добавлен в
 `.gitignore`.
 
-## Установка lock-файлов для локальных проверок
+## Установка зависимостей для локальных проверок
 
-Из корня репозитория создайте новое окружение и установите проверенные хешами версии:
+Из корня репозитория создайте новое окружение и установите backend- и planner-зависимости
+с общими ограничениями. OR-Tools ставится из готового бинарного wheel:
 
 ```sh
 python3.12 -m venv .venv
-.venv/bin/python -m pip install --no-cache-dir --only-binary=ortools --require-hashes \
-  -r backend/requirements.lock -r planner/requirements.lock
+.venv/bin/python -m pip install --no-cache-dir --only-binary=ortools \
+  -c constraints.txt -r backend/requirements.txt -r planner/requirements.txt
 .venv/bin/python -m pip check
 ```
 
-`backend/requirements.lock` включает Firebase Admin и `icalendar`; `planner/requirements.lock`
-фиксирует OR-Tools 9.15.6755. `constraints.txt` согласует общие версии pandas и protobuf,
-чтобы интеграционный сценарий устанавливал оба набора в одно окружение.
-
-Перегенерировать lock-файлы можно из корня репозитория командой `uv`:
-
-```sh
-uv pip compile backend/requirements.txt -c constraints.txt --python-version 3.12 \
-  --universal --generate-hashes --no-build --output-file backend/requirements.lock
-uv pip compile planner/requirements.txt -c constraints.txt --python-version 3.12 \
-  --universal --generate-hashes --no-build --output-file planner/requirements.lock
-```
-
-После обновления lock-файлов повторите установку с `--require-hashes`, `pip check`, Ruff,
-backend unittest, planner unittest и `backend/run_planning_e2e.py`. Последний сценарий
-создаёт отдельную схему тестовой PostgreSQL, поднимает настоящие backend и OR-Tools
-planner, использует локальную Geoapify fixture и запускает коллекцию Bruno. Он не
-обращается к платному провайдеру.
+Файлы `requirements.txt` задают совместимые диапазоны прямых зависимостей;
+`constraints.txt` согласует версии pandas и protobuf для общего окружения.
+Firebase Admin и `icalendar` указаны в backend requirements; OR-Tools закреплён
+на 9.15.6755 в planner requirements.
 
 ## Проверки в CI
 
 Workflow `Backend CI` запускает backend-тесты с PostgreSQL 17, затем синтетические
 проверки и Bruno E2E с реальным planner. Отдельная задача `Planner API checks` ставит
-`planner/requirements.lock`, принудительно выбирает бинарный OR-Tools и выполняет тесты
+`planner/requirements.txt` с общими ограничениями, принудительно выбирает бинарный OR-Tools и выполняет тесты
 решателя. Job `Frontend lint and build` находится в том же workflow, но не относится
 к этому backend-сценарию.
 
