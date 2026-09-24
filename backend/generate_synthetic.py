@@ -64,6 +64,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
         add("districts", id=i, city_id=(i - 1) // 4 + 1, name=f"Тестовый район {i}")
         add("streets", id=i, city_id=(i - 1) // 4 + 1, name=f"Вымышленная улица {i}")
         add("divisions", id=i, district_id=i)
+        add("service_areas", id=i, code=f"district_{i}", name=f"Тестовый участок {i}")
     location_count = max(24, (tickets + 2) // 3)
     for i in range(1, location_count + 1):
         district = (i - 1) % 12 + 1
@@ -112,6 +113,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             workshift_end=time(6 if night else 18),
             transport_type=TRANSPORT[w % 4],
             is_on_line=True,
+            service_area_id=(w % 12) + 1,
         )
         for skill in range(1, w % 3 + 2):
             add("worker_skill_assignments", worker_id=i, skill_id=skill)
@@ -186,6 +188,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             "tickets",
             id=i,
             location_id=location,
+            service_area_id=((i - 1) % 12) + 1,
             title=f"[Синтетика:{scenario}] Заявка {i}",
             description=(
                 f"Сценарий {scenario}; seed={seed}. Вымышленные данные.\n"

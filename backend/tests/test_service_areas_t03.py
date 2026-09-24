@@ -26,7 +26,6 @@ from app.db.models import (
     Building,
     City,
     District,
-    Division,
     Entrance,
     Location,
     Office,
@@ -416,15 +415,10 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
             skills=["Монтаж ВОЛС"],
         )
 
-        # Brigade
-        self.division = self.save(Division(district_id=self.district_north.id))
+        # Brigade – division_id is set automatically by the DB trigger
+        # set_brigade_division_from_office (migration 0016).
         self.brigade = self.save(
-            Brigade(
-                name="Бригада Север",
-                foreman_id=self.observer.id,
-                office_id=self.office.id,
-                division_id=self.division.id,
-            )
+            Brigade(name="Бригада Север", foreman_id=self.observer.id, office_id=self.office.id)
         )
         self.save(BrigadeMember(brigade_id=self.brigade.id, worker_id=self.worker_north.id))
 

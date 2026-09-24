@@ -251,6 +251,23 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                                 ids[name][source_id] = existing["id"]
                                 inserted[name].append(dict(existing))
                                 continue
+                        if name == "service_areas":
+                            code = values.get("code")
+                            if code:
+                                existing = (
+                                    session.execute(
+                                        select(table).where(
+                                            func.lower(table.c.code) == func.lower(code)
+                                        )
+                                    )
+                                    .mappings()
+                                    .one_or_none()
+                                )
+                                if existing is not None:
+                                    if source_id is not None:
+                                        ids[name][source_id] = existing["id"]
+                                    inserted[name].append(dict(existing))
+                                    continue
                         record = dict(
                             session.execute(table.insert().values(**values).returning(table))
                             .mappings()
