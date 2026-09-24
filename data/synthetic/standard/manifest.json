@@ -30,7 +30,6 @@
     "brigades": 6,
     "notification_events": 300,
     "ticket_appliances": 1313,
-    "ticket_assignments": 1124,
     "ticket_comments": 500,
     "work_events": 1,
     "worker_day_states": 1,
@@ -51,12 +50,12 @@
   ],
   "files": {
     "dataset.zip": {
-      "bytes": 104338,
-      "sha256": "3f27ef9d6b51594eb7cd3b2e43eaa79ee732cf52f96a6b374a4787e489bf18a9"
+      "bytes": 104138,
+      "sha256": "be5ec033695a5920481721d8f4cdfbcd7fcf6dc2a9494dc6898f9d477f7d7286"
     },
     "dataset.xlsx": {
-      "bytes": 381477,
-      "sha256": "353e9f316161a8e09e568ea8793e1c4dae95d79fd3676c54a60876ff80acd5b3"
+      "bytes": 376959,
+      "sha256": "f05c4f35285acf8da3375e484efa2579effef1e62890b2b5ddf56e0d5cc4d328"
     }
   },
   "notes": [
