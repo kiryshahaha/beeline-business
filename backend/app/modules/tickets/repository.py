@@ -8,7 +8,7 @@ from app.modules.notifications.enums import NotificationKind
 # Shared columns and joins keep single-ticket and list responses identical.
 TICKET_SELECT_SQL = """
     SELECT
-        t.id, t.location_id, t.title, t.description,
+        t.id, t.location_id, t.service_area_id, t.title, t.description,
         t.work_type, t.work_type_id, t.category, t.priority,
         t.received_at, t.sla_deadline_at, t.required_transport_type, t.service_duration_source,
         t.status,
@@ -118,7 +118,7 @@ def lock_ticket(session: Session, ticket_id: int) -> RowMapping | None:
         session.execute(
             text("""
                 SELECT id, title, status, lifecycle_state, revision, execution_cycle,
-                       location_id, visit_window_start, visit_window_end,
+                       location_id, service_area_id, visit_window_start, visit_window_end,
                        planned_start_at, planned_end_at
                 FROM tickets
                 WHERE id = :ticket_id

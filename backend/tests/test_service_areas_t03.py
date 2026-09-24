@@ -568,7 +568,7 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
 
         headers = self.auth_headers(self.observer)
         response = self.client.get(
-            f"/api/v1/analytics/tickets-summary?office_id={self.office.id}",
+            f"/api/v1/analytics/tickets-summary?office_id={self.office.id}&period=today",
             headers=headers,
         )
         self.assertEqual(response.status_code, 200)
