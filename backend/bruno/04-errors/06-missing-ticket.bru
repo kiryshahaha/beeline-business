@@ -7,7 +7,11 @@ meta {
 get {
   url: {{base_url}}/api/v1/tickets/{{missing_ticket_id}}
   body: none
-  auth: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
 }
 
 assert {

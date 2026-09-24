@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.access_log import install_access_log_redaction
 from app.core.body_limit import BodyLimitMiddleware
 from app.core.config import get_settings
 from app.modules.analytics.router import router as analytics_router
@@ -54,6 +55,7 @@ from app.modules.work_types.router import router as work_types_router
 async def lifespan(_app: FastAPI):
     from app.core.config import get_settings
 
+    install_access_log_redaction()
     settings = get_settings()
     task = None
     if settings.notification_dispatcher_enabled:

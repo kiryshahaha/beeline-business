@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
 from app.core.security import hash_password
+from app.modules.auth import repository as auth_repository
 from app.modules.execution.day_state import mark_worker_unavailable
 from app.modules.execution.schemas import WorkerUnavailableCommand
 from app.modules.users import repository
@@ -344,6 +345,11 @@ def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:
                 for skill_name in worker_dump["skills"]:
                     skill_id = repository.ensure_skill(session, skill_name)
                     repository.assign_worker_skill(session, user_id, skill_id)
+
+        if ("password" in dump and data.password is not None) or (
+            new_role != UserRole(existing_user["role"])
+        ):
+            auth_repository.revoke_all_user_tokens(session, user_id)
 
         return get_user(session, user_id)
 

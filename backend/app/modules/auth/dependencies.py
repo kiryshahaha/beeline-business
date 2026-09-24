@@ -4,7 +4,7 @@ from collections.abc import Callable
 from typing import Annotated
 
 import jwt
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -48,20 +48,6 @@ def get_current_user(
             return users_service.get_user(session, user_id)
     except users_service.UserNotFoundError as error:
         raise credentials_exception from error
-
-
-def get_optional_current_user(
-    request: Request,
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
-    session: DatabaseSession,
-) -> UserRead | None:
-    """Allow missing authorization; supplied credentials must pass normal validation."""
-    if credentials is None and "authorization" not in request.headers:
-        return None
-    return get_current_user(credentials, session)
-
-
-OptionalCurrentUser = Annotated[UserRead | None, Depends(get_optional_current_user)]
 
 
 def require_roles(*allowed_roles: UserRole) -> Callable[[UserRead], UserRead]:

@@ -7,7 +7,11 @@ meta {
 post {
   url: {{base_url}}/api/v1/tickets
   body: json
-  auth: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
 }
 
 headers {

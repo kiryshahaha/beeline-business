@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field, PostgresDsn, SecretStr
+from pydantic import Field, PostgresDsn, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     database_url: PostgresDsn
-    jwt_secret_key: str = "secret-key-change-in-production"
+    jwt_secret_key: SecretStr
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 15
     jwt_refresh_token_expire_days: int = 30
@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     cors_origins: str = (
         "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000"
     )
+
+    @field_validator("jwt_secret_key")
+    @classmethod
+    def validate_jwt_secret_key(cls, value: SecretStr) -> SecretStr:
+        secret = value.get_secret_value()
+        if len(secret.encode("utf-8")) < 32:
+            raise ValueError("JWT_SECRET_KEY must contain at least 32 bytes")
+        return value
 
 
 @lru_cache

@@ -52,6 +52,7 @@ class TicketCommentsApiTests(DatabaseTestCase):
                 "visit_window_end": "2026-09-14T14:00:00+03:00",
                 "estimated_duration_minutes": 60,
             },
+            headers=self.auth(self.observer),
         )
         self.assertEqual(ticket.status_code, 201, ticket.text)
         self.ticket_id = ticket.json()["id"]
@@ -239,7 +240,9 @@ class TicketCommentsApiTests(DatabaseTestCase):
 
     def test_comment_cannot_be_edited_through_another_ticket(self):
         comment = self.create_comment(self.observer)
-        payload = self.client.get(f"/api/v1/tickets/{self.ticket_id}").json()
+        payload = self.client.get(
+            f"/api/v1/tickets/{self.ticket_id}", headers=self.auth(self.observer)
+        ).json()
         ticket = self.client.post(
             "/api/v1/tickets",
             json={
@@ -253,6 +256,7 @@ class TicketCommentsApiTests(DatabaseTestCase):
                     "estimated_duration_minutes",
                 )
             },
+            headers=self.auth(self.observer),
         )
         self.assertEqual(ticket.status_code, 201, ticket.text)
         response = self.client.patch(

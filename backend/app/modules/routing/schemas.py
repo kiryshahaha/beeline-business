@@ -84,6 +84,11 @@ class RouteStop(StrictModel):
     location_id: PositiveInt32
     ticket_id: PositiveInt32 | None = None
     arrival_at: AwareDatetime
+    service_start_at: AwareDatetime | None = None
+    service_end_at: AwareDatetime | None = None
+    waiting_minutes: int | None = None
+    effective_service_minutes: int | None = None
+    duration_source: Literal["ticket_estimate", "work_norm"] | None = None
 
 
 class LineString(StrictModel):
@@ -157,11 +162,6 @@ class RouteCreate(StrictModel):
 
 class StopProperties(RouteStop):
     sequence: PositiveInt32
-    service_start_at: AwareDatetime | None = None
-    service_end_at: AwareDatetime | None = None
-    waiting_minutes: int | None = None
-    effective_service_minutes: int | None = None
-    duration_source: Literal["ticket_estimate", "work_norm"] | None = None
 
 
 class Point(StrictModel):
@@ -213,6 +213,11 @@ class RouteGeoJSON(StrictModel):
                     location_id=f.properties.location_id,
                     ticket_id=f.properties.ticket_id,
                     arrival_at=f.properties.arrival_at,
+                    service_start_at=f.properties.service_start_at,
+                    service_end_at=f.properties.service_end_at,
+                    waiting_minutes=f.properties.waiting_minutes,
+                    effective_service_minutes=f.properties.effective_service_minutes,
+                    duration_source=f.properties.duration_source,
                 )
                 for f in stops
             ],

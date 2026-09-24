@@ -1,0 +1,24 @@
+meta {
+  name: Создание адреса требует авторизации
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{base_url}}/api/v1/location
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "city": "Санкт-Петербург",
+    "district": "Невский район",
+    "street": "Искровский проспект",
+    "building_number": "4"
+  }
+}
+
+assert {
+  res.status: eq 401
+}

@@ -34,7 +34,7 @@ from app.main import app
 from app.modules.planning.eligibility import check_eligibility
 from app.modules.tickets.enums import TicketCategory
 from app.modules.tickets.schemas import TicketCreate
-from app.modules.tickets.service import create_ticket, get_ticket
+from app.modules.tickets.service import create_ticket, get_ticket_unscoped
 from app.modules.users.enums import TransportType, UserRole
 from app.modules.users.schemas import UserCreate, WorkerProfileCreate
 from app.modules.users.service import create_user
@@ -181,7 +181,7 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
         )
 
         # 4. Read ticket again - FK intact
-        re_read = get_ticket(session, ticket.id)
+        re_read = get_ticket_unscoped(session, ticket.id)
         self.assertEqual(re_read.work_type_id, conn_wt.id)
 
         # 5. Check snapshot & eligibility: no unknown_work_type error!
