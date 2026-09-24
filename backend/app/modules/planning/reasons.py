@@ -4,6 +4,7 @@ Every rejection, worker exclusion and visit factor has the same shape, so a scre
 render them without knowing the solver. Texts state only what was actually checked.
 """
 
+import math
 from collections import Counter
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -278,6 +279,31 @@ def unknown_work_type(name):
         f"Вид работ «{name}» не найден в справочнике",
         observed={"work_type": name},
     )
+
+
+def sla_deadline_missed(earliest_completion, deadline, ticket):
+    return explain(
+        "sla_deadline_missed",
+        "sla",
+        f"Самое раннее завершение {clock(earliest_completion, deadline.date())} позже срока SLA "
+        f"{clock(deadline, deadline.date())}",
+        constraint="sla_deadline=service_completion_at_or_before_deadline",
+        ids={"ticket_ids": [ticket["id"]]},
+        observed={"earliest_completion_at": iso(earliest_completion)},
+        required={"sla_deadline_at": iso(deadline)},
+    )
+
+
+def annotate_priority(reason, category, priority):
+    result = dict(reason)
+    observed = dict(result.get("observed") or {})
+    observed.update(category=category, priority=priority)
+    result["observed"] = observed
+    required = dict(result.get("required") or {})
+    required["planning_priority_order"] = ["emergency", "connection", "repair", "additional"]
+    required["ticket_priority"] = priority
+    result["required"] = required
+    return result
 
 
 def requirements_not_configured(work_type):
@@ -607,12 +633,30 @@ def equipment_factor(allocations, names):
     )
 
 
-def priority_factor(priority):
+def priority_factor(category, priority):
     return explain(
-        "equal_priority",
+        "priority_applied",
         "policy",
-        "Приоритеты не применяются: действующая политика считает все заявки равноценными",
-        constraint=f"priority={priority}",
+        "Категория и численный приоритет заявки учтены при выборе маршрута",
+        constraint="priority=emergency_then_connection_then_repair_or_additional",
+        observed={"category": category, "priority": priority},
+        required={"category_order": ["emergency", "connection", "repair", "additional"]},
+    )
+
+
+def sla_factor(service_end, deadline):
+    if deadline is None:
+        return explain("no_sla_deadline", "sla", "Для заявки не задан срок SLA")
+    late_minutes = max(0, math.ceil((service_end - deadline).total_seconds() / 60))
+    return explain(
+        "sla_on_time" if late_minutes == 0 else "sla_late",
+        "sla",
+        "Работа завершится в срок SLA"
+        if late_minutes == 0
+        else f"Риск опоздания по SLA: {late_minutes} мин",
+        constraint="sla_deadline=service_completion_at_or_before_deadline",
+        observed={"estimated_service_end_at": iso(service_end), "late_minutes": late_minutes},
+        required={"sla_deadline_at": iso(deadline)},
     )
 
 

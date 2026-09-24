@@ -82,6 +82,7 @@
   - `PATCH /api/v1/work-types/{id}` — изменить название или части норматива (только `observer`).
 - **Заявки и система:**
   - `POST /api/v1/tickets` — создать заявку;
+  - `POST /api/v1/tickets/{id}/sla-estimate` — оценить прибытие и риск SLA для следующей заявки.
   - `GET /api/v1/tickets` — получить страницу заявок с фильтрами, включая `brigade_id`;
   - `GET /api/v1/tickets/{id}` — получить одну заявку с адресом и координатами;
   - `PUT /api/v1/tickets/{id}/assignees` — заменить список исполнителей, доступно наблюдателю;
@@ -637,7 +638,7 @@ Ruff и форматирование; для этой правки обраще�
   "location_id": 1,
   "title": "Настроить Wi-Fi",
   "description": "Учебный пример заявки",
-  "work_type": "Настройка сети",
+  "work_type_id": 1,
   "visit_window_start": "2026-09-14T10:00:00+03:00",
   "visit_window_end": "2026-09-14T14:00:00+03:00",
   "estimated_duration_minutes": 60

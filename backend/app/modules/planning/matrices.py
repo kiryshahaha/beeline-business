@@ -1,11 +1,18 @@
 """Separate logical visits from unique coordinates and query all directed matrix blocks."""
 
 import math
+from datetime import datetime
 
 from app.modules.planning.async_utils import bounded_map
 from app.modules.planning.errors import PlanningError
 from app.modules.planning.policy import execution_policy
 from app.modules.planning.solver_contract import SolveRequest
+
+
+def _minute_offset(value, epoch, *, round_up: bool) -> int:
+    timestamp = value if isinstance(value, datetime) else datetime.fromisoformat(value)
+    minutes = (timestamp - epoch).total_seconds() / 60
+    return math.ceil(minutes) if round_up else math.floor(minutes)
 
 
 async def build_problem(prepared: dict, provider, settings) -> tuple[SolveRequest, list[dict]]:
@@ -120,7 +127,20 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
     task_service = [t["duration"] for t in tickets]
     depot_penalties = [0] * v
     finish_penalties = [0] * v if open_end else []
-    task_penalties = [policy.penalty(v, horizon)] * len(tickets)
+    base_penalty = policy.penalty(v, horizon)
+    priority_values = sorted({ticket["priority"] for ticket in tickets})
+    priority_rank = {
+        priority: len(priority_values) - index for index, priority in enumerate(priority_values)
+    }
+    category_rank = {"emergency": 3, "connection": 2, "repair": 1, "additional": 1}
+    task_penalties = [
+        base_penalty
+        * (
+            category_rank[ticket["category"]] * (len(tickets) + 1)
+            + priority_rank[ticket["priority"]]
+        )
+        for ticket in tickets
+    ]
     # allowed_vehicles keys are task node indices (strings).
     allowed = {str(task_offset + i): t["allowed"] for i, t in enumerate(tickets)}
     request = SolveRequest(
@@ -136,6 +156,22 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
         service_times=depot_service + finish_service + task_service,
         allowed_vehicles=allowed,
         penalties=depot_penalties + finish_penalties + task_penalties,
+        ticket_policies=[
+            {
+                "ticket_id": ticket["id"],
+                "category": ticket["category"],
+                "priority": ticket["priority"],
+                "received_at": _minute_offset(
+                    ticket["received_at"], prepared["epoch"], round_up=True
+                ),
+                "sla_deadline_at": (
+                    _minute_offset(ticket["sla_deadline_at"], prepared["epoch"], round_up=False)
+                    if ticket.get("sla_deadline_at")
+                    else None
+                ),
+            }
+            for ticket in tickets
+        ],
         time_capacity=horizon,
         slack_max=horizon,
         search_time_limit_s=policy.search_time_limit_seconds,

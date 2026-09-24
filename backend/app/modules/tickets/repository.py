@@ -9,7 +9,8 @@ from app.modules.notifications.enums import NotificationKind
 TICKET_SELECT_SQL = """
     SELECT
         t.id, t.location_id, t.service_area_id, t.title, t.description,
-        t.work_type, t.work_type_id, t.category, t.priority,
+        COALESCE(wt.name, t.work_type) AS work_type,
+        t.work_type_id, t.category, t.priority,
         t.received_at, t.sla_deadline_at, t.required_transport_type, t.service_duration_source,
         t.status,
         CASE
@@ -41,6 +42,7 @@ TICKET_SELECT_SQL = """
         l.entrance_id, e.number AS entrance_number,
         l.floor, l.apartment, l.latitude, l.longitude
     FROM tickets AS t
+    LEFT JOIN work_types AS wt ON wt.id = t.work_type_id
     JOIN locations AS l ON l.id = t.location_id
     JOIN buildings AS b ON b.id = l.building_id
     JOIN streets AS s ON s.id = b.street_id

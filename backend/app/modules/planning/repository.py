@@ -187,16 +187,10 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
     locations = rows(session, Location, Location.id.in_(location_ids))
     skills = rows(session, WorkerSkillAssignment, WorkerSkillAssignment.worker_id.in_(worker_ids))
     wt_ids = {t["work_type_id"] for t in tickets if t.get("work_type_id")}
-    wt_names = {t["work_type"].strip().lower() for t in tickets if t.get("work_type")}
-    wt_conds = []
-    if wt_ids:
-        wt_conds.append(WorkType.id.in_(wt_ids))
-    if wt_names:
-        wt_conds.append(func.lower(WorkType.name).in_(wt_names))
     work_types = rows(
         session,
         WorkType,
-        or_(*wt_conds) if wt_conds else (WorkType.id == -1),
+        WorkType.id.in_(wt_ids) if wt_ids else (WorkType.id == -1),
     )
     type_ids = {t["id"] for t in work_types}
 

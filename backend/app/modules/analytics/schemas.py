@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-from app.modules.tickets.enums import TicketStatus
+from app.modules.tickets.enums import TicketCategory, TicketStatus
 from app.modules.users.enums import UserRole
 
 
@@ -52,6 +52,12 @@ class ActivityTicket(BaseModel):
 
     id: int
     title: str
+    work_type_id: int | None = None
+    work_type: str | None = None
+    category: TicketCategory
+    priority: int
+    received_at: AwareDatetime
+    sla_deadline_at: AwareDatetime | None = None
     status: TicketStatus = Field(
         description="Текущий статус заявки, а не статус на момент события."
     )

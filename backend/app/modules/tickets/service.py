@@ -1,3 +1,4 @@
+import math
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from zoneinfo import ZoneInfo
@@ -6,6 +7,7 @@ from sqlalchemy import RowMapping, text
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
+from app.db.models import WorkType, WorkTypePlanningRule
 from app.modules.execution import repository as execution_repository
 from app.modules.execution import service as execution_service
 from app.modules.execution.enums import TicketLifecycleState, WorkEventType
@@ -14,7 +16,12 @@ from app.modules.locations.schemas import LocationRead
 from app.modules.notifications.enums import NotificationKind
 from app.modules.tickets import repository
 from app.modules.tickets.enums import TicketCategory, TicketStatus
-from app.modules.tickets.schemas import TicketCreate, TicketFields, TicketRead
+from app.modules.tickets.schemas import (
+    TicketCreate,
+    TicketFields,
+    TicketRead,
+    TicketSlaEstimateRead,
+)
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
 from app.modules.work_types import repository as work_types_repository
@@ -24,6 +31,20 @@ MOSCOW = ZoneInfo("Europe/Moscow")
 
 class LocationNotFoundError(Exception):
     pass
+
+
+class WorkTypeNotFoundError(Exception):
+    pass
+
+
+class InvalidSlaDeadlineError(Exception):
+    pass
+
+
+class SlaEstimationConfigurationError(Exception):
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
 
 
 class TicketNotFoundError(Exception):
@@ -74,6 +95,74 @@ def get_ticket_unscoped(session: Session, ticket_id: int) -> TicketRead:
     return _ticket_from_row(details)
 
 
+def estimate_sla(
+    session: Session,
+    ticket_id: int,
+    current_user: UserRead,
+    *,
+    previous_ticket_end_at: datetime,
+    travel_minutes: int,
+) -> TicketSlaEstimateRead:
+    ticket = get_ticket(session, ticket_id, current_user)
+    if ticket.work_type_id is None:
+        raise SlaEstimationConfigurationError("work_type_unlinked")
+    work_type = session.get(WorkType, ticket.work_type_id)
+    rule = session.get(WorkTypePlanningRule, ticket.work_type_id)
+    if work_type is None:
+        raise SlaEstimationConfigurationError("work_type_not_found")
+    if rule is None:
+        raise SlaEstimationConfigurationError("work_type_planning_rule_missing")
+
+    duration_source = rule.service_duration_source
+    if duration_source == "ticket_estimate":
+        duration_minutes = ticket.estimated_duration_minutes
+    elif duration_source == "work_norm":
+        duration_minutes = work_type.work_minutes + work_type.documents_minutes
+    else:
+        raise SlaEstimationConfigurationError("invalid_service_duration_source")
+
+    estimated_arrival_at = previous_ticket_end_at + timedelta(minutes=travel_minutes)
+    estimated_service_start_at = max(
+        estimated_arrival_at,
+        ticket.visit_window_start,
+        ticket.received_at,
+    )
+    estimated_service_end_at = estimated_service_start_at + timedelta(minutes=duration_minutes)
+    arrival_late_minutes = max(
+        0,
+        math.ceil((estimated_arrival_at - ticket.visit_window_end).total_seconds() / 60),
+    )
+    sla_late_minutes = (
+        max(
+            0,
+            math.ceil((estimated_service_end_at - ticket.sla_deadline_at).total_seconds() / 60),
+        )
+        if ticket.sla_deadline_at is not None
+        else 0
+    )
+
+    return TicketSlaEstimateRead(
+        ticket_id=ticket.id,
+        estimated_arrival_at=estimated_arrival_at,
+        estimated_service_start_at=estimated_service_start_at,
+        estimated_service_end_at=estimated_service_end_at,
+        visit_window_end_at=ticket.visit_window_end,
+        arrival_status="late" if arrival_late_minutes else "within_window",
+        arrival_late_minutes=arrival_late_minutes,
+        sla_deadline_at=ticket.sla_deadline_at,
+        sla_status=(
+            "not_configured"
+            if ticket.sla_deadline_at is None
+            else "at_risk"
+            if sla_late_minutes
+            else "on_time"
+        ),
+        sla_late_minutes=sla_late_minutes,
+        duration_minutes=duration_minutes,
+        duration_source=duration_source,
+    )
+
+
 def list_tickets(
     session: Session,
     *,
@@ -107,6 +196,7 @@ def _ticket_from_row(details: RowMapping) -> TicketRead:
     data = TicketFields.model_validate(details).model_dump()
     data.update(
         id=details["id"],
+        work_type=details["work_type"],
         work_type_id=details["work_type_id"],
         category=category or TicketCategory.REPAIR,
         priority=details.get("priority", 3),
@@ -160,62 +250,30 @@ def create_ticket(
         values = data.model_dump()
         values["status"] = data.status.value
 
-        # Resolve work_type_id and WorkType metadata
         work_type_id = data.work_type_id
-        work_type_row = None
-        if work_type_id is not None:
-            work_type_row = work_types_repository.find_work_type(session, work_type_id)
-            if work_type_row is None:
-                raise ValueError("Вид работ не найден")
-            if not values.get("work_type"):
-                values["work_type"] = work_type_row["name"]
-        elif data.work_type:
-            work_type_id = work_types_repository.find_id_by_name(session, data.work_type)
-            if work_type_id is None:
-                work_type_id = work_types_repository.find_id_by_code(session, data.work_type)
-            if work_type_id is not None:
-                work_type_row = work_types_repository.find_work_type(session, work_type_id)
-            else:
-                # Create a dynamic work type for legacy/testing string
-                category = "repair"
-                lower_wt = data.work_type.lower()
-                if "авар" in lower_wt:
-                    category = "emergency"
-                elif "подключ" in lower_wt or "настройк" in lower_wt:
-                    category = "connection"
-                elif "дозаказ" in lower_wt:
-                    category = "additional"
-
-                work_priority = (
-                    1 if category == "emergency" else (2 if category == "connection" else 3)
-                )
-                work_type_id = work_types_repository.add_work_type(
-                    session,
-                    {
-                        "name": data.work_type,
-                        "travel_minutes": 20,
-                        "work_minutes": 30,
-                        "documents_minutes": 0,
-                        "category": category,
-                        "default_priority": work_priority,
-                    },
-                )
-                work_type_row = work_types_repository.find_work_type(session, work_type_id)
-            values["work_type_id"] = work_type_id
+        work_type_row = work_types_repository.find_work_type(session, work_type_id)
+        if work_type_row is None:
+            raise WorkTypeNotFoundError
+        values["work_type_id"] = work_type_id
+        values["work_type"] = work_type_row["name"]
+        values["service_duration_source"] = None
 
         # Defaults for category, priority, received_at, duration_source
-        if not values.get("category"):
-            values["category"] = (
-                work_type_row["category"] if work_type_row else TicketCategory.REPAIR.value
-            )
+        if values.get("category") is None:
+            values["category"] = work_type_row["category"]
         elif isinstance(values["category"], TicketCategory):
             values["category"] = values["category"].value
 
-        if not values.get("priority"):
-            values["priority"] = work_type_row["default_priority"] if work_type_row else 3
+        if values.get("priority") is None:
+            values["priority"] = work_type_row["default_priority"]
 
         if not values.get("received_at"):
             values["received_at"] = datetime.now(UTC)
+        if (
+            values.get("sla_deadline_at") is not None
+            and values["sla_deadline_at"] <= values["received_at"]
+        ):
+            raise InvalidSlaDeadlineError
 
         if not values.get("sla_deadline_at") and values["category"] == "emergency":
             values["sla_deadline_at"] = values["received_at"] + timedelta(hours=24)
