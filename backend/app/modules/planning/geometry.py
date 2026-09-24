@@ -1,7 +1,7 @@
 """Retrieve selected roads only; never turn provider gaps into invented road segments."""
 
 import math
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from pydantic import ValidationError
 
@@ -140,31 +140,40 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
             }
             if node["kind"] == "ticket":
                 ticket = node["ticket"]
-                stop["ticket_id"] = ticket["id"]
                 service_end = service_start + timedelta(minutes=ticket["duration"])
-                visits.append(
-                    {
-                        **stop,
-                        "sequence": len(visits) + 1,
-                        "service_end_at": service_end.isoformat(),
-                        "waiting_minutes": wait_minutes,
-                        "effective_service_minutes": ticket["duration"],
-                        "duration_source": ticket["duration_source"],
-                    }
-                )
+                
+                shift_end = epoch + timedelta(minutes=worker["window"][1])
+                limit = shift_end
+                if ticket.get("deadline_at"):
+                    deadline = datetime.fromisoformat(ticket["deadline_at"])
+                    limit = min(shift_end, deadline)
+                if service_end > limit:
+                    raise PlanningError("routing_estimate_changed", 502)
+
+                stop.update({
+                    "ticket_id": ticket["id"],
+                    "service_end_at": service_end.isoformat(),
+                    "waiting_minutes": wait_minutes,
+                    "effective_service_minutes": ticket["duration"],
+                    "duration_source": ticket["duration_source"],
+                })
+                visits.append({**stop, "sequence": len(visits) + 1})
             public_steps.append(step)
             stops.append(stop)
 
         properties = GeoapifyPathProperties(
             mode=worker["profile"], legs=legs, snap_limit_meters=settings.planning_max_snap_meters
         )
-        # RouteCreate uses arrival_at for ordering; use service_start_at as the persisted stop time
-        # (clients see service_start_at via the public PlannedVisit, not RouteStop.arrival_at).
         route_stops = [
             RouteStop(
                 location_id=s["location_id"],
                 ticket_id=s.get("ticket_id"),
-                arrival_at=s["service_start_at"],  # persisted as service_start for DB/schedule
+                arrival_at=s["arrival_at"],
+                service_start_at=s.get("service_start_at"),
+                service_end_at=s.get("service_end_at"),
+                waiting_minutes=s.get("waiting_minutes"),
+                effective_service_minutes=s.get("effective_service_minutes"),
+                duration_source=s.get("duration_source"),
             )
             for s in stops
         ]
