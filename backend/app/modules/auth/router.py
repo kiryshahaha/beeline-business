@@ -21,7 +21,7 @@ REFRESH_COOKIE = "refresh_token"
 @router.post("/login", response_model=LoginResponse)
 def login(data: LoginRequest, response: Response, session: DatabaseSession) -> LoginResponse:
     """
-    Вход по логину и паролю. 
+    Вход по логину и паролю.
     Возвращает access_token; refresh_token устанавливается в httpOnly cookie.
     """
     try:

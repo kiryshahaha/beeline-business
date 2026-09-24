@@ -58,6 +58,7 @@ LOGIN_RESPONSE_EXAMPLE = {
 
 class LoginResponse(BaseModel):
     """Ответ на /login и /refresh: refresh_token передаётся только через httpOnly cookie."""
+
     model_config = ConfigDict(json_schema_extra={"examples": [LOGIN_RESPONSE_EXAMPLE]})
 
     access_token: str
