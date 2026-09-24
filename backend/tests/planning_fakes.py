@@ -58,6 +58,7 @@ class FeasiblePlanner:
         remaining = set(map(int, problem.allowed_vehicles))
         routes = []
         for vehicle, depot in enumerate(problem.starts):
+            finish = problem.ends[vehicle]
             matrix = problem.matrices[problem.vehicle_profiles[vehicle]]
             arrival = problem.vehicle_time_windows[vehicle][0]
             steps = [{"node": depot, "arrival_time": arrival}]
@@ -67,7 +68,7 @@ class FeasiblePlanner:
                 if vehicle not in problem.allowed_vehicles[str(node)]:
                     continue
                 duration = matrix.time_minutes[previous][node]
-                back = matrix.time_minutes[node][depot]
+                back = matrix.time_minutes[node][finish]
                 if duration is None or back is None:
                     continue
                 earliest = arrival + problem.service_times[previous] + duration
@@ -85,12 +86,12 @@ class FeasiblePlanner:
                 arrival, previous = next_time, node
                 steps.append({"node": node, "arrival_time": arrival})
                 remaining.remove(node)
-            duration = matrix.time_minutes[previous][depot]
+            duration = matrix.time_minutes[previous][finish]
             arrival += problem.service_times[previous] + duration
             service += problem.service_times[previous]
             travel += duration
-            distance += matrix.distance_meters[previous][depot]
-            steps.append({"node": depot, "arrival_time": arrival})
+            distance += matrix.distance_meters[previous][finish]
+            steps.append({"node": finish, "arrival_time": arrival})
             routes.append(
                 {
                     "vehicle_id": vehicle,

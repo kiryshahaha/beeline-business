@@ -23,5 +23,6 @@ tests {
     expect(res.getBody().state).to.equal("applied");
     expect(res.getBody().is_current).to.equal(true);
     expect(res.getBody().input_snapshot).to.equal(undefined);
+    expect(JSON.stringify(res.getBody().planning_policy)).to.equal(bru.getVar("planning_recorded_policy"));
   });
 }

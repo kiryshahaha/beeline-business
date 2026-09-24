@@ -25,6 +25,7 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/users",
             "/api/v1/users/me",
             "/api/v1/users/{id}",
+            "/api/v1/workers/{worker_id}/line-status",
             "/api/v1/worker/skills",
             "/api/v1/brigades",
             "/api/v1/brigades/{id}",
@@ -36,6 +37,7 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/analytics/brigades-workload",
             "/api/v1/analytics/recent-activity",
             "/api/v1/reports/tickets/export",
+            "/api/v1/planning/policy",
         ]
         for path in expected_paths:
             self.assertIn(path, paths, f"Path {path} missing in OpenAPI schema")
@@ -57,6 +59,7 @@ class OpenApiTests(unittest.TestCase):
         )
 
         protected_operations = (
+            paths["/api/v1/workers/{worker_id}/line-status"]["put"],
             paths["/api/v1/tickets/{id}/assignees"]["put"],
             paths["/api/v1/tickets/{id}/status"]["patch"],
             paths["/api/v1/tickets/{id}/comments"]["get"],

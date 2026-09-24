@@ -1,0 +1,31 @@
+meta {
+  name: Действующая политика и отдельный контракт кейса
+  type: http
+  seq: 0
+}
+
+get {
+  url: {{base_url}}/api/v1/planning/policy
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Контракт кейса не выдан за активную конфигурацию solver", () => {
+    const body = res.getBody();
+    expect(body.execution.policy_version).to.equal(1);
+    expect(body.execution.priority).to.equal("equal_ticket_penalties");
+    expect(body.case_contract.activation).to.equal("contract_only");
+    expect(body.case_contract.objective_order[0]).to.equal("unassigned_emergencies");
+    const covered = new Set(body.case_contract.rules.flatMap(r => r.acceptance));
+    for (let i = 1; i <= 18; i++) expect(covered.has(`A${String(i).padStart(2, "0")}`)).to.equal(true);
+    bru.setVar("planning_execution_policy", JSON.stringify(body.execution));
+  });
+}

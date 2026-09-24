@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, st
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session
+from app.modules.appliances.inventory import InventoryError
 from app.modules.auth.dependencies import OptionalCurrentUser, get_current_user, require_roles
 from app.modules.tickets import service
 from app.modules.tickets.enums import TicketStatus
@@ -105,6 +106,13 @@ def replace_ticket_assignees(
         raise HTTPException(
             status_code=422, detail="Один или несколько исполнителей не найдены"
         ) from error
+    except service.WorkerOffLineError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Один или несколько исполнителей сняты с линии",
+        ) from error
+    except InventoryError as error:
+        raise HTTPException(status_code=error.status, detail=error.detail()) from error
 
 
 @router.patch("/{id}/status", response_model=TicketRead)
@@ -123,3 +131,5 @@ def update_ticket_status(
         raise HTTPException(
             status_code=403, detail="Нет прав на изменение статуса заявки"
         ) from error
+    except InventoryError as error:
+        raise HTTPException(status_code=error.status, detail=error.detail()) from error

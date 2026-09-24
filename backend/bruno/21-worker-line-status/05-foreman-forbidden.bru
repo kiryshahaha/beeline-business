@@ -1,0 +1,29 @@
+meta {
+  name: Бригадир не меняет статус линии
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{base_url}}/api/v1/workers/{{worker_id}}/line-status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{foreman_access_token}}
+}
+
+body:json {
+  {"is_on_line":true}
+}
+
+assert {
+  res.status: eq 403
+}
+
+tests {
+  test("Доступ закрыт для бригадира", function () {
+    expect(res.getBody().detail).to.equal("Недостаточно прав для выполнения операции");
+  });
+}

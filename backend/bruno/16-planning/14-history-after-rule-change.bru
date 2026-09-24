@@ -17,6 +17,7 @@ assert {
 }
 tests {
   test("Маршруты остались теми же", () => {
+    expect(JSON.stringify(res.getBody().planning_policy)).to.equal(bru.getVar("planning_recorded_policy"));
     expect(JSON.stringify(res.getBody().apply_result.routes.map(r => r.id))).to.equal(bru.getVar("planning_saved_ids"));
   });
 }

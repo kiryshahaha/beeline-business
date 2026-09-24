@@ -74,3 +74,38 @@ class SolverObjectiveTests(unittest.TestCase):
         result = solve(SolveRequest.model_validate(data))
         self.assertEqual(result.dropped_nodes, [])
         self.assertEqual(next(s for s in result.routes[0].steps if s.node == 1).arrival_time, 20)
+
+    def test_open_end_finish_node_is_not_round_trip(self):
+        """F05: with open_end=True starts != ends; finish node != start depot."""
+        # n=4: node 0 = depot(start), node 1 = finish, nodes 2-3 = tasks
+        data = problem(n=4, vehicles=1, horizon=100)
+        # Rearrange: depot=node0, finish=node1 (separate), tasks=2,3
+        data["starts"] = [0]
+        data["ends"] = [1]
+        data["open_end"] = True
+        data["time_windows"] = [[0, 100]] * 2 + [[0, 100]] * 2
+        data["service_times"] = [0, 0, 10, 10]
+        data["penalties"] = [0, 0, 201, 201]
+        data["allowed_vehicles"] = {"2": [0], "3": [0]}
+        result = solve(SolveRequest.model_validate(data))
+        self.assertIn(result.status, ("FEASIBLE", "OPTIMAL"))
+        self.assertEqual(result.dropped_nodes, [])
+        route = result.routes[0]
+        # first step must be depot (0), last step must be finish (1)
+        self.assertEqual(route.steps[0].node, 0)
+        self.assertEqual(route.steps[-1].node, 1)
+
+    def test_waiting_minutes_matches_gap_between_arrival_and_window_open(self):
+        """F10: when a vehicle arrives early the gap is reflected in waiting_minutes."""
+        # n=2: depot(0) + single task(1). travel depot→task = 5 min; window opens at 30.
+        # Vehicle departs at 0, arrives at 5, waits 25 min, service starts at 30.
+        data = problem(n=2, horizon=100)
+        data["time_windows"][1] = [30, 50]
+        result = solve(SolveRequest.model_validate(data))
+        self.assertEqual(result.dropped_nodes, [])
+        route = result.routes[0]
+        step1 = next(s for s in route.steps if s.node == 1)
+        # arrival_time recorded by solver = service_start (max of travel+svc, window_lower)
+        self.assertEqual(step1.arrival_time, 30)
+        # gap = arrival_time - prev_arrival_time - service[prev] - travel = 30 - 0 - 0 - 5 = 25
+        self.assertEqual(route.waiting_minutes, 25)

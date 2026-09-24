@@ -110,6 +110,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             workshift_start=time(22 if night else 8),
             workshift_end=time(6 if night else 18),
             transport_type=TRANSPORT[w % 4],
+            is_on_line=True,
         )
         for skill in range(1, w % 3 + 2):
             add("worker_skill_assignments", worker_id=i, skill_id=skill)
@@ -253,6 +254,14 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
                                 "arrival_at": (
                                     start + timedelta(minutes=sequence * 40 + number)
                                 ).isoformat(),
+                                "service_start_at": (
+                                    start + timedelta(minutes=sequence * 40 + number)
+                                ).isoformat(),
+                                "service_end_at": (
+                                    start + timedelta(minutes=sequence * 40 + number + 30)
+                                ).isoformat(),
+                                "waiting_minutes": 0,
+                                "duration_source": "ticket_estimate",
                             },
                         }
                     )

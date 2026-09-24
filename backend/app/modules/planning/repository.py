@@ -1,6 +1,6 @@
 """Bounded input selection directly from PostgreSQL, independent of paginated public APIs."""
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -12,6 +12,7 @@ from app.db.models import (
     Office,
     Ticket,
     TicketAppliance,
+    TicketApplianceState,
     TicketAssignment,
     User,
     Worker,
@@ -21,6 +22,7 @@ from app.db.models import (
     WorkTypeRequiredAppliance,
     WorkTypeRequiredSkill,
 )
+from app.modules.planning.policy import execution_policy
 from app.modules.planning.schemas import PreviewRequest
 from app.modules.planning.snapshot import normalize
 
@@ -35,7 +37,7 @@ def rows(session: Session, model, *conditions):
     ]
 
 
-def load_snapshot(session: Session, request: PreviewRequest) -> dict:
+def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=None) -> dict:
     ticket_ids, worker_ids = request.ticket_ids, request.worker_ids
     tickets = rows(session, Ticket, Ticket.id.in_(ticket_ids))
     workers = rows(session, Worker, Worker.user_id.in_(worker_ids))
@@ -103,6 +105,11 @@ def load_snapshot(session: Session, request: PreviewRequest) -> dict:
                 TicketAppliance.office_id.in_(office_ids),
                 TicketAppliance.appliance_id.in_(appliance_ids),
                 Ticket.status.in_(["planned", "in_progress"]),
+                # Issued or written-off units have already left the office stock.
+                ~exists().where(
+                    TicketApplianceState.ticket_id == TicketAppliance.ticket_id,
+                    TicketApplianceState.appliance_id == TicketAppliance.appliance_id,
+                ),
             )
             .group_by(TicketAppliance.office_id, TicketAppliance.appliance_id)
             .order_by(TicketAppliance.office_id, TicketAppliance.appliance_id)
@@ -111,7 +118,11 @@ def load_snapshot(session: Session, request: PreviewRequest) -> dict:
     return normalize(
         {
             "request": request.model_dump(mode="json"),
-            "policy_version": 1,
+            **(
+                {"policy_version": 1, "planning_policy": execution_policy().model_dump(mode="json")}
+                if policy_snapshot is None
+                else policy_snapshot
+            ),
             "tickets": tickets,
             "workers": workers,
             "roles": roles,

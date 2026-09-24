@@ -1,0 +1,25 @@
+meta {
+  name: Журнал движения оборудования
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/api/v1/equipment/operations?worker_id={{equipment_worker_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Последние операции инженера: возврат после выдачи", () => {
+    expect(res.getBody().map(op => op.kind)).to.deep.equal(["return", "issue"]);
+  });
+}

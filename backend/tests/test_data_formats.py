@@ -39,6 +39,7 @@ class DataFormatTests(unittest.TestCase):
             {r["transport_type"] for r in self.data["workers"]},
             {"car", "walking", "bicycle", "public_transport"},
         )
+        self.assertTrue(all(row["is_on_line"] for row in self.data["workers"]))
         locations = {row["id"]: row for row in self.data["locations"]}
         for ticket in self.data["tickets"]:
             if "missing_coordinates" in ticket["title"]:
@@ -55,6 +56,11 @@ class DataFormatTests(unittest.TestCase):
                 "data_imports",
                 "planning_plans",
                 "planning_plan_routes",
+                "office_kit_reserves",
+                "worker_appliances",
+                "appliance_operations",
+                "appliance_movements",
+                "ticket_appliance_states",
             },
         )
         for url in ("postgresql://localhost/production", "sqlite:///example_test"):

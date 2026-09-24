@@ -1,0 +1,24 @@
+meta {
+  name: Наблюдатель задаёт норму резерва офиса
+  type: http
+  seq: 10
+}
+
+put {
+  url: {{base_url}}/api/v1/offices/{{office_id}}/kit-reserve/{{created_appliance_id}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"quantity":1}
+}
+
+assert {
+  res.status: eq 200
+  res.body.quantity: eq 1
+}

@@ -31,8 +31,18 @@ tests {
     const b = res.getBody();
     expect(res.getStatus(), JSON.stringify(b)).to.equal(201);
     expect(b.state).to.equal("ready");
+    expect(JSON.stringify(b.planning_policy)).to.equal(bru.getVar("planning_execution_policy"));
+    bru.setVar("planning_recorded_policy", JSON.stringify(b.planning_policy));
     expect(b.unassigned).to.have.lengthOf(0);
+    expect(b.outcome).to.equal("complete");
+    expect(b.metrics.assigned_tickets).to.equal(24);
+    expect(b.metrics.used_workers).to.equal(b.routes.length);
+    expect(b.resource_estimate).to.equal(null);
     expect(b.routes.flatMap(r => r.stops)).to.have.lengthOf(24);
+    for (const s of b.routes.flatMap(r => r.stops)) {
+      expect(s.factors.map(f => f.code)).to.include.members(["skills_match", "transport", "start_in_window", "equal_priority"]);
+      for (const f of s.factors) expect(f.message).to.be.a("string").and.not.equal("");
+    }
     expect(new Set(b.routes.map(r => r.transport_type)).size).to.equal(4);
     for (const r of b.routes) {
       expect(r.geometry.type).to.equal("MultiLineString");

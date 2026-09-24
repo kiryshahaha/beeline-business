@@ -5,6 +5,7 @@
 | [DATA_EXCHANGE.md](DATA_EXCHANGE.md) | Структура CSV/XLSX, импорт, экспорт, ID, безопасность и примеры |
 | [AUDIT_2026-09-18.md](AUDIT_2026-09-18.md) | Области проверки, подтверждённые проблемы и результаты тестов |
 | [PLANNING_VERIFICATION.md](PLANNING_VERIFICATION.md) | Реализованная интеграция planner, результаты проверок и ограничения окружения |
+| [PLANNING_POLICY.md](PLANNING_POLICY.md) | Контракт кейса T01, действующие правила, сохранение параметров и границы проверок |
 | [PLANNER_INTEGRATION.md](PLANNER_INTEGRATION.md) | Исходный технический аудит и проект интеграции; актуальный контракт — в README модуля planning |
 
 Контракт работающего API также доступен в `/docs` и `/openapi.json` backend.

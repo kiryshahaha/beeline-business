@@ -1,0 +1,32 @@
+meta {
+  name: Наблюдатель возвращает инженера на линию
+  type: http
+  seq: 8
+}
+
+put {
+  url: {{base_url}}/api/v1/workers/{{worker_id}}/line-status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"is_on_line":true}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Инженер снова доступен без автоматического возврата заявок", function () {
+    const body = res.getBody();
+    expect(body.worker_id).to.equal(Number(bru.getVar("worker_id")));
+    expect(body.is_on_line).to.equal(true);
+    expect(body.released_ticket_ids).to.deep.equal([]);
+  });
+}

@@ -1,0 +1,33 @@
+meta {
+  name: Наблюдатель снимает инженера с линии
+  type: http
+  seq: 1
+}
+
+put {
+  url: {{base_url}}/api/v1/workers/{{worker_id}}/line-status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"is_on_line":false}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Инженер снят с линии, плановые заявки освобождены", function () {
+    const body = res.getBody();
+    expect(body.worker_id).to.equal(Number(bru.getVar("worker_id")));
+    expect(body.is_on_line).to.equal(false);
+    expect(body.released_ticket_ids).to.be.an("array").that.is.not.empty;
+    expect(body.released_ticket_ids).not.to.include(Number(bru.getVar("ticket_id")));
+  });
+}

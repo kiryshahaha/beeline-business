@@ -1,0 +1,29 @@
+meta {
+  name: Неизвестный инженер
+  type: http
+  seq: 7
+}
+
+put {
+  url: {{base_url}}/api/v1/workers/{{missing_ticket_id}}/line-status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"is_on_line":false}
+}
+
+assert {
+  res.status: eq 404
+}
+
+tests {
+  test("API сообщает об отсутствующем инженере", function () {
+    expect(res.getBody().detail).to.equal("Исполнитель не найден");
+  });
+}

@@ -1,0 +1,25 @@
+meta {
+  name: Для статуса линии нужна авторизация
+  type: http
+  seq: 6
+}
+
+put {
+  url: {{base_url}}/api/v1/workers/{{worker_id}}/line-status
+  body: json
+  auth: none
+}
+
+body:json {
+  {"is_on_line":true}
+}
+
+assert {
+  res.status: eq 401
+}
+
+tests {
+  test("Запрос без токена отклонён", function () {
+    expect(res.getBody().detail).to.equal("Недействительный или просроченный токен авторизации");
+  });
+}

@@ -26,6 +26,7 @@ class ScheduleWorker(BaseModel):
     id: int
     full_name: str = Field(description="Фамилия, имя и отчество, если оно указано.")
     transport_type: TransportType
+    is_on_line: bool
     workshift_start: dt.time
     workshift_end: dt.time
     shifts: list[ShiftInterval] = Field(

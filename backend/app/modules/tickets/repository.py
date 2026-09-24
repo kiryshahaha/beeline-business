@@ -113,6 +113,23 @@ def find_worker_ids(session: Session, worker_ids: list[int]) -> set[int]:
     )
 
 
+def find_worker_line_statuses(session: Session, worker_ids: list[int]) -> dict[int, bool]:
+    if not worker_ids:
+        return {}
+    return dict(
+        session.execute(
+            text("""
+                SELECT user_id, is_on_line
+                FROM workers
+                WHERE user_id = ANY(:worker_ids)
+                ORDER BY user_id
+                FOR KEY SHARE
+            """),
+            {"worker_ids": worker_ids},
+        ).all()
+    )
+
+
 def replace_assignees(session: Session, ticket_id: int, worker_ids: list[int]) -> set[int]:
     current_ids = set(
         session.execute(

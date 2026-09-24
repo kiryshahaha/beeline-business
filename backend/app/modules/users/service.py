@@ -11,6 +11,7 @@ from app.modules.users.schemas import (
     UserCreate,
     UserRead,
     UserUpdate,
+    WorkerLineStatusRead,
     WorkerProfileRead,
     WorkerSkillCreate,
     WorkerSkillRead,
@@ -45,6 +46,10 @@ class WorkerProfileRequiredError(Exception):
     pass
 
 
+class WorkerNotFoundError(Exception):
+    pass
+
+
 def _build_user_read(row: RowMapping) -> UserRead:
     worker_profile = None
     if row["role"] == UserRole.WORKER.value and row["workshift_start"] is not None:
@@ -53,6 +58,7 @@ def _build_user_read(row: RowMapping) -> UserRead:
             workshift_end=row["workshift_end"],
             skills=list(row["skills"]),
             transport_type=row["transport_type"],
+            is_on_line=row["is_on_line"],
         )
     return UserRead(
         id=row["id"],
@@ -146,6 +152,28 @@ def create_skill(session: Session, data: WorkerSkillCreate) -> WorkerSkillRead:
 def get_all_skills(session: Session) -> list[WorkerSkillRead]:
     rows = repository.list_skills(session)
     return [WorkerSkillRead(id=row["id"], skill=row["skill"]) for row in rows]
+
+
+def update_worker_line_status(
+    session: Session, worker_id: int, is_on_line: bool
+) -> WorkerLineStatusRead:
+    with session.begin():
+        lock_planning_mutation(session)
+        worker = repository.lock_worker_line_status(session, worker_id)
+        if worker is None:
+            raise WorkerNotFoundError
+
+        repository.update_worker_line_status(session, worker_id, is_on_line)
+        released_ticket_ids: list[int] = []
+        if not is_on_line:
+            released_ticket_ids = repository.release_planned_assignments(session, worker_id)
+            repository.clear_planned_times_without_assignees(session, released_ticket_ids)
+
+        return WorkerLineStatusRead(
+            worker_id=worker_id,
+            is_on_line=is_on_line,
+            released_ticket_ids=released_ticket_ids,
+        )
 
 
 def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:

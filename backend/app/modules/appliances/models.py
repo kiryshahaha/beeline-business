@@ -1,8 +1,19 @@
-"""SQLAlchemy models for appliances, office stocks, and ticket appliance allocations."""
+"""SQLAlchemy models for appliances, office stocks, allocations and units on hand."""
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IntegerIdMixin
@@ -71,4 +82,128 @@ class TicketAppliance(Base):
     __table_args__ = (
         CheckConstraint("quantity > 0", name="quantity_positive"),
         Index("ix_ticket_appliances_office_appliance", "office_id", "appliance_id"),
+    )
+
+
+class OfficeKitReserve(Base):
+    """Declared units every engineer of the office carries beyond assigned tickets."""
+
+    __tablename__ = "office_kit_reserves"
+
+    office_id: Mapped[int] = mapped_column(
+        ForeignKey("offices.id", ondelete="RESTRICT"), primary_key=True
+    )
+    appliance_id: Mapped[int] = mapped_column(
+        ForeignKey("appliances.id", ondelete="RESTRICT"), primary_key=True
+    )
+    quantity: Mapped[int]
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (CheckConstraint("quantity > 0", name="quantity_positive"),)
+
+
+class WorkerAppliance(Base):
+    """Units physically on hand; a row exists only while the quantity is positive."""
+
+    __tablename__ = "worker_appliances"
+
+    worker_id: Mapped[int] = mapped_column(
+        ForeignKey("workers.user_id", ondelete="RESTRICT"), primary_key=True
+    )
+    appliance_id: Mapped[int] = mapped_column(
+        ForeignKey("appliances.id", ondelete="RESTRICT"), primary_key=True
+    )
+    quantity: Mapped[int]
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (CheckConstraint("quantity > 0", name="quantity_positive"),)
+
+
+class ApplianceOperation(IntegerIdMixin, Base):
+    """One idempotent inventory operation; its movements are the ledger lines."""
+
+    __tablename__ = "appliance_operations"
+
+    operation_key: Mapped[str] = mapped_column(String(100), unique=True)
+    kind: Mapped[str] = mapped_column(String(10))
+    worker_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+    ticket_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tickets.id", ondelete="SET NULL"), index=True
+    )
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    reason: Mapped[str | None] = mapped_column(Text)
+    request: Mapped[dict | None] = mapped_column(JSONB)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('issue','return','consume','restore')", name="kind_valid"),
+    )
+
+
+class ApplianceMovement(IntegerIdMixin, Base):
+    """Units moved between an office, an engineer and the client (both ends null = client)."""
+
+    __tablename__ = "appliance_movements"
+
+    operation_id: Mapped[int] = mapped_column(
+        ForeignKey("appliance_operations.id", ondelete="CASCADE"), index=True
+    )
+    appliance_id: Mapped[int] = mapped_column(ForeignKey("appliances.id", ondelete="RESTRICT"))
+    quantity: Mapped[int]
+    ticket_id: Mapped[int | None] = mapped_column(ForeignKey("tickets.id", ondelete="SET NULL"))
+    from_office_id: Mapped[int | None] = mapped_column(
+        ForeignKey("offices.id", ondelete="RESTRICT")
+    )
+    from_worker_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    to_office_id: Mapped[int | None] = mapped_column(ForeignKey("offices.id", ondelete="RESTRICT"))
+    to_worker_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="quantity_positive"),
+        CheckConstraint(
+            "num_nonnulls(from_office_id, from_worker_id) <= 1"
+            " AND num_nonnulls(to_office_id, to_worker_id) <= 1"
+            " AND num_nonnulls(from_office_id, from_worker_id, to_office_id, to_worker_id) >= 1",
+            name="ends_valid",
+        ),
+    )
+
+
+class TicketApplianceState(Base):
+    """Where allocated units are; no row means they are still reserved in the office."""
+
+    __tablename__ = "ticket_appliance_states"
+
+    ticket_id: Mapped[int] = mapped_column(primary_key=True)
+    appliance_id: Mapped[int] = mapped_column(primary_key=True)
+    holder_worker_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    # Explicit name: the generated one exceeds PostgreSQL's 63-character limit.
+    consumed_operation_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "appliance_operations.id",
+            ondelete="RESTRICT",
+            name="fk_ticket_appliance_states_consumed_operation",
+        )
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["ticket_id", "appliance_id"],
+            ["ticket_appliances.ticket_id", "ticket_appliances.appliance_id"],
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(
+            "holder_worker_id IS NOT NULL OR consumed_operation_id IS NOT NULL",
+            name="state_present",
+        ),
     )

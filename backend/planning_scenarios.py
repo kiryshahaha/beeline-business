@@ -67,7 +67,8 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
         data["tickets"][0]["status"] = "completed"
         data["tickets"][1]["work_type"] = "Unconfigured fictional work"
         data["ticket_appliances"] = [a for a in data["ticket_appliances"] if a["ticket_id"] != 3]
-        data["tickets"][3]["visit_window_end"] = start + timedelta(minutes=5)
+        data["tickets"][3]["visit_window_start"] = start + timedelta(hours=20)
+        data["tickets"][3]["visit_window_end"] = start + timedelta(hours=22)
     return data
 
 

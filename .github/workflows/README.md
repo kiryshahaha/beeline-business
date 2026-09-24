@@ -19,3 +19,9 @@ backend-tests.yml запускается на push, pull_request и workflow_dis
 
 У workflow только contents:read; checkout не сохраняет Git credentials.
 Workflow не развёртывает приложение и не публикует код.
+
+T01 входит в обычный unittest discovery и полную Bruno-коллекцию. Дополнительный
+шаг `verify_synthetic.py` сверяет закоммиченные пакеты standard/large/planning/Bruno
+по хешам и CSV/XLSX-содержимому, затем исполняет reference-сравнения политики.
+Эти сравнения не заменяют native solver tests; A01–A18 не объявляются пройденными
+на основании одного контракта правил.
