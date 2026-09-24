@@ -129,6 +129,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 "estimated_duration_minutes": 60,
                 "actual_duration_minutes": None,
             },
+            headers=self._auth(self.observer),
         )
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
@@ -235,7 +236,8 @@ class ExecutionApiTests(DatabaseTestCase):
             )
         self.assertEqual(window_event["reason"], "Клиент подтвердил новое окно")
         self.assertEqual(
-            window_event["payload"]["previous_window_end"], "2030-01-15T16:00:00+00:00"
+            datetime.fromisoformat(window_event["payload"]["previous_window_end"]),
+            datetime(2030, 1, 15, 16, tzinfo=UTC),
         )
         self.assertEqual(
             self._command(

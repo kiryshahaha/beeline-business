@@ -42,7 +42,9 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     now = datetime.now(UTC)
     expire = now + (expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes))
     to_encode.update({"exp": expire, "iat": now, "type": "access"})
-    return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    return jwt.encode(
+        to_encode, settings.jwt_secret_key.get_secret_value(), algorithm=settings.jwt_algorithm
+    )
 
 
 def create_refresh_token(
@@ -61,11 +63,17 @@ def create_refresh_token(
             "type": "refresh",
         }
     )
-    token = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    token = jwt.encode(
+        to_encode, settings.jwt_secret_key.get_secret_value(), algorithm=settings.jwt_algorithm
+    )
     return token, expire
 
 
 def decode_token(token: str) -> dict:
     """Decode and validate JWT signature and expiration."""
     settings = get_settings()
-    return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    return jwt.decode(
+        token,
+        settings.jwt_secret_key.get_secret_value(),
+        algorithms=[settings.jwt_algorithm],
+    )

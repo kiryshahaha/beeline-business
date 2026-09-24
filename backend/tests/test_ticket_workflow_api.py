@@ -57,6 +57,7 @@ class TicketWorkflowApiTests(DatabaseTestCase):
                 "visit_window_end": "2026-09-14T14:00:00+03:00",
                 "estimated_duration_minutes": 60,
             },
+            headers=self.auth(self.observer),
         )
         self.assertEqual(created.status_code, 201, created.text)
         self.ticket_id = created.json()["id"]
@@ -189,7 +190,7 @@ class TicketWorkflowApiTests(DatabaseTestCase):
         self.assertEqual(repeated.status_code, 200, repeated.text)
         self.assertEqual(len(self.events()), 2)
 
-    def test_only_assigned_worker_can_change_status(self):
+    def test_only_observer_can_change_status(self):
         assign_url = f"/api/v1/tickets/{self.ticket_id}/assignees"
         assigned = self.client.put(
             assign_url,
@@ -204,12 +205,23 @@ class TicketWorkflowApiTests(DatabaseTestCase):
             headers=self.auth(self.other_worker),
         )
         self.assertEqual(denied.status_code, 403)
-        allowed = self.client.patch(
+        worker_attempt = self.client.patch(
             f"/api/v1/tickets/{self.ticket_id}/status",
             json={"status": "in_progress"},
             headers=self.auth(self.worker),
         )
-        self.assertEqual(allowed.status_code, 200, allowed.text)
+        self.assertEqual(worker_attempt.status_code, 403, worker_attempt.text)
+        unchanged = self.client.get(
+            f"/api/v1/tickets/{self.ticket_id}", headers=self.auth(self.observer)
+        )
+        self.assertEqual(unchanged.json()["status"], "planned")
+
+        observer_attempt = self.client.patch(
+            f"/api/v1/tickets/{self.ticket_id}/status",
+            json={"status": "in_progress"},
+            headers=self.auth(self.observer),
+        )
+        self.assertEqual(observer_attempt.status_code, 200, observer_attempt.text)
 
     def test_event_failure_rolls_back_status_change(self):
         with patch(
@@ -223,5 +235,7 @@ class TicketWorkflowApiTests(DatabaseTestCase):
                     json={"status": "completed"},
                     headers=self.auth(self.observer),
                 )
-        fetched = self.client.get(f"/api/v1/tickets/{self.ticket_id}")
+        fetched = self.client.get(
+            f"/api/v1/tickets/{self.ticket_id}", headers=self.auth(self.observer)
+        )
         self.assertEqual(fetched.json()["status"], "planned")

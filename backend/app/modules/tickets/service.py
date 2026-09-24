@@ -42,14 +42,29 @@ class PermissionDeniedError(Exception):
     pass
 
 
-def _foreman_id(current_user: UserRead | None) -> int | None:
-    return current_user.id if current_user and current_user.role == UserRole.FOREMAN else None
+def _foreman_id(current_user: UserRead) -> int | None:
+    return current_user.id if current_user.role == UserRole.FOREMAN else None
 
 
-def get_ticket(
-    session: Session, ticket_id: int, current_user: UserRead | None = None
-) -> TicketRead:
-    details = repository.find_ticket(session, ticket_id, foreman_id=_foreman_id(current_user))
+def _worker_id(current_user: UserRead) -> int | None:
+    return current_user.id if current_user.role == UserRole.WORKER else None
+
+
+def get_ticket(session: Session, ticket_id: int, current_user: UserRead) -> TicketRead:
+    details = repository.find_ticket(
+        session,
+        ticket_id,
+        foreman_id=_foreman_id(current_user),
+        worker_id=_worker_id(current_user),
+    )
+    if details is None:
+        raise TicketNotFoundError
+    return _ticket_from_row(details)
+
+
+def get_ticket_unscoped(session: Session, ticket_id: int) -> TicketRead:
+    """Read a ticket inside a service path that already authorized its caller."""
+    details = repository.find_ticket(session, ticket_id)
     if details is None:
         raise TicketNotFoundError
     return _ticket_from_row(details)
@@ -64,7 +79,7 @@ def list_tickets(
     limit: int,
     offset: int,
     brigade_id: int | None = None,
-    current_user: UserRead | None = None,
+    current_user: UserRead,
 ) -> list[TicketRead]:
     rows = repository.find_tickets(
         session,
@@ -75,6 +90,7 @@ def list_tickets(
         offset=offset,
         brigade_id=brigade_id,
         foreman_id=_foreman_id(current_user),
+        worker_id=_worker_id(current_user),
     )
     return [_ticket_from_row(row) for row in rows]
 
@@ -245,7 +261,7 @@ def create_ticket(
         )
         execution_repository.attach_last_event(session, ticket_id, event_id)
         # Build the response inside the transaction; a failed operation leaves no ticket.
-        return get_ticket(session, ticket_id)
+        return get_ticket_unscoped(session, ticket_id)
 
 
 def replace_assignees(
@@ -304,7 +320,7 @@ def replace_assignees_in_transaction(
             actor_id=actor_id,
             idempotency_key=assignment_key,
         )
-    return get_ticket(session, ticket_id)
+    return get_ticket_unscoped(session, ticket_id)
 
 
 def update_ticket_status(
@@ -317,19 +333,15 @@ def update_ticket_status(
     reason: str | None = None,
     idempotency_key: str | None = None,
 ) -> TicketRead:
-    if current_user.role == UserRole.FOREMAN:
+    if current_user.role != UserRole.OBSERVER:
         raise PermissionDeniedError
     with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         ticket = repository.lock_ticket(session, ticket_id)
         if ticket is None:
             raise TicketNotFoundError
-        if current_user.role == UserRole.WORKER and not repository.is_worker_assigned(
-            session, ticket_id, current_user.id
-        ):
-            raise PermissionDeniedError
         if ticket["status"] == status.value:
-            return get_ticket(session, ticket_id)
+            return get_ticket_unscoped(session, ticket_id)
         event_type = {
             TicketStatus.IN_PROGRESS: WorkEventType.START,
             TicketStatus.COMPLETED: WorkEventType.COMPLETE,
