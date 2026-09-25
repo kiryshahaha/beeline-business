@@ -106,6 +106,8 @@ def _xlsx_row(sheet, table: Table, values: Sequence[Any]) -> list[Any]:
         if isinstance(value, str):
             # XML cannot store control characters: show the replacement mark, not a 500.
             value = XML_ILLEGAL_CHARACTERS.sub("\ufffd", value)
+            # Normalize CR LF to LF because Excel handles LF as a line break.
+            value = value.replace("\r\n", "\n")
             if xlsx_length(value) > XLSX_MAX_CELL_UNITS:
                 raise CellTooLongError(table.name, column, xlsx_length(value), values)
         cells.append(xlsx_cell(sheet, value))

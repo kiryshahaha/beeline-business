@@ -23,6 +23,15 @@ class TicketsSummary(BaseModel):
     completed: int
 
 
+class FastStats(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sla_compliance_percent: int
+    at_risk_tickets_count: int
+    average_delay_minutes: int
+    idle_workers_count: int
+
+
 class BrigadeWorkloadItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
