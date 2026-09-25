@@ -12,6 +12,9 @@ class WorkType(IntegerIdMixin, Base):
     __tablename__ = "work_types"
 
     name: Mapped[str] = mapped_column(String(100))
+    code: Mapped[str] = mapped_column(String(50))
+    category: Mapped[str] = mapped_column(String(50), default="repair", server_default="repair")
+    default_priority: Mapped[int] = mapped_column(default=3, server_default="3")
     travel_minutes: Mapped[int]
     work_minutes: Mapped[int]
     documents_minutes: Mapped[int]
@@ -22,11 +25,18 @@ class WorkType(IntegerIdMixin, Base):
 
     __table_args__ = (
         CheckConstraint("name = btrim(name) AND name <> ''", name="name_not_blank"),
+        CheckConstraint("code = btrim(code) AND code <> ''", name="code_not_blank"),
+        CheckConstraint(
+            "category IN ('emergency', 'connection', 'repair', 'additional')",
+            name="category_valid",
+        ),
+        CheckConstraint("default_priority >= 1", name="default_priority_positive"),
         CheckConstraint("travel_minutes >= 0", name="travel_minutes_nonnegative"),
         CheckConstraint("work_minutes >= 0", name="work_minutes_nonnegative"),
         CheckConstraint("documents_minutes >= 0", name="documents_minutes_nonnegative"),
         CheckConstraint("norm_minutes > 0", name="norm_minutes_positive"),
         Index("uq_work_types_name", func.lower(name), unique=True),
+        Index("uq_work_types_code", func.lower(code), unique=True),
     )
 
 

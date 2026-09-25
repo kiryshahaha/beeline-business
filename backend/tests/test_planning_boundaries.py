@@ -3,6 +3,7 @@
 import asyncio
 import copy
 import unittest
+from datetime import UTC, datetime
 
 import httpx
 from fastapi.testclient import TestClient
@@ -27,8 +28,19 @@ def prepared(unique=52):
     return {
         "workers": workers,
         "horizon": 1000,
+        "epoch": datetime(2030, 1, 15, tzinfo=UTC),
         "tickets": [
-            {"location_id": i, "window": [0, 990], "duration": 10, "allowed": [0, 1]}
+            {
+                "id": i,
+                "location_id": i,
+                "window": [0, 990],
+                "duration": 10,
+                "allowed": [0, 1],
+                "category": "repair",
+                "priority": 3,
+                "received_at": datetime(2030, 1, 15, tzinfo=UTC),
+                "sla_deadline_at": None,
+            }
             for i in range(2, unique)
         ],
         "locations": {i: {"longitude": 37.0 + i / 10000, "latitude": 55.0} for i in range(unique)},
@@ -60,7 +72,7 @@ class PlanningBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sum(len(c["sources"]) * len(c["targets"]) for c in calls), 2 * 52 * 52)
         for matrix in problem.matrices.values():
             self.assertTrue(all(value is not None for row in matrix.time_minutes for value in row))
-        self.assertEqual(problem.penalties[2], 2001)
+        self.assertEqual(problem.penalties[2], 2001 * (len(prepared()["tickets"]) + 2))
         self.assertEqual(problem.vehicle_fixed_cost, 0)
 
     async def test_duplicate_coordinates_stay_distinct_logical_visits(self):

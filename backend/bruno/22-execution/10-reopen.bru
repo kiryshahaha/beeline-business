@@ -1,0 +1,44 @@
+meta {
+  name: Переоткрыть завершённую заявку
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{execution_ticket_id}}/reopen
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+headers {
+  Idempotency-Key: execution-reopen
+}
+
+body:json {
+  {
+    "expected_revision": 8,
+    "occurred_at": "{{execution_occurred_at}}",
+    "reason": "Подтверждён повторный выезд",
+    "payload": {}
+  }
+}
+
+script:pre-request {
+  bru.setVar("execution_occurred_at", new Date().toISOString());
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Переоткрытие начинает новый цикл", function () {
+    expect(res.getBody().state).to.equal("waiting_assignment");
+    expect(res.getBody().revision).to.equal(9);
+    expect(res.getBody().execution_cycle).to.equal(2);
+  });
+}

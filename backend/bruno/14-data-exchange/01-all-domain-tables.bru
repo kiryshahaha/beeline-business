@@ -19,5 +19,20 @@ assert {
 }
 
 tests {
-test("Полная схема без секретов", () => { const schema = res.getBody(); expect(Object.keys(schema.tables)).to.have.lengthOf(25); expect(schema.tables.routes).to.be.an("array"); expect(schema.tables.users.map(c => c.name)).not.to.include("password_hash"); });
+  test("Полная схема без секретов", () => {
+    const schema = res.getBody();
+    const tables = Object.keys(schema.tables);
+
+    expect(tables).to.have.lengthOf(31);
+    expect(tables).to.include.members([
+      "divisions",
+      "service_areas",
+      "equipment_movements",
+      "work_events",
+      "worker_day_states",
+      "day_plan_revisions",
+    ]);
+    expect(schema.tables.routes).to.be.an("array");
+    expect(schema.tables.users.map((column) => column.name)).not.to.include("password_hash");
+  });
 }

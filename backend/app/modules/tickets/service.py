@@ -1,20 +1,50 @@
-"""Create and retrieve tickets without HTTP-specific exceptions."""
+import math
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import RowMapping
+from sqlalchemy import RowMapping, text
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
+from app.db.models import WorkType, WorkTypePlanningRule
+from app.modules.execution import repository as execution_repository
+from app.modules.execution import service as execution_service
+from app.modules.execution.enums import TicketLifecycleState, WorkEventType
+from app.modules.execution.schemas import ExecutionCommand
 from app.modules.locations.schemas import LocationRead
 from app.modules.notifications.enums import NotificationKind
 from app.modules.tickets import repository
-from app.modules.tickets.enums import TicketStatus
-from app.modules.tickets.schemas import TicketCreate, TicketFields, TicketRead
+from app.modules.tickets.enums import TicketCategory, TicketStatus
+from app.modules.tickets.schemas import (
+    TicketCreate,
+    TicketFields,
+    TicketRead,
+    TicketSlaEstimateRead,
+)
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
+from app.modules.work_types import repository as work_types_repository
+
+MOSCOW = ZoneInfo("Europe/Moscow")
 
 
 class LocationNotFoundError(Exception):
     pass
+
+
+class WorkTypeNotFoundError(Exception):
+    pass
+
+
+class InvalidSlaDeadlineError(Exception):
+    pass
+
+
+class SlaEstimationConfigurationError(Exception):
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
 
 
 class TicketNotFoundError(Exception):
@@ -33,17 +63,104 @@ class PermissionDeniedError(Exception):
     pass
 
 
+class ServiceAreaMismatchError(Exception):
+    pass
+
+
 def _foreman_id(current_user: UserRead | None) -> int | None:
     return current_user.id if current_user and current_user.role == UserRole.FOREMAN else None
 
 
-def get_ticket(
-    session: Session, ticket_id: int, current_user: UserRead | None = None
-) -> TicketRead:
-    details = repository.find_ticket(session, ticket_id, foreman_id=_foreman_id(current_user))
+def _worker_id(current_user: UserRead | None) -> int | None:
+    return current_user.id if current_user and current_user.role == UserRole.WORKER else None
+
+
+def get_ticket(session: Session, ticket_id: int, current_user: UserRead) -> TicketRead:
+    details = repository.find_ticket(
+        session,
+        ticket_id,
+        foreman_id=_foreman_id(current_user),
+        worker_id=_worker_id(current_user),
+    )
     if details is None:
         raise TicketNotFoundError
     return _ticket_from_row(details)
+
+
+def get_ticket_unscoped(session: Session, ticket_id: int) -> TicketRead:
+    """Read a ticket inside a service path that already authorized its caller."""
+    details = repository.find_ticket(session, ticket_id)
+    if details is None:
+        raise TicketNotFoundError
+    return _ticket_from_row(details)
+
+
+def estimate_sla(
+    session: Session,
+    ticket_id: int,
+    current_user: UserRead,
+    *,
+    previous_ticket_end_at: datetime,
+    travel_minutes: int,
+) -> TicketSlaEstimateRead:
+    ticket = get_ticket(session, ticket_id, current_user)
+    if ticket.work_type_id is None:
+        raise SlaEstimationConfigurationError("work_type_unlinked")
+    work_type = session.get(WorkType, ticket.work_type_id)
+    rule = session.get(WorkTypePlanningRule, ticket.work_type_id)
+    if work_type is None:
+        raise SlaEstimationConfigurationError("work_type_not_found")
+    if rule is None:
+        raise SlaEstimationConfigurationError("work_type_planning_rule_missing")
+
+    duration_source = rule.service_duration_source
+    if duration_source == "ticket_estimate":
+        duration_minutes = ticket.estimated_duration_minutes
+    elif duration_source == "work_norm":
+        duration_minutes = work_type.work_minutes + work_type.documents_minutes
+    else:
+        raise SlaEstimationConfigurationError("invalid_service_duration_source")
+
+    estimated_arrival_at = previous_ticket_end_at + timedelta(minutes=travel_minutes)
+    estimated_service_start_at = max(
+        estimated_arrival_at,
+        ticket.visit_window_start,
+        ticket.received_at,
+    )
+    estimated_service_end_at = estimated_service_start_at + timedelta(minutes=duration_minutes)
+    arrival_late_minutes = max(
+        0,
+        math.ceil((estimated_arrival_at - ticket.visit_window_end).total_seconds() / 60),
+    )
+    sla_late_minutes = (
+        max(
+            0,
+            math.ceil((estimated_service_end_at - ticket.sla_deadline_at).total_seconds() / 60),
+        )
+        if ticket.sla_deadline_at is not None
+        else 0
+    )
+
+    return TicketSlaEstimateRead(
+        ticket_id=ticket.id,
+        estimated_arrival_at=estimated_arrival_at,
+        estimated_service_start_at=estimated_service_start_at,
+        estimated_service_end_at=estimated_service_end_at,
+        visit_window_end_at=ticket.visit_window_end,
+        arrival_status="late" if arrival_late_minutes else "within_window",
+        arrival_late_minutes=arrival_late_minutes,
+        sla_deadline_at=ticket.sla_deadline_at,
+        sla_status=(
+            "not_configured"
+            if ticket.sla_deadline_at is None
+            else "at_risk"
+            if sla_late_minutes
+            else "on_time"
+        ),
+        sla_late_minutes=sla_late_minutes,
+        duration_minutes=duration_minutes,
+        duration_source=duration_source,
+    )
 
 
 def list_tickets(
@@ -55,7 +172,7 @@ def list_tickets(
     limit: int,
     offset: int,
     brigade_id: int | None = None,
-    current_user: UserRead | None = None,
+    current_user: UserRead,
 ) -> list[TicketRead]:
     rows = repository.find_tickets(
         session,
@@ -66,15 +183,34 @@ def list_tickets(
         offset=offset,
         brigade_id=brigade_id,
         foreman_id=_foreman_id(current_user),
+        worker_id=_worker_id(current_user),
     )
     return [_ticket_from_row(row) for row in rows]
 
 
 def _ticket_from_row(details: RowMapping) -> TicketRead:
     """Build the same full response from either a single row or a row in a page."""
-    return TicketRead(
-        **TicketFields.model_validate(details).model_dump(),
+    category = details.get("category")
+    if category is not None and not isinstance(category, TicketCategory):
+        category = TicketCategory(category)
+    data = TicketFields.model_validate(details).model_dump()
+    data.update(
         id=details["id"],
+        work_type=details["work_type"],
+        work_type_id=details["work_type_id"],
+        category=category or TicketCategory.REPAIR,
+        priority=details.get("priority", 3),
+        received_at=details.get("received_at") or details["created_at"],
+        sla_deadline_at=details.get("sla_deadline_at"),
+        required_transport_type=details.get("required_transport_type"),
+        service_duration_source=details.get("service_duration_source"),
+        state=details["state"],
+        revision=details["revision"],
+        execution_cycle=details["execution_cycle"],
+        actual_started_at=details["actual_started_at"],
+        actual_completed_at=details["actual_completed_at"],
+        cancel_reason=details["cancel_reason"],
+        last_event_id=details["last_event_id"],
         created_at=details["created_at"],
         updated_at=details["updated_at"],
         assignee_ids=list(details["assignee_ids"]),
@@ -97,28 +233,128 @@ def _ticket_from_row(details: RowMapping) -> TicketRead:
             longitude=details["longitude"],
         ),
     )
+    return TicketRead(**data)
 
 
-def create_ticket(session: Session, data: TicketCreate) -> TicketRead:
-    with session.begin():
+def create_ticket(
+    session: Session,
+    data: TicketCreate,
+    *,
+    actor_id: int | None = None,
+    idempotency_key: str | None = None,
+) -> TicketRead:
+    with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         if repository.find_location_id(session, data.location_id) is None:
             raise LocationNotFoundError
         values = data.model_dump()
         values["status"] = data.status.value
+
+        work_type_id = data.work_type_id
+        work_type_row = work_types_repository.find_work_type(session, work_type_id)
+        if work_type_row is None:
+            raise WorkTypeNotFoundError
+        values["work_type_id"] = work_type_id
+        values["work_type"] = work_type_row["name"]
+        values["service_duration_source"] = None
+
+        # Defaults for category, priority, received_at, duration_source
+        if values.get("category") is None:
+            values["category"] = work_type_row["category"]
+        elif isinstance(values["category"], TicketCategory):
+            values["category"] = values["category"].value
+
+        if values.get("priority") is None:
+            values["priority"] = work_type_row["default_priority"]
+
+        if not values.get("received_at"):
+            values["received_at"] = datetime.now(UTC)
+        if (
+            values.get("sla_deadline_at") is not None
+            and values["sla_deadline_at"] <= values["received_at"]
+        ):
+            raise InvalidSlaDeadlineError
+
+        if not values.get("sla_deadline_at") and values["category"] == "emergency":
+            values["sla_deadline_at"] = values["received_at"] + timedelta(hours=24)
+
+        if values.get("required_transport_type") is not None:
+            values["required_transport_type"] = (
+                values["required_transport_type"].value
+                if hasattr(values["required_transport_type"], "value")
+                else str(values["required_transport_type"])
+            )
+
+        values["lifecycle_state"] = {
+            TicketStatus.PLANNED: TicketLifecycleState.WAITING_ASSIGNMENT.value,
+            TicketStatus.IN_PROGRESS: TicketLifecycleState.IN_PROGRESS.value,
+            TicketStatus.COMPLETED: TicketLifecycleState.COMPLETED.value,
+            TicketStatus.WONT_FIX: TicketLifecycleState.CANCELLED.value,
+        }[data.status]
+        if not values.get("service_area_id"):
+            resolved_area = session.execute(
+                text(
+                    """
+                    SELECT sa.id
+                    FROM locations AS loc
+                    JOIN buildings AS b ON b.id = loc.building_id
+                    JOIN service_areas AS sa ON sa.code = 'district_' || b.district_id
+                    WHERE loc.id = :location_id
+                    LIMIT 1
+                    """
+                ),
+                {"location_id": values["location_id"]},
+            ).scalar_one_or_none()
+            if resolved_area is None:
+                resolved_area = session.execute(
+                    text("SELECT id FROM service_areas ORDER BY id LIMIT 1")
+                ).scalar_one_or_none()
+            values["service_area_id"] = resolved_area
         ticket_id = repository.add_ticket(session, values)
+        district_id = session.execute(
+            text(
+                """
+                SELECT building.district_id
+                FROM tickets AS ticket
+                JOIN locations AS location ON location.id = ticket.location_id
+                JOIN buildings AS building ON building.id = location.building_id
+                WHERE ticket.id = :ticket_id
+                """
+            ),
+            {"ticket_id": ticket_id},
+        ).scalar_one()
+        event_id = execution_repository.insert_work_event(
+            session,
+            event_type=WorkEventType.NEW_TICKET.value,
+            ticket_id=ticket_id,
+            worker_id=None,
+            district_id=district_id,
+            route_date=data.visit_window_start.astimezone(MOSCOW).date(),
+            occurred_at=datetime.now(UTC),
+            actor_id=actor_id,
+            reason=None,
+            previous_state=None,
+            new_state=values["lifecycle_state"],
+            before_revision=None,
+            after_revision=1,
+            idempotency_key=idempotency_key or f"ticket-create:{ticket_id}",
+            payload={"source": "ticket_create"},
+        )
+        execution_repository.attach_last_event(session, ticket_id, event_id)
         # Build the response inside the transaction; a failed operation leaves no ticket.
-        return get_ticket(session, ticket_id)
+        return get_ticket_unscoped(session, ticket_id)
 
 
-def replace_assignees(session: Session, ticket_id: int, worker_ids: list[int]) -> TicketRead:
-    with session.begin():
+def replace_assignees(
+    session: Session, ticket_id: int, worker_ids: list[int], *, actor_id: int | None = None
+) -> TicketRead:
+    with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
-        return replace_assignees_in_transaction(session, ticket_id, worker_ids)
+        return replace_assignees_in_transaction(session, ticket_id, worker_ids, actor_id=actor_id)
 
 
 def replace_assignees_in_transaction(
-    session: Session, ticket_id: int, worker_ids: list[int]
+    session: Session, ticket_id: int, worker_ids: list[int], *, actor_id: int | None = None
 ) -> TicketRead:
     ticket = repository.lock_ticket(session, ticket_id)
     if ticket is None:
@@ -128,6 +364,55 @@ def replace_assignees_in_transaction(
         raise WorkerNotFoundError
     if not all(worker_line_statuses.values()):
         raise WorkerOffLineError
+
+    if worker_ids:
+        t_area = ticket.get("service_area_id")
+        if t_area is None and ticket.get("location_id"):
+            t_area = session.execute(
+                text(
+                    """
+                    SELECT sa.id
+                    FROM locations AS loc
+                    JOIN buildings AS b ON b.id = loc.building_id
+                    JOIN service_areas AS sa ON sa.code = 'district_' || b.district_id
+                    WHERE loc.id = :location_id
+                    LIMIT 1
+                    """
+                ),
+                {"location_id": ticket["location_id"]},
+            ).scalar_one_or_none()
+
+        for wid in worker_ids:
+            worker_row = (
+                session.execute(
+                    text("SELECT service_area_id FROM workers WHERE user_id = :user_id"),
+                    {"user_id": wid},
+                )
+                .mappings()
+                .first()
+            )
+            w_area = worker_row["service_area_id"] if worker_row else None
+            if w_area is None:
+                w_area = session.execute(
+                    text(
+                        """
+                        SELECT sa.id
+                        FROM brigade_members AS bm
+                        JOIN brigades AS b ON b.id = bm.brigade_id
+                        JOIN offices AS off ON off.id = b.office_id
+                        JOIN locations AS loc ON loc.id = off.location_id
+                        JOIN buildings AS bld ON bld.id = loc.building_id
+                        JOIN service_areas AS sa ON sa.code = 'district_' || bld.district_id
+                        WHERE bm.worker_id = :wid
+                        LIMIT 1
+                        """
+                    ),
+                    {"wid": wid},
+                ).scalar_one_or_none()
+
+            if t_area is not None and w_area is not None and t_area != w_area:
+                raise ServiceAreaMismatchError
+
     from app.modules.appliances import inventory
 
     inventory.check_reassignment(session, ticket_id, worker_ids)
@@ -140,7 +425,32 @@ def replace_assignees_in_transaction(
             ticket_id=ticket_id,
             data={"title": ticket["title"], "worker_id": worker_id},
         )
-    return get_ticket(session, ticket_id)
+    if (
+        new_worker_ids
+        and TicketLifecycleState(ticket["lifecycle_state"])
+        == TicketLifecycleState.WAITING_ASSIGNMENT
+    ):
+        command = ExecutionCommand.model_construct(
+            expected_revision=ticket["revision"],
+            occurred_at=datetime.now(UTC),
+            reason=None,
+            expected_available_at=None,
+            payload={"worker_ids": sorted(worker_ids)},
+        )
+        assignment_key = (
+            f"assign:{ticket_id}:{ticket['revision']}:{','.join(map(str, sorted(worker_ids)))}"
+        )
+        if len(assignment_key) > 128:
+            assignment_key = "assign:" + sha256(assignment_key.encode()).hexdigest()
+        execution_service.apply_ticket_event(
+            session,
+            ticket_id,
+            WorkEventType.ASSIGN,
+            command,
+            actor_id=actor_id,
+            idempotency_key=assignment_key,
+        )
+    return get_ticket_unscoped(session, ticket_id)
 
 
 def update_ticket_status(
@@ -148,36 +458,41 @@ def update_ticket_status(
     ticket_id: int,
     status: TicketStatus,
     current_user: UserRead,
+    *,
+    expected_revision: int | None = None,
+    reason: str | None = None,
+    idempotency_key: str | None = None,
 ) -> TicketRead:
-    if current_user.role == UserRole.FOREMAN:
+    if current_user.role != UserRole.OBSERVER:
         raise PermissionDeniedError
-    with session.begin():
+    with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         ticket = repository.lock_ticket(session, ticket_id)
         if ticket is None:
             raise TicketNotFoundError
-        if current_user.role == UserRole.WORKER and not repository.is_worker_assigned(
-            session, ticket_id, current_user.id
-        ):
+        if ticket["status"] == status.value:
+            return get_ticket_unscoped(session, ticket_id)
+        event_type = {
+            TicketStatus.IN_PROGRESS: WorkEventType.START,
+            TicketStatus.COMPLETED: WorkEventType.COMPLETE,
+        }.get(status)
+        if event_type is None:
             raise PermissionDeniedError
-        previous_status = ticket["status"]
-        if previous_status == status.value:
-            return get_ticket(session, ticket_id)
-        repository.update_status(session, ticket_id, status.value)
-        if status == TicketStatus.COMPLETED:
-            from app.modules.appliances import service as appliances_service
-
-            appliances_service.on_ticket_status_completed(session, ticket_id, current_user.id)
-        repository.add_notification_events(
-            session,
-            repository.list_observer_ids(session),
-            kind=NotificationKind.TICKET_STATUS_CHANGED,
-            ticket_id=ticket_id,
-            data={
-                "title": ticket["title"],
-                "previous_status": previous_status,
-                "status": status.value,
-                "actor_id": current_user.id,
-            },
+        command = ExecutionCommand.model_construct(
+            expected_revision=expected_revision,
+            occurred_at=datetime.now(UTC),
+            reason=reason,
+            expected_available_at=None,
+            payload={"legacy_status": status.value},
         )
-        return get_ticket(session, ticket_id)
+        result = execution_service.apply_ticket_event(
+            session,
+            ticket_id,
+            event_type,
+            command,
+            actor_id=current_user.id,
+            idempotency_key=idempotency_key
+            or f"legacy-status:{ticket_id}:{status.value}:{ticket['revision']}",
+            compatibility=True,
+        )
+        return result.ticket

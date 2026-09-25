@@ -34,7 +34,7 @@ class PlannerApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         result = response.json()
         self.assertIn(result["status"], ("FEASIBLE", "OPTIMAL"))
-        self.assertEqual(result["contract_version"], 1)
+        self.assertEqual(result["contract_version"], 2)
         self.assertEqual(result["dropped_nodes"], [])
         self.assertEqual(len(result["routes"][0]["steps"]), 5)
 
@@ -42,7 +42,7 @@ class PlannerApiTests(unittest.TestCase):
         mutations = [
             lambda d: d.update(vehicle_fixed_cost=5000),
             lambda d: d.update(num_vehicles=True),
-            lambda d: d.update(contract_version=2),
+            lambda d: d.update(contract_version=1),
             lambda d: d.update(policy_version=2),
             lambda d: d.update(allowed_vehicles={}),
             lambda d: d.update(time_capacity=-1),

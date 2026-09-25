@@ -1,10 +1,16 @@
 """User management, skill catalog, and worker profile service."""
 
-from sqlalchemy import RowMapping
+from datetime import UTC, datetime, time
+from hashlib import sha256
+
+from sqlalchemy import RowMapping, text
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
 from app.core.security import hash_password
+from app.modules.auth import repository as auth_repository
+from app.modules.execution.day_state import mark_worker_unavailable
+from app.modules.execution.schemas import WorkerUnavailableCommand
 from app.modules.users import repository
 from app.modules.users.enums import TransportType, UserRole
 from app.modules.users.schemas import (
@@ -59,6 +65,10 @@ def _build_user_read(row: RowMapping) -> UserRead:
             skills=list(row["skills"]),
             transport_type=row["transport_type"],
             is_on_line=row["is_on_line"],
+            service_area_id=row["service_area_id"] if "service_area_id" in row else None,
+            start_location_id=row["start_location_id"] if "start_location_id" in row else None,
+            stock_office_id=row["stock_office_id"] if "stock_office_id" in row else None,
+            end_location_id=row["end_location_id"] if "end_location_id" in row else None,
         )
     return UserRead(
         id=row["id"],
@@ -104,7 +114,7 @@ def list_users(
 
 
 def create_user(session: Session, data: UserCreate) -> UserRead:
-    with session.begin():
+    with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         if repository.find_user_by_username(session, data.username) is not None:
             raise UsernameAlreadyExistsError
@@ -131,6 +141,10 @@ def create_user(session: Session, data: UserCreate) -> UserRead:
                     "workshift_start": profile.workshift_start,
                     "workshift_end": profile.workshift_end,
                     "transport_type": profile.transport_type.value,
+                    "service_area_id": profile.service_area_id,
+                    "start_location_id": profile.start_location_id,
+                    "stock_office_id": profile.stock_office_id,
+                    "end_location_id": profile.end_location_id,
                 },
             )
             for skill_name in profile.skills:
@@ -155,7 +169,12 @@ def get_all_skills(session: Session) -> list[WorkerSkillRead]:
 
 
 def update_worker_line_status(
-    session: Session, worker_id: int, is_on_line: bool
+    session: Session,
+    worker_id: int,
+    is_on_line: bool,
+    *,
+    actor_id: int | None = None,
+    idempotency_key: str | None = None,
 ) -> WorkerLineStatusRead:
     with session.begin():
         lock_planning_mutation(session)
@@ -163,11 +182,61 @@ def update_worker_line_status(
         if worker is None:
             raise WorkerNotFoundError
 
-        repository.update_worker_line_status(session, worker_id, is_on_line)
         released_ticket_ids: list[int] = []
         if not is_on_line:
-            released_ticket_ids = repository.release_planned_assignments(session, worker_id)
-            repository.clear_planned_times_without_assignees(session, released_ticket_ids)
+            if worker["is_on_line"]:
+                contexts = repository.list_worker_day_contexts(session, worker_id)
+                for context in contexts:
+                    current = session.execute(
+                        text(
+                            """
+                            SELECT revision
+                            FROM worker_day_states
+                            WHERE worker_id = :worker_id
+                              AND district_id = :district_id
+                              AND route_date = :route_date
+                            FOR UPDATE
+                            """
+                        ),
+                        {
+                            "worker_id": worker_id,
+                            "district_id": context["district_id"],
+                            "route_date": context["route_date"],
+                        },
+                    ).scalar_one_or_none()
+                    command = WorkerUnavailableCommand.model_construct(
+                        expected_revision=current or 1,
+                        occurred_at=datetime.combine(context["route_date"], time(12), UTC),
+                        reason="line_status",
+                        expected_available_at=None,
+                        worker_id=worker_id,
+                        district_id=context["district_id"],
+                        route_date=context["route_date"],
+                        payload={"source": "line_status"},
+                    )
+                    context_key = (
+                        f"{idempotency_key or f'line-status:{worker_id}'}:"
+                        f"{context['district_id']}:{context['route_date']}"
+                    )
+                    if len(context_key) > 128:
+                        context_key = sha256(context_key.encode()).hexdigest()
+                    _, released = mark_worker_unavailable(
+                        session,
+                        worker_id,
+                        command,
+                        actor_id=actor_id or worker_id,
+                        idempotency_key=context_key,
+                    )
+                    released_ticket_ids.extend(released)
+                repository.update_worker_line_status(session, worker_id, False)
+            else:
+                return WorkerLineStatusRead(
+                    worker_id=worker_id,
+                    is_on_line=False,
+                    released_ticket_ids=[],
+                )
+        else:
+            repository.update_worker_line_status(session, worker_id, True)
 
         return WorkerLineStatusRead(
             worker_id=worker_id,
@@ -248,6 +317,26 @@ def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:
                         "transport_type": worker_dump.get("transport_type")
                         or existing_user["transport_type"]
                         or TransportType.WALKING.value,
+                        "service_area_id": (
+                            worker_dump["service_area_id"]
+                            if "service_area_id" in worker_dump
+                            else existing_user["service_area_id"]
+                        ),
+                        "start_location_id": (
+                            worker_dump["start_location_id"]
+                            if "start_location_id" in worker_dump
+                            else existing_user["start_location_id"]
+                        ),
+                        "stock_office_id": (
+                            worker_dump["stock_office_id"]
+                            if "stock_office_id" in worker_dump
+                            else existing_user["stock_office_id"]
+                        ),
+                        "end_location_id": (
+                            worker_dump["end_location_id"]
+                            if "end_location_id" in worker_dump
+                            else existing_user["end_location_id"]
+                        ),
                     },
                 )
 
@@ -256,6 +345,11 @@ def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:
                 for skill_name in worker_dump["skills"]:
                     skill_id = repository.ensure_skill(session, skill_name)
                     repository.assign_worker_skill(session, user_id, skill_id)
+
+        if ("password" in dump and data.password is not None) or (
+            new_role != UserRole(existing_user["role"])
+        ):
+            auth_repository.revoke_all_user_tokens(session, user_id)
 
         return get_user(session, user_id)
 

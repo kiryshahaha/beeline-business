@@ -21,7 +21,7 @@ tests {
   test("Контракт кейса не выдан за активную конфигурацию solver", () => {
     const body = res.getBody();
     expect(body.execution.policy_version).to.equal(1);
-    expect(body.execution.priority).to.equal("equal_ticket_penalties");
+    expect(body.execution.priority).to.equal("category_and_numeric_priority_penalties");
     expect(body.case_contract.activation).to.equal("contract_only");
     expect(body.case_contract.objective_order[0]).to.equal("unassigned_emergencies");
     const covered = new Set(body.case_contract.rules.flatMap(r => r.acceptance));

@@ -1,0 +1,35 @@
+meta {
+  name: Наблюдатель создаёт адрес
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{base_url}}/api/v1/location
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "city": "Санкт-Петербург",
+    "district": "Невский район",
+    "street": "Тестовая улица T13",
+    "building_number": "17"
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("Адрес создан наблюдателем", function () {
+    expect(res.getBody().id).to.be.a("number").and.above(0);
+    expect(res.getBody().street).to.equal("Тестовая улица T13");
+  });
+}

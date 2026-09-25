@@ -11,6 +11,8 @@ TABLE_NAMES = frozenset(
         "work_type_required_appliances",
         "cities",
         "districts",
+        "divisions",
+        "service_areas",
         "streets",
         "buildings",
         "entrances",
@@ -28,7 +30,11 @@ TABLE_NAMES = frozenset(
         "appliances",
         "appliance_stocks",
         "ticket_appliances",
+        "equipment_movements",
         "notification_events",
+        "work_events",
+        "worker_day_states",
+        "day_plan_revisions",
         "routes",
     }
 )

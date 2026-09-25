@@ -1,0 +1,47 @@
+meta {
+  name: Зафиксировать задержку
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{execution_ticket_id}}/delay
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+headers {
+  Idempotency-Key: execution-delay
+}
+
+body:json {
+  {
+    "expected_revision": 6,
+    "occurred_at": "{{execution_occurred_at}}",
+    "worker_id": {{worker_two_id}},
+    "reason": "Работа заняла больше времени",
+    "expected_available_at": "{{execution_available_at}}",
+    "payload": {}
+  }
+}
+
+script:pre-request {
+  const now = Date.now();
+  bru.setVar("execution_occurred_at", new Date(now).toISOString());
+  bru.setVar("execution_available_at", new Date(now + 2 * 60 * 60 * 1000).toISOString());
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Задержка оставила заявку в работе", function () {
+    expect(res.getBody().state).to.equal("in_progress");
+    expect(res.getBody().revision).to.equal(7);
+  });
+}

@@ -1,0 +1,58 @@
+meta {
+  name: Создать заявку для execution
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "location_id": {{location_id}},
+    "title": "Execution lifecycle из Bruno",
+    "description": "Заявка для проверки состояния выполнения.",
+    "work_type_id": 1,
+    "status": "planned",
+    "visit_window_start": "{{execution_window_start}}",
+    "visit_window_end": "{{execution_window_end}}",
+    "planned_start_at": null,
+    "planned_end_at": null,
+    "estimated_duration_minutes": 60,
+    "actual_duration_minutes": null
+  }
+}
+
+script:pre-request {
+  const now = Date.now();
+  bru.setVar("execution_route_date", new Date(now + 3 * 60 * 60 * 1000).toISOString().slice(0, 10));
+  bru.setVar("execution_window_start", new Date(now + 60 * 60 * 1000).toISOString());
+  bru.setVar("execution_window_end", new Date(now + 5 * 60 * 60 * 1000).toISOString());
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("execution_ticket_id", res.getBody().id);
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("Создана заявка в ожидании назначения", function () {
+    const ticket = res.getBody();
+    expect(ticket.id).to.be.a("number").and.above(0);
+    expect(ticket.state).to.equal("waiting_assignment");
+    expect(ticket.revision).to.equal(1);
+    expect(ticket.execution_cycle).to.equal(1);
+  });
+}

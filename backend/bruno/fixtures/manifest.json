@@ -11,11 +11,16 @@
     "appliances": 27,
     "cities": 3,
     "users": 12,
+    "work_types": 3,
     "worker_skills": 3,
     "districts": 12,
     "streets": 12,
+    "work_type_planning_rules": 3,
     "workers": 4,
     "buildings": 24,
+    "divisions": 12,
+    "work_type_required_appliances": 3,
+    "work_type_required_skills": 3,
     "worker_skill_assignments": 7,
     "entrances": 24,
     "locations": 24,
@@ -27,7 +32,11 @@
     "ticket_appliances": 21,
     "ticket_assignments": 18,
     "ticket_comments": 8,
+    "work_events": 1,
+    "worker_day_states": 1,
     "brigade_members": 4,
+    "day_plan_revisions": 1,
+    "equipment_movements": 1,
     "routes": 8
   },
   "scenarios": [
@@ -42,17 +51,17 @@
   ],
   "files": {
     "dataset.zip": {
-      "bytes": 7813,
-      "sha256": "04624d1d188f986e90898f0f0e8aed98f0f7055c0da4c79a7dca04fddbce4901"
+      "bytes": 10726,
+      "sha256": "0c25230c12bf00b8f49bb7504fc36ad6fbf23f7368f4d7bed26ed297a1aad554"
     },
     "dataset.xlsx": {
-      "bytes": 27797,
-      "sha256": "379f59a201bf85edcc8022c4469855a281e7ec7456992d0282380eec86e9af7c"
+      "bytes": 35463,
+      "sha256": "eb46bd70f1cf7257e7b2a9b61e3a507a1a80356fcb2e300e86d6f69812d22ba9"
     }
   },
   "notes": [
     "Все имена, адреса, заявки и комментарии вымышлены. Координаты служат тестовыми точками.",
-    "urgent_example отмечен в названии: поле приоритета пока отсутствует в модели заявок.",
+    "urgent_example отмечен только в названии: используются обычные категория и приоритет, отдельный SLA не задан.",
     "equipment_shortage: нулевой остаток позиции 26; невозможные резервы вынесены в отрицательные тесты.",
     "Маршруты — сохранённые примеры, а не результат оптимизации или доказательство выполнимости.",
     "Импортированные учётные записи не имеют известного пароля; пароль задаётся отдельно."

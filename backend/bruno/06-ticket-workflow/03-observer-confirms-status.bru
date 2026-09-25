@@ -1,0 +1,35 @@
+meta {
+  name: Наблюдатель подтверждает статус заявки
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+headers {
+  Idempotency-Key: bruno-observer-confirms-ticket-start
+}
+
+body:json {
+  {"status":"in_progress"}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Статус изменён наблюдателем, исполнитель сохранён", function () {
+    const ticket = res.getBody();
+    expect(ticket.status).to.equal("in_progress");
+    expect(ticket.assignee_ids).to.include(Number(bru.getVar("worker_id")));
+  });
+}

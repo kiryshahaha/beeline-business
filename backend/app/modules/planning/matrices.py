@@ -1,6 +1,7 @@
 """Separate logical visits from unique coordinates and query all directed matrix blocks."""
 
 import math
+from datetime import datetime
 
 from app.modules.planning.async_utils import bounded_map
 from app.modules.planning.errors import PlanningError
@@ -8,20 +9,46 @@ from app.modules.planning.policy import execution_policy
 from app.modules.planning.solver_contract import SolveRequest
 
 
+def _minute_offset(value, epoch, *, round_up: bool) -> int:
+    timestamp = value if isinstance(value, datetime) else datetime.fromisoformat(value)
+    minutes = (timestamp - epoch).total_seconds() / 60
+    return math.ceil(minutes) if round_up else math.floor(minutes)
+
+
 async def build_problem(prepared: dict, provider, settings) -> tuple[SolveRequest, list[dict]]:
     policy = prepared.get("policy") or execution_policy(settings)
     open_end: bool = prepared.get("open_end", False)
+    route_end = prepared.get("route_end")
+    if route_end in ("return_to_start", "return_to_brigade_office"):
+        open_end = False
+    elif route_end in ("open", "open_end"):
+        open_end = True
+    elif route_end == "specific_finish":
+        open_end = False
     workers, tickets = prepared["workers"], prepared["tickets"]
+    v = len(workers)
     # Depot (start) nodes — one per worker.
-    depot_nodes = [{"kind": "depot", "location_id": w["location_id"]} for w in workers]
-    # Finish nodes — separate when open_end, same index as depot otherwise.
-    if open_end:
-        finish_nodes = [{"kind": "finish", "location_id": w["location_id"]} for w in workers]
+    depot_nodes = [
+        {"kind": "depot", "location_id": w.get("start_location_id", w["location_id"])}
+        for w in workers
+    ]
+    # Finish nodes — separate when open_end or specific_finish, same index as depot otherwise.
+    has_separate_finish = open_end or (route_end == "specific_finish")
+    if has_separate_finish:
+        finish_nodes = [
+            {
+                "kind": "finish",
+                "location_id": w.get("end_location_id")
+                or w.get("start_location_id")
+                or w["location_id"],
+            }
+            for w in workers
+        ]
     else:
-        finish_nodes = depot_nodes  # same objects; starts == ends
+        finish_nodes = depot_nodes  # return_to_start: starts == ends
     task_nodes = [{"kind": "ticket", "location_id": t["location_id"], "ticket": t} for t in tickets]
-    # Node ordering: depots | (finishes if open_end) | tasks
-    if open_end:
+    # Node ordering: depots | (finishes if separate) | tasks
+    if has_separate_finish:
         nodes = depot_nodes + finish_nodes + task_nodes
         v = len(workers)
         starts = list(range(v))
@@ -82,6 +109,13 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
         }
         for p, matrix in matrices.items()
     }
+    if open_end:
+        for p in profiles:
+            for j in range(v):
+                finish_node_idx = v + j
+                for i in range(len(nodes)):
+                    expanded[p]["time_minutes"][i][finish_node_idx] = 0
+                    expanded[p]["distance_meters"][i][finish_node_idx] = 0
     horizon = prepared["horizon"]
     # Time windows for depot and (when open_end) finish nodes are the vehicle window.
     # Finish nodes in open_end have the full vehicle time window (any moment in shift is fine).
@@ -93,7 +127,20 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
     task_service = [t["duration"] for t in tickets]
     depot_penalties = [0] * v
     finish_penalties = [0] * v if open_end else []
-    task_penalties = [policy.penalty(v, horizon)] * len(tickets)
+    base_penalty = policy.penalty(v, horizon)
+    priority_values = sorted({ticket["priority"] for ticket in tickets})
+    priority_rank = {
+        priority: len(priority_values) - index for index, priority in enumerate(priority_values)
+    }
+    category_rank = {"emergency": 3, "connection": 2, "repair": 1, "additional": 1}
+    task_penalties = [
+        base_penalty
+        * (
+            category_rank[ticket["category"]] * (len(tickets) + 1)
+            + priority_rank[ticket["priority"]]
+        )
+        for ticket in tickets
+    ]
     # allowed_vehicles keys are task node indices (strings).
     allowed = {str(task_offset + i): t["allowed"] for i, t in enumerate(tickets)}
     request = SolveRequest(
@@ -109,6 +156,22 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
         service_times=depot_service + finish_service + task_service,
         allowed_vehicles=allowed,
         penalties=depot_penalties + finish_penalties + task_penalties,
+        ticket_policies=[
+            {
+                "ticket_id": ticket["id"],
+                "category": ticket["category"],
+                "priority": ticket["priority"],
+                "received_at": _minute_offset(
+                    ticket["received_at"], prepared["epoch"], round_up=True
+                ),
+                "sla_deadline_at": (
+                    _minute_offset(ticket["sla_deadline_at"], prepared["epoch"], round_up=False)
+                    if ticket.get("sla_deadline_at")
+                    else None
+                ),
+            }
+            for ticket in tickets
+        ],
         time_capacity=horizon,
         slack_max=horizon,
         search_time_limit_s=policy.search_time_limit_seconds,

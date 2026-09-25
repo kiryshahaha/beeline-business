@@ -7,6 +7,7 @@ USER_SELECT_COLUMNS = """
     u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
     u.created_at, u.updated_at,
     w.workshift_start, w.workshift_end, w.transport_type, w.is_on_line,
+    w.service_area_id, w.start_location_id, w.stock_office_id, w.end_location_id,
     b.id AS brigade_id, b.name AS brigade_name,
     COALESCE(
         array_remove(array_agg(ws.skill ORDER BY ws.skill), NULL),
@@ -26,7 +27,9 @@ USER_SELECT_JOINS = """
 USER_SELECT_GROUP_BY = """
     GROUP BY u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
              u.created_at, u.updated_at, w.workshift_start, w.workshift_end,
-             w.transport_type, w.is_on_line, b.id, b.name
+             w.transport_type, w.is_on_line,
+             w.service_area_id, w.start_location_id, w.stock_office_id, w.end_location_id,
+             b.id, b.name
 """
 
 
@@ -44,10 +47,23 @@ def add_user(session: Session, values: dict[str, object]) -> int:
 def add_worker(session: Session, values: dict[str, object]) -> None:
     session.execute(
         text("""
-            INSERT INTO workers (user_id, workshift_start, workshift_end, transport_type)
-            VALUES (:user_id, :workshift_start, :workshift_end, :transport_type)
+            INSERT INTO workers (
+                user_id, workshift_start, workshift_end, transport_type,
+                service_area_id, start_location_id, stock_office_id, end_location_id
+            )
+            VALUES (
+                :user_id, :workshift_start, :workshift_end, :transport_type,
+                :service_area_id, :start_location_id, :stock_office_id, :end_location_id
+            )
         """),
-        {"transport_type": "walking", **values},
+        {
+            "transport_type": "walking",
+            "service_area_id": None,
+            "start_location_id": None,
+            "stock_office_id": None,
+            "end_location_id": None,
+            **values,
+        },
     )
 
 
@@ -236,14 +252,32 @@ def update_user(session: Session, user_id: int, values: dict[str, object]) -> No
 def upsert_worker(session: Session, user_id: int, values: dict[str, object]) -> None:
     session.execute(
         text("""
-            INSERT INTO workers (user_id, workshift_start, workshift_end, transport_type)
-            VALUES (:user_id, :workshift_start, :workshift_end, :transport_type)
+            INSERT INTO workers (
+                user_id, workshift_start, workshift_end, transport_type,
+                service_area_id, start_location_id, stock_office_id, end_location_id
+            )
+            VALUES (
+                :user_id, :workshift_start, :workshift_end, :transport_type,
+                :service_area_id, :start_location_id, :stock_office_id, :end_location_id
+            )
             ON CONFLICT (user_id) DO UPDATE SET
                 workshift_start = EXCLUDED.workshift_start,
                 workshift_end = EXCLUDED.workshift_end,
-                transport_type = EXCLUDED.transport_type
+                transport_type = EXCLUDED.transport_type,
+                service_area_id = EXCLUDED.service_area_id,
+                start_location_id = EXCLUDED.start_location_id,
+                stock_office_id = EXCLUDED.stock_office_id,
+                end_location_id = EXCLUDED.end_location_id
         """),
-        {"user_id": user_id, **values},
+        {
+            "user_id": user_id,
+            "transport_type": "walking",
+            "service_area_id": None,
+            "start_location_id": None,
+            "stock_office_id": None,
+            "end_location_id": None,
+            **values,
+        },
     )
 
 
@@ -280,7 +314,7 @@ def lock_worker_line_status(session: Session, worker_id: int) -> RowMapping | No
     return (
         session.execute(
             text("""
-                SELECT user_id, is_on_line
+                SELECT user_id, is_on_line, workshift_start, workshift_end
                 FROM workers
                 WHERE user_id = :worker_id
                 FOR UPDATE
@@ -312,6 +346,7 @@ def release_planned_assignments(session: Session, worker_id: int) -> list[int]:
                 WHERE assignment.ticket_id = ticket.id
                   AND assignment.worker_id = :worker_id
                   AND ticket.status = 'planned'
+                  AND ticket.lifecycle_state IN ('waiting_assignment', 'assigned')
                 RETURNING assignment.ticket_id
             """),
             {"worker_id": worker_id},
@@ -339,4 +374,34 @@ def clear_planned_times_without_assignees(session: Session, ticket_ids: list[int
               )
         """),
         {"ticket_ids": ticket_ids},
+    )
+
+
+def list_worker_day_contexts(session: Session, worker_id: int) -> list[RowMapping]:
+    return list(
+        session.execute(
+            text(
+                """
+                SELECT DISTINCT building.district_id,
+                    COALESCE(
+                        route.route_date,
+                        (ticket.visit_window_start AT TIME ZONE 'Europe/Moscow')::date
+                    )
+                    AS route_date
+                FROM ticket_assignments AS assignment
+                JOIN tickets AS ticket ON ticket.id = assignment.ticket_id
+                JOIN locations AS location ON location.id = ticket.location_id
+                JOIN buildings AS building ON building.id = location.building_id
+                LEFT JOIN routes AS route
+                    ON route.worker_id = assignment.worker_id
+                   AND route.route_date =
+                       (ticket.visit_window_start AT TIME ZONE 'Europe/Moscow')::date
+                WHERE assignment.worker_id = :worker_id
+                ORDER BY building.district_id, route_date
+                """
+            ),
+            {"worker_id": worker_id},
+        )
+        .mappings()
+        .all()
     )

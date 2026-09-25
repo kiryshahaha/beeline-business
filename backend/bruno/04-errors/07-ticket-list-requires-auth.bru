@@ -1,0 +1,15 @@
+meta {
+  name: Список заявок и фильтры требуют авторизации
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets?status=planned&city_id={{city_id}}
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 401
+}

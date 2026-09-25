@@ -1,0 +1,33 @@
+meta {
+  name: Нельзя сдвинуть окно закрытой заявки
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{execution_ticket_id}}/window-change
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+headers {
+  Idempotency-Key: execution-terminal-window-change
+}
+
+body:json {
+  {
+    "expected_revision": 10,
+    "reason": "Проверка закрытого состояния",
+    "new_window_start": "{{execution_new_window_start}}",
+    "new_window_end": "{{execution_new_window_end}}",
+    "payload": {}
+  }
+}
+
+assert {
+  res.status: eq 422
+}

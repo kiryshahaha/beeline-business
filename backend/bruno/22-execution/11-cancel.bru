@@ -1,0 +1,44 @@
+meta {
+  name: Отменить заявку
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{execution_ticket_id}}/cancel
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+headers {
+  Idempotency-Key: execution-cancel
+}
+
+body:json {
+  {
+    "expected_revision": 9,
+    "occurred_at": "{{execution_occurred_at}}",
+    "reason": "Клиент отменил визит",
+    "payload": {}
+  }
+}
+
+script:pre-request {
+  bru.setVar("execution_occurred_at", new Date().toISOString());
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Отмена отражена в каноническом состоянии", function () {
+    expect(res.getBody().state).to.equal("cancelled");
+    expect(res.getBody().revision).to.equal(10);
+    expect(res.getBody().cancel_reason).to.equal("Клиент отменил визит");
+  });
+}

@@ -195,6 +195,30 @@ class WorkerEquipmentApiTests(DatabaseTestCase):
         self.assertEqual(response.status_code, expected, response.text)
         return response
 
+    def execution_command(
+        self, ticket_id, action, key, reason=None, worker_id=None, location_id=None
+    ):
+        revision = self.connection.execute(
+            text("SELECT revision FROM tickets WHERE id = :ticket_id"),
+            {"ticket_id": ticket_id},
+        ).scalar_one()
+        body = {
+            "expected_revision": revision,
+            "occurred_at": datetime.combine(self.day, time(12), MOSCOW).isoformat(),
+            "payload": {},
+        }
+        if reason is not None:
+            body["reason"] = reason
+        if worker_id is not None:
+            body["worker_id"] = worker_id
+        if location_id is not None:
+            body["location_id"] = location_id
+        return self.client.post(
+            f"/api/v1/tickets/{ticket_id}/{action}",
+            json=body,
+            headers=self.headers() | {"Idempotency-Key": key},
+        )
+
     def operations(self, **params):
         response = self.call("GET", "/api/v1/equipment/operations", params=params)
         self.assertEqual(response.status_code, 200, response.text)
@@ -282,7 +306,7 @@ class WorkerEquipmentApiTests(DatabaseTestCase):
         self.assertEqual(self.hands(self.first)[self.tool], (1, 0, 1))
         self.assertEqual(self.stock(self.router), (7, 0))
 
-        self.status(self.install, "planned")
+        self.status(self.install, "planned", expected=403)
         self.status(self.install, "completed")
         self.assertEqual(self.hands(self.first)[self.router], (1, 0, 1))
         consumed = self.operations(ticket_id=self.install)
@@ -306,12 +330,40 @@ class WorkerEquipmentApiTests(DatabaseTestCase):
         body = {"operation_key": "restore-1", "reason": "Роутер снят у клиента"}
         response = self.call("POST", url, json=body)
         self.assertEqual(response.json()["detail"]["code"], "ticket_completed")
-        self.status(self.install, "planned")
+        self.status(self.install, "planned", expected=403)
+        response = self.call("POST", url, json=body)
+        self.assertEqual(response.json()["detail"]["code"], "ticket_completed")
+        reopened = self.execution_command(
+            self.install, "reopen", "reopen-install", "Повторный выезд"
+        )
+        self.assertEqual(reopened.status_code, 200, reopened.text)
         response = self.call("POST", url, json=body)
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["movements"][0]["to_worker_id"], self.first.id)
         self.assertEqual(self.hands(self.first)[self.router], (3, 2, 1))
-        self.status(self.install, "completed")
+
+        assigned = self.call(
+            "PUT",
+            f"/api/v1/tickets/{self.install}/assignees",
+            json={"worker_ids": [self.first.id]},
+        )
+        self.assertEqual(assigned.status_code, 200, assigned.text)
+        for action, key in (
+            ("dispatch", "dispatch-install-cycle-2"),
+            ("start-route", "route-install-cycle-2"),
+            ("start", "start-install-cycle-2"),
+            ("complete", "complete-install-cycle-2"),
+        ):
+            response = self.execution_command(
+                self.install,
+                action,
+                key,
+                worker_id=self.first.id if action in {"start-route", "start", "complete"} else None,
+                location_id=(
+                    self.location if action in {"start-route", "start", "complete"} else None
+                ),
+            )
+            self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(self.hands(self.first)[self.router], (1, 0, 1))
         self.assertEqual(
             [op["kind"] for op in self.operations(ticket_id=self.install)],
@@ -328,7 +380,7 @@ class WorkerEquipmentApiTests(DatabaseTestCase):
         self.assertEqual(
             (movement["from_office_id"], movement["from_worker_id"]), (self.office, None)
         )
-        self.status(self.install, "planned")
+        self.status(self.install, "planned", expected=403)
         self.status(self.install, "completed")
         self.assertEqual(self.stock(self.router), (8, 0))
 
@@ -345,7 +397,8 @@ class WorkerEquipmentApiTests(DatabaseTestCase):
 
     def test_cancel_keeps_units_on_hand_and_return_is_explicit(self):
         self.issue(self.first, "morning")
-        self.status(self.tv, "wont_fix")
+        cancelled = self.execution_command(self.tv, "cancel", "cancel-tv", "Клиент отказался")
+        self.assertEqual(cancelled.status_code, 200, cancelled.text)
         self.assertEqual(self.hands(self.first)[self.tv_box], (1, 0, 1))
         self.assertEqual(self.stock(self.tv_box), (4, 0))
 

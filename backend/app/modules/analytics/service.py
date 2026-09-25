@@ -88,7 +88,15 @@ def _activity_item(row: RowMapping) -> ActivityItem:
         kind=row["kind"],
         occurred_at=row["occurred_at"],
         ticket=ActivityTicket(
-            id=row["ticket_id"], title=row["ticket_title"], status=row["ticket_status"]
+            id=row["ticket_id"],
+            title=row["ticket_title"],
+            work_type_id=row["work_type_id"],
+            work_type=row["work_type"],
+            category=row["category"],
+            priority=row["priority"],
+            received_at=row["received_at"],
+            sla_deadline_at=row["sla_deadline_at"],
+            status=row["ticket_status"],
         ),
         actor=_person(row, "actor"),
         details=ActivityDetails(
