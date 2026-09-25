@@ -50,7 +50,7 @@ def prepared(unique=52):
 class PlanningBoundaryTests(unittest.IsolatedAsyncioTestCase):
     def settings(self):
         return Settings(
-            database_url="postgresql://unused/isolated_test", 
+            database_url="postgresql://unused/isolated_test",
             planner_service_token="internal",
             planning_max_matrix_cells_total=20000,
         )
