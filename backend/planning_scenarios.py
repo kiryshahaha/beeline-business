@@ -25,7 +25,21 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
         brigade["division_id"] = 1
     for skill in data["worker_skills"]:
         skill["skill"] += f" [planning {seed}]"
-    for name in ("ticket_assignments", "ticket_comments", "notification_events", "routes"):
+    for name in (
+        "ticket_assignments",
+        "ticket_comments",
+        "notification_events",
+        "routes",
+        # Equipment on hand and source provenance belong to the generic package only.
+        "office_kit_reserves",
+        "worker_appliances",
+        "appliance_movements",
+        "ticket_appliance_states",
+        "appliance_operations",
+        "source_records",
+        "source_addresses",
+        "source_imports",
+    ):
         data[name] = []
     night = scenario == "night"
     for worker in data["workers"]:

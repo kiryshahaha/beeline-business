@@ -90,6 +90,22 @@ class ExchangeRoundtripTests(DatabaseTestCase):
                     [r["is_on_line"] for r in source["workers"]],
                     [r["is_on_line"] for r in destination["workers"]],
                 )
+                # IDs inside the equipment journal and the composite state key follow the rows.
+                [held] = destination["worker_appliances"]
+                [operation] = destination["appliance_operations"]
+                [state] = destination["ticket_appliance_states"]
+                self.assertEqual(operation["request"]["worker_id"], held["worker_id"])
+                self.assertEqual(state["holder_worker_id"], held["worker_id"])
+                self.assertIn(
+                    (state["ticket_id"], state["appliance_id"]),
+                    {(r["ticket_id"], r["appliance_id"]) for r in destination["ticket_appliances"]},
+                )
+                self.assertGreater(held["worker_id"], 1000)
+                records = {r["kind"]: r for r in destination["source_records"]}
+                self.assertEqual(records["brigade"]["worker_id"], held["worker_id"])
+                self.assertIn(
+                    records["demand"]["ticket_id"], {r["id"] for r in destination["tickets"]}
+                )
                 event = destination["notification_events"][0]
                 self.assertEqual(
                     event["data"]["actor_id"],
