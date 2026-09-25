@@ -39,7 +39,6 @@ def problem(service, allowed, windows=None, walk_gaps=(), gaps=()):
         time_windows=[SHIFT, SHIFT] + [windows.get(n, SHIFT) for n in range(2, size)],
         service_times=[0, 0, *service],
         allowed_vehicles={str(n): v for n, v in allowed.items()},
-        penalties=[0, 0] + [1] * len(service),
         ticket_policies=[
             {
                 "ticket_id": 101 + node,
