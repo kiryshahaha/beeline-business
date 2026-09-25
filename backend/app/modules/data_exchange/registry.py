@@ -12,6 +12,7 @@ TABLE_NAMES = frozenset(
         "cities",
         "districts",
         "divisions",
+        "service_areas",
         "streets",
         "buildings",
         "entrances",

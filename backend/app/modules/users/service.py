@@ -65,6 +65,10 @@ def _build_user_read(row: RowMapping) -> UserRead:
             skills=list(row["skills"]),
             transport_type=row["transport_type"],
             is_on_line=row["is_on_line"],
+            service_area_id=row["service_area_id"] if "service_area_id" in row else None,
+            start_location_id=row["start_location_id"] if "start_location_id" in row else None,
+            stock_office_id=row["stock_office_id"] if "stock_office_id" in row else None,
+            end_location_id=row["end_location_id"] if "end_location_id" in row else None,
         )
     return UserRead(
         id=row["id"],
@@ -137,6 +141,10 @@ def create_user(session: Session, data: UserCreate) -> UserRead:
                     "workshift_start": profile.workshift_start,
                     "workshift_end": profile.workshift_end,
                     "transport_type": profile.transport_type.value,
+                    "service_area_id": profile.service_area_id,
+                    "start_location_id": profile.start_location_id,
+                    "stock_office_id": profile.stock_office_id,
+                    "end_location_id": profile.end_location_id,
                 },
             )
             for skill_name in profile.skills:
@@ -309,6 +317,26 @@ def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:
                         "transport_type": worker_dump.get("transport_type")
                         or existing_user["transport_type"]
                         or TransportType.WALKING.value,
+                        "service_area_id": (
+                            worker_dump["service_area_id"]
+                            if "service_area_id" in worker_dump
+                            else existing_user["service_area_id"]
+                        ),
+                        "start_location_id": (
+                            worker_dump["start_location_id"]
+                            if "start_location_id" in worker_dump
+                            else existing_user["start_location_id"]
+                        ),
+                        "stock_office_id": (
+                            worker_dump["stock_office_id"]
+                            if "stock_office_id" in worker_dump
+                            else existing_user["stock_office_id"]
+                        ),
+                        "end_location_id": (
+                            worker_dump["end_location_id"]
+                            if "end_location_id" in worker_dump
+                            else existing_user["end_location_id"]
+                        ),
                     },
                 )
 

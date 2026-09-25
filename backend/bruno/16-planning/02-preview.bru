@@ -40,7 +40,7 @@ tests {
     expect(b.resource_estimate).to.equal(null);
     expect(b.routes.flatMap(r => r.stops)).to.have.lengthOf(24);
     for (const s of b.routes.flatMap(r => r.stops)) {
-      expect(s.factors.map(f => f.code)).to.include.members(["skills_match", "transport", "start_in_window", "equal_priority"]);
+      expect(s.factors.map(f => f.code)).to.include.members(["skills_match", "transport", "start_in_window", "priority_applied"]);
       for (const f of s.factors) expect(f.message).to.be.a("string").and.not.equal("");
     }
     expect(new Set(b.routes.map(r => r.transport_type)).size).to.equal(4);

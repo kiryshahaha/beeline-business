@@ -93,7 +93,10 @@ class SeedDemoTests(DatabaseTestCase):
         self.assertEqual(assignment_count, len(DEMO_VISITS))
         self.assertEqual(comment_count, len(DEMO_VISITS))
         self.assertTrue(
-            all(get_ticket_unscoped(self.session, item.ticket_id).assigned_worker_id for item in first)
+            all(
+                get_ticket_unscoped(self.session, item.ticket_id).assigned_worker_id
+                for item in first
+            )
         )
 
         first_comment = self.session.scalars(

@@ -109,6 +109,9 @@ def diagnose_dropped(prepared, problem, nodes, solution):
             primary = reasons.no_slot_in_plan(fitting)
         else:
             primary = reasons.no_eligible_worker(candidates)
+        primary = reasons.annotate_priority(
+            primary, ticket.get("category", "repair"), ticket.get("priority", 3)
+        )
         result.append({"ticket_id": ticket["id"], "reason": primary, "candidates": candidates})
     return result
 
@@ -192,7 +195,7 @@ def estimate_resources(prepared, problem, nodes, dropped):
 def visit_factors(prepared, routes):
     """Attach the checked facts to each planned visit, without claiming a unique best engineer."""
     tickets = {t["id"]: t for t in prepared["tickets"]}
-    policy, day = prepared["policy"], prepared["epoch"].date()
+    day = prepared["epoch"].date()
     for route in routes:
         previous_end = datetime.fromisoformat(route["departure_at"])
         for index, visit in enumerate(route["stops"]):
@@ -215,8 +218,16 @@ def visit_factors(prepared, routes):
                     day,
                 ),
                 reasons.equipment_factor(ticket["allocations"], prepared["appliance_names"]),
-                reasons.priority_factor(policy.priority),
-                reasons.selection_factor(len(ticket["allowed"]), policy.objective_order),
+                reasons.priority_factor(ticket["category"], ticket["priority"]),
+                reasons.sla_factor(
+                    datetime.fromisoformat(visit["service_end_at"]),
+                    datetime.fromisoformat(ticket["sla_deadline_at"])
+                    if ticket.get("sla_deadline_at")
+                    else None,
+                ),
+                reasons.selection_factor(
+                    len(ticket["allowed"]), prepared["policy"].objective_order
+                ),
             ]
             previous_end = datetime.fromisoformat(visit["service_end_at"])
 

@@ -191,7 +191,10 @@ class PlanningApiTests(CommittedDatabaseTestCase):
         response = self.client.get(url, headers=self.headers)
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["case_contract"]["activation"], "contract_only")
-        self.assertEqual(response.json()["execution"]["priority"], "equal_ticket_penalties")
+        self.assertEqual(
+            response.json()["execution"]["priority"],
+            "category_and_numeric_priority_penalties",
+        )
 
     def test_preview_cannot_silently_activate_case_policy(self):
         response = self.client.post(
@@ -335,7 +338,8 @@ class PlanningApiTests(CommittedDatabaseTestCase):
                         "transport",
                         "start_in_window",
                         "equipment_reserved",
-                        "equal_priority",
+                        "priority_applied",
+                        "no_sla_deadline",
                         "only_eligible_worker",
                     ],
                 )
@@ -421,7 +425,10 @@ class PlanningApiTests(CommittedDatabaseTestCase):
         item = plan["unassigned"][0]
         self.assertEqual(item["reason"]["code"], "feasible_slot_missed")
         self.assertEqual(item["reason"]["category"], "search")
-        self.assertEqual(item["reason"]["observed"], {"search_time_limit_seconds": 5})
+        self.assertEqual(
+            item["reason"]["observed"],
+            {"search_time_limit_seconds": 5, "category": "repair", "priority": 3},
+        )
         slots = [c for c in item["candidates"] if c["reason"]["code"] == "slot_available"]
         self.assertEqual(len(slots), 1)
         self.assertEqual(item["reason"]["ids"], {"worker_ids": [slots[0]["worker_id"]]})
@@ -448,7 +455,7 @@ class PlanningApiTests(CommittedDatabaseTestCase):
             connection.execute(
                 update(Ticket)
                 .where(Ticket.id == self.payload["ticket_ids"][0])
-                .values(work_type="unknown")
+                .values(work_type="unknown", work_type_id=None)
             )
         plan = self.preview()
         with Session(self.engine) as session, session.begin():
@@ -502,7 +509,7 @@ class PlanningApiTests(CommittedDatabaseTestCase):
             connection.execute(
                 update(Ticket)
                 .where(Ticket.id == self.payload["ticket_ids"][0])
-                .values(work_type="unknown")
+                .values(work_type="unknown", work_type_id=None)
             )
         plan = self.preview()
         self.assertEqual(
@@ -516,8 +523,20 @@ class PlanningApiTests(CommittedDatabaseTestCase):
                         "message": "Вид работ «unknown» не найден в справочнике",
                         "constraint": None,
                         "ids": {},
-                        "observed": {"work_type": "unknown"},
-                        "required": None,
+                        "observed": {
+                            "work_type": "unknown",
+                            "category": "repair",
+                            "priority": 3,
+                        },
+                        "required": {
+                            "planning_priority_order": [
+                                "emergency",
+                                "connection",
+                                "repair",
+                                "additional",
+                            ],
+                            "ticket_priority": 3,
+                        },
                     },
                     "candidates": [],
                 }

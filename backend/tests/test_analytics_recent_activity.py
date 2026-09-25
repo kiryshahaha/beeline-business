@@ -355,7 +355,7 @@ class RecentActivityApiTests(DatabaseTestCase):
             json={
                 "location_id": self.location_id,
                 "title": "Свежая заявка",
-                "work_type": "Настройка сети",
+                "work_type_id": 1,
                 "visit_window_start": "2026-09-21T10:00:00+03:00",
                 "visit_window_end": "2026-09-21T14:00:00+03:00",
                 "estimated_duration_minutes": 60,

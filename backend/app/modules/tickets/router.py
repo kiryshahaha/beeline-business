@@ -19,6 +19,8 @@ from app.modules.tickets.schemas import (
     TicketAssignmentUpdate,
     TicketCreate,
     TicketRead,
+    TicketSlaEstimateRead,
+    TicketSlaEstimateRequest,
     TicketStatusUpdate,
 )
 from app.modules.users.enums import UserRole
@@ -122,6 +124,12 @@ def create_ticket(
         ticket = service.create_ticket(session, data, actor_id=current_user.id)
     except service.LocationNotFoundError as error:
         raise HTTPException(status_code=422, detail="Место выполнения не найдено") from error
+    except service.WorkTypeNotFoundError as error:
+        raise HTTPException(status_code=422, detail="Вид работ не найден") from error
+    except service.InvalidSlaDeadlineError as error:
+        raise HTTPException(
+            status_code=422, detail="Срок SLA должен быть позже времени поступления"
+        ) from error
     response.headers["Location"] = f"/api/v1/tickets/{ticket.id}"
     return ticket
 
@@ -139,6 +147,28 @@ def get_ticket(
         return service.get_ticket(session, id, current_user)
     except service.TicketNotFoundError as error:
         raise HTTPException(status_code=404, detail="Заявка не найдена") from error
+
+
+@router.post("/{id}/sla-estimate", response_model=TicketSlaEstimateRead)
+def estimate_ticket_sla(
+    id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    data: TicketSlaEstimateRequest,
+    session: DatabaseSession,
+    current_user: CurrentUser,
+) -> TicketSlaEstimateRead:
+    """Estimate arrival, service completion and separate visit-window/SLA risks."""
+    try:
+        return service.estimate_sla(
+            session,
+            id,
+            current_user,
+            previous_ticket_end_at=data.previous_ticket_end_at,
+            travel_minutes=data.travel_minutes,
+        )
+    except service.TicketNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Заявка не найдена") from error
+    except service.SlaEstimationConfigurationError as error:
+        raise HTTPException(status_code=409, detail={"code": error.code}) from error
 
 
 @router.put("/{id}/assignees", response_model=TicketRead)
@@ -163,6 +193,11 @@ def update_ticket_assignment(
         raise HTTPException(
             status_code=422,
             detail="Один или несколько исполнителей сняты с линии",
+        ) from error
+    except service.ServiceAreaMismatchError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Исполнитель принадлежит другому участку обслуживания",
         ) from error
     except InventoryError as error:
         raise HTTPException(status_code=error.status, detail=error.detail()) from error

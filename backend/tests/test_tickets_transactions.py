@@ -47,7 +47,7 @@ class TicketsTransactionTests(CommittedDatabaseTestCase):
         self.payload = {
             "location_id": self.location_id,
             "title": "Проверка сохранения транзакции",
-            "work_type": "Диагностика сети",
+            "work_type_id": 1,
             "status": "completed",
             "visit_window_start": "2026-09-14T10:00:00+03:00",
             "visit_window_end": "2026-09-14T14:00:00+03:00",

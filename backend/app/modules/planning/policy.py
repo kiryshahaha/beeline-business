@@ -38,8 +38,12 @@ class ExecutionPolicy(BaseModel):
     equipment: Literal["office_stock_and_ticket_reservations"] = (
         "office_stock_and_ticket_reservations"
     )
-    priority: Literal["equal_ticket_penalties"] = "equal_ticket_penalties"
-    emergency_sla: Literal["not_modeled"] = "not_modeled"
+    priority: Literal["category_and_numeric_priority_penalties", "equal_ticket_penalties"] = (
+        "category_and_numeric_priority_penalties"
+    )
+    emergency_sla: Literal["service_completion_before_deadline", "not_modeled"] = (
+        "service_completion_before_deadline"
+    )
     ticket_transport_requirement: Literal["not_modeled"] = "not_modeled"
     manual_assignment_constraints: Literal["not_shared_with_planning"] = "not_shared_with_planning"
     objective_order: tuple[Literal["unassigned_total"], Literal["travel_minutes"]] = (

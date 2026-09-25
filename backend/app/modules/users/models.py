@@ -82,6 +82,18 @@ class Worker(Base):
         default=True,
         server_default="true",
     )
+    service_area_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_areas.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    start_location_id: Mapped[int | None] = mapped_column(
+        ForeignKey("locations.id", ondelete="RESTRICT"), nullable=True
+    )
+    stock_office_id: Mapped[int | None] = mapped_column(
+        ForeignKey("offices.id", ondelete="RESTRICT"), nullable=True
+    )
+    end_location_id: Mapped[int | None] = mapped_column(
+        ForeignKey("locations.id", ondelete="RESTRICT"), nullable=True
+    )
 
     __table_args__ = (
         CheckConstraint("workshift_start <> workshift_end", name="workshift_duration_not_zero"),

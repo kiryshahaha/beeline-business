@@ -47,7 +47,7 @@ class TicketCommentsApiTests(DatabaseTestCase):
             json={
                 "location_id": self.location_id,
                 "title": "Проверить линию",
-                "work_type": "Диагностика сети",
+                "work_type_id": 1,
                 "visit_window_start": "2026-09-14T10:00:00+03:00",
                 "visit_window_end": "2026-09-14T14:00:00+03:00",
                 "estimated_duration_minutes": 60,
@@ -250,7 +250,7 @@ class TicketCommentsApiTests(DatabaseTestCase):
                 for key in (
                     "location_id",
                     "title",
-                    "work_type",
+                    "work_type_id",
                     "visit_window_start",
                     "visit_window_end",
                     "estimated_duration_minutes",

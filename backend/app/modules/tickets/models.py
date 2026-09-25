@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
+    JSON,
     CheckConstraint,
     DateTime,
     Enum,
@@ -27,6 +28,9 @@ class Ticket(IntegerIdMixin, Base):
 
     location_id: Mapped[int] = mapped_column(
         ForeignKey("locations.id", ondelete="RESTRICT"), index=True
+    )
+    service_area_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_areas.id", ondelete="RESTRICT"), index=True, nullable=True
     )
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text)
@@ -138,3 +142,16 @@ class Ticket(IntegerIdMixin, Base):
         Index("ix_tickets_visit_window_start", visit_window_start),
         Index("ix_tickets_category_priority", category, priority),
     )
+
+
+class TicketWorkTypeMigrationIssue(Base):
+    __tablename__ = "ticket_work_type_migration_issues"
+
+    ticket_id: Mapped[int] = mapped_column(
+        ForeignKey("tickets.id", ondelete="CASCADE"), primary_key=True
+    )
+    legacy_value: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    reason: Mapped[str] = mapped_column(String(40))
+    candidate_work_type_ids: Mapped[list[int]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+>>>>>>> origin/main

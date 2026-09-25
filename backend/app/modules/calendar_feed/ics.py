@@ -16,6 +16,12 @@ STATUS_LABELS = {
     "completed": "Завершена",
     "wont_fix": "Не будет исправлено",
 }
+CATEGORY_LABELS = {
+    "emergency": "Авария",
+    "connection": "Подключение",
+    "repair": "Локальная работа",
+    "additional": "Дозаказ",
+}
 
 
 def _location(ticket: Mapping) -> LocationRead:
@@ -37,10 +43,20 @@ def _description(ticket: Mapping, location: LocationRead, ticket_url: str | None
     window_end = ticket["visit_window_end"].astimezone(MOSCOW)
     lines = [
         f"Тип работ: {ticket['work_type']}",
+        f"Категория: {CATEGORY_LABELS.get(ticket.get('category'), ticket.get('category', ''))}",
+        f"Приоритет: {ticket.get('priority', '')}",
         f"Статус: {STATUS_LABELS.get(ticket['status'], ticket['status'])}",
         f"Адрес: {location.address}",
         f"Окно визита (МСК): {window_start:%d.%m %H:%M} – {window_end:%d.%m %H:%M}",
     ]
+    if ticket.get("received_at"):
+        received_at = ticket["received_at"].astimezone(MOSCOW)
+        lines.append(f"Поступила: {received_at:%d.%m %H:%M} МСК")
+    if ticket.get("sla_deadline_at"):
+        sla_deadline_at = ticket["sla_deadline_at"].astimezone(MOSCOW)
+        lines.append(f"Срок SLA: до {sla_deadline_at:%d.%m %H:%M} МСК")
+    if ticket.get("required_transport_type"):
+        lines.append(f"Требуемый транспорт: {ticket['required_transport_type']}")
     if ticket["description"]:
         lines += ["", ticket["description"]]
     if ticket_url:

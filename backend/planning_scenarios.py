@@ -31,6 +31,7 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
     for worker in data["workers"]:
         worker["workshift_start"] = time(22 if night else 8)
         worker["workshift_end"] = time(6 if night else 18)
+        worker["service_area_id"] = 1
     for location in data["locations"]:
         index = 0 if scenario == "duplicate_coordinates" else location["id"]
         location.update(
@@ -50,6 +51,7 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
         work_type = types[i % len(types)]
         worker = data["workers"][i % workers]
         ticket.update(
+            service_area_id=1,
             status="planned",
             lifecycle_state="waiting_assignment",
             revision=1,
