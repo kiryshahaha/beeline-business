@@ -1,16 +1,24 @@
 """Build CSV and XLSX downloads from filtered ticket rows."""
 
-import csv
-import io
-from dataclasses import dataclass
-from datetime import date, datetime, time
-from io import BytesIO
+from collections.abc import Iterable, Iterator
 from typing import Any
 
-from openpyxl import Workbook
+from sqlalchemy import RowMapping
 from sqlalchemy.orm import Session
 
+from app.core.spreadsheet import XLSX_MAX_CELL_UNITS
 from app.modules.reports import repository
+from app.modules.reports.errors import ReportError
+from app.modules.reports.tables import (
+    CSV_MEDIA_TYPE,
+    XLSX_MEDIA_TYPE,
+    CellTooLongError,
+    ExportFile,
+    Table,
+    build_file,
+    write_csv,
+    write_xlsx,
+)
 from app.modules.tickets.enums import TicketStatus
 
 EXPORT_COLUMNS = (
@@ -53,13 +61,18 @@ EXPORT_COLUMNS = (
     "longitude",
     "address",
 )
+# At the limit XLSX takes about 11 s and CSV about 3 s; memory stays bounded either way.
+MAX_EXPORT_ROWS = 50_000
 
 
-@dataclass(frozen=True)
-class ExportFile:
-    content: bytes
-    media_type: str
-    filename: str
+def too_large(rows: int | None) -> ReportError:
+    return ReportError(
+        422,
+        "report_too_large",
+        f"В выгрузку попадает больше {MAX_EXPORT_ROWS} строк; уточните фильтры",
+        rows=rows,
+        max_rows=MAX_EXPORT_ROWS,
+    )
 
 
 def _address(row: dict[str, Any]) -> str:
@@ -75,47 +88,21 @@ def _address(row: dict[str, Any]) -> str:
     return ", ".join(parts)
 
 
-def _export_row(row: dict[str, Any]) -> dict[str, Any]:
+def _export_row(row: dict[str, Any]) -> list[Any]:
     values = dict(row)
     values["assigned_worker_id"] = (
         str(values["assigned_worker_id"]) if values["assigned_worker_id"] else ""
     )
     values["address"] = _address(values)
-    return values
+    return [values[column] for column in EXPORT_COLUMNS]
 
 
-def _cell_value(value: Any) -> Any:
-    if value is None:
-        return None
-    if isinstance(value, (datetime, date, time)):
-        return value.isoformat()
-    return value
-
-
-def _csv_value(value: Any) -> str:
-    value = _cell_value(value)
-    return "" if value is None else str(value)
-
-
-def _serialize_csv(rows: list[dict[str, Any]]) -> bytes:
-    stream = io.StringIO(newline="")
-    writer = csv.writer(stream, lineterminator="\r\n")
-    writer.writerow(EXPORT_COLUMNS)
-    for row in rows:
-        writer.writerow([_csv_value(row.get(column)) for column in EXPORT_COLUMNS])
-    return stream.getvalue().encode("utf-8-sig")
-
-
-def _serialize_xlsx(rows: list[dict[str, Any]]) -> bytes:
-    workbook = Workbook(write_only=True)
-    sheet = workbook.create_sheet("tickets")
-    sheet.append(list(EXPORT_COLUMNS))
-    for row in rows:
-        sheet.append([_cell_value(row.get(column)) for column in EXPORT_COLUMNS])
-    output = BytesIO()
-    workbook.save(output)
-    workbook.close()
-    return output.getvalue()
+def _export_rows(rows: Iterable[RowMapping]) -> Iterator[list[Any]]:
+    for number, row in enumerate(rows, 1):
+        # Tickets committed after the count must not stretch the file past the limit.
+        if number > MAX_EXPORT_ROWS:
+            raise too_large(None)
+        yield _export_row(dict(row))
 
 
 def export_tickets(
@@ -127,18 +114,38 @@ def export_tickets(
     district_id: int | None,
     brigade_id: int | None,
 ) -> ExportFile:
-    rows = repository.find_tickets(
-        session,
-        status=status.value if status is not None else None,
-        city_id=city_id,
-        district_id=district_id,
-        brigade_id=brigade_id,
-    )
-    values = [_export_row(dict(row)) for row in rows]
-    if format == "csv":
-        return ExportFile(_serialize_csv(values), "text/csv", "tickets.csv")
-    return ExportFile(
-        _serialize_xlsx(values),
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "tickets.xlsx",
-    )
+    filters = {
+        "status": status.value if status is not None else None,
+        "city_id": city_id,
+        "district_id": district_id,
+        "brigade_id": brigade_id,
+    }
+
+    def write(file) -> None:
+        with session.begin():
+            total = repository.count_tickets(session, **filters)
+            if total > MAX_EXPORT_ROWS:
+                raise too_large(total)
+            with repository.stream_tickets(session, limit=MAX_EXPORT_ROWS + 1, **filters) as rows:
+                table = Table("tickets", EXPORT_COLUMNS, _export_rows(rows))
+                if format == "csv":
+                    write_csv(file, table)
+                else:
+                    write_xlsx(file, [table])
+
+    try:
+        if format == "csv":
+            return build_file(write, CSV_MEDIA_TYPE, "tickets.csv")
+        return build_file(write, XLSX_MEDIA_TYPE, "tickets.xlsx")
+    except CellTooLongError as error:
+        ticket_id = error.values[EXPORT_COLUMNS.index("id")]
+        raise ReportError(
+            422,
+            "xlsx_cell_too_long",
+            f"Текст поля {error.column} заявки №{ticket_id} длиннее лимита ячейки XLSX "
+            f"({XLSX_MAX_CELL_UNITS}); выгрузите CSV — в нём значение сохраняется полностью",
+            ticket_id=ticket_id,
+            column=error.column,
+            length=error.length,
+            max_length=XLSX_MAX_CELL_UNITS,
+        ) from error

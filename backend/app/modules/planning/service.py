@@ -149,28 +149,33 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
     return public
 
 
+def plan_state(session: Session, plan: PlanningPlan, clock=utc_now) -> dict:
+    """Public stored plan and its live state; the caller owns one read-only snapshot."""
+    result = {**legacy_public(plan.result_snapshot["public"]), "state": plan.state}
+    result["planning_policy"] = plan.input_snapshot.get("planning_policy")
+    if plan.state == "ready" and plan.expires_at <= clock():
+        result["state"] = "expired"
+    if plan.state == "applied":
+        request = PreviewRequest.model_validate(plan.input_snapshot["request"])
+        result["is_current"] = (
+            fingerprint(
+                load_snapshot(
+                    session, request, policy_snapshot=recorded_policy(plan.input_snapshot)
+                )
+            )
+            == plan.applied_fingerprint
+        )
+        result["apply_result"] = plan.apply_result
+    return result
+
+
 def read_plan(engine, plan_id: UUID, clock=utc_now):
     with Session(engine) as session, session.begin():
         session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
         plan = session.get(PlanningPlan, plan_id)
         if plan is None:
             raise PlanningError("plan_not_found", 404)
-        result = {**legacy_public(plan.result_snapshot["public"]), "state": plan.state}
-        result["planning_policy"] = plan.input_snapshot.get("planning_policy")
-        if plan.state == "ready" and plan.expires_at <= clock():
-            result["state"] = "expired"
-        if plan.state == "applied":
-            request = PreviewRequest.model_validate(plan.input_snapshot["request"])
-            result["is_current"] = (
-                fingerprint(
-                    load_snapshot(
-                        session, request, policy_snapshot=recorded_policy(plan.input_snapshot)
-                    )
-                )
-                == plan.applied_fingerprint
-            )
-            result["apply_result"] = plan.apply_result
-        return result
+        return plan_state(session, plan, clock)
 
 
 def apply_plan(engine, plan_id: UUID, clock=utc_now):
