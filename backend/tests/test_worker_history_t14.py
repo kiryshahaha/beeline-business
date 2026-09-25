@@ -15,7 +15,6 @@ from app.db.models import (
     PlanningPlanRoute,
     Route,
     Ticket,
-    TicketAssignment,
     User,
     Worker,
     WorkerAppliance,
@@ -98,7 +97,7 @@ class AppliedPlanHistoryTests(CommittedDatabaseTestCase):
                 for model, column in (
                     (Route, Route.worker_id),
                     (PlanningPlanRoute, PlanningPlanRoute.worker_id),
-                    (TicketAssignment, TicketAssignment.worker_id),
+                    (Ticket, Ticket.assigned_worker_id),
                     (Worker, Worker.user_id),
                 )
             )
