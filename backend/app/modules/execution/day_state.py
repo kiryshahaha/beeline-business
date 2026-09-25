@@ -515,8 +515,10 @@ def mark_worker_unavailable(
         worker = (
             session.execute(
                 text(
-                    "SELECT user_id, workshift_start, workshift_end FROM workers "
-                    "WHERE user_id = :worker_id FOR UPDATE"
+                    "SELECT w.user_id, w.workshift_start, w.workshift_end FROM workers AS w "
+                    "JOIN users AS u ON u.id = w.user_id "
+                    "WHERE w.user_id = :worker_id AND u.role = 'worker' "
+                    "AND u.archived_at IS NULL FOR UPDATE OF w"
                 ),
                 {"worker_id": worker_id},
             )

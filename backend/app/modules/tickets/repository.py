@@ -138,7 +138,16 @@ def find_worker_ids(session: Session, worker_ids: list[int]) -> set[int]:
         return set()
     return set(
         session.execute(
-            text("SELECT user_id FROM workers WHERE user_id = ANY(:worker_ids)"),
+            text(
+                """
+                SELECT w.user_id
+                FROM workers AS w
+                JOIN users AS u ON u.id = w.user_id
+                WHERE w.user_id = ANY(:worker_ids)
+                  AND u.role = 'worker'
+                  AND u.archived_at IS NULL
+                """
+            ),
             {"worker_ids": worker_ids},
         )
         .scalars()
@@ -152,11 +161,15 @@ def find_worker_line_statuses(session: Session, worker_ids: list[int]) -> dict[i
     return dict(
         session.execute(
             text("""
-                SELECT user_id, is_on_line
-                FROM workers
-                WHERE user_id = ANY(:worker_ids)
-                ORDER BY user_id
-                FOR KEY SHARE
+                SELECT w.user_id, w.is_on_line
+                FROM workers AS w
+                JOIN users AS u ON u.id = w.user_id
+                -- An archived engineer or a former worker keeps history but gets no new work.
+                WHERE w.user_id = ANY(:worker_ids)
+                  AND u.role = 'worker'
+                  AND u.archived_at IS NULL
+                ORDER BY w.user_id
+                FOR KEY SHARE OF w
             """),
             {"worker_ids": worker_ids},
         ).all()

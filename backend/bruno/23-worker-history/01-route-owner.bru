@@ -1,0 +1,23 @@
+meta {
+  name: Инженер применённого маршрута
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/routes/{{planning_route_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+script:post-response {
+  if (res.getStatus() === 200) bru.setVar("history_worker_id", res.getBody().worker_id);
+}
+
+assert {
+  res.status: eq 200
+}

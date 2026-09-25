@@ -293,12 +293,48 @@ class CalendarFeedApiTests(DatabaseTestCase):
         self.assertEqual(self.feed(url).status_code, 404)
         self.assertFalse(self.client.get(path, headers=headers).json()["active"])
 
-    def test_deleting_worker_removes_link(self):
-        url = self.issue()["url"]
+    def test_deleting_worker_without_history_removes_link(self):
+        newcomer = self.new_user("newcomer", UserRole.WORKER)
+        self.session.commit()
+        url = self.issue(newcomer)["url"]
 
-        self.connection.execute(text("DELETE FROM users WHERE id = :id"), {"id": self.worker.id})
+        response = self.client.delete(
+            f"/api/v1/users/{newcomer.id}", headers=self.auth(self.observer)
+        )
 
+        self.assertEqual(response.status_code, 204, response.text)
         self.assertEqual(self.feed(url).status_code, 404)
+
+    def test_archive_or_role_change_closes_the_link_and_keeps_history(self):
+        url = self.issue()["url"]
+        # A surviving token row of an archived account opens nothing.
+        self.connection.execute(
+            text("UPDATE users SET archived_at = now() WHERE id = :id"), {"id": self.worker.id}
+        )
+        self.assertEqual(self.feed(url).status_code, 404)
+        self.connection.execute(
+            text("UPDATE users SET archived_at = NULL WHERE id = :id"), {"id": self.worker.id}
+        )
+        self.assertEqual(self.feed(url).status_code, 200)
+
+        # A worker with finished history leaves the role: the link is deleted, not reused.
+        self.connection.execute(
+            text("UPDATE tickets SET status = 'completed' WHERE status = 'planned'")
+        )
+        response = self.client.patch(
+            f"/api/v1/users/{self.worker.id}",
+            json={"role": "observer"},
+            headers=self.auth(self.observer),
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.feed(url).status_code, 404)
+        self.assertEqual(
+            self.connection.execute(
+                text("SELECT count(*) FROM ticket_assignments WHERE worker_id = :id"),
+                {"id": self.worker.id},
+            ).scalar_one(),
+            5,
+        )
 
     def test_only_workers_manage_links_and_jwt_is_required(self):
         path = "/api/v1/schedule/calendar/token"

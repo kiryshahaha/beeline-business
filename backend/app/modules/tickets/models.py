@@ -144,8 +144,9 @@ class TicketAssignment(Base):
     ticket_id: Mapped[int] = mapped_column(
         ForeignKey("tickets.id", ondelete="CASCADE"), primary_key=True
     )
+    # RESTRICT: past assignments stay when the engineer leaves; see users archive (T14).
     worker_id: Mapped[int] = mapped_column(
-        ForeignKey("workers.user_id", ondelete="CASCADE"), primary_key=True, index=True
+        ForeignKey("workers.user_id", ondelete="RESTRICT"), primary_key=True, index=True
     )
     assigned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

@@ -1,0 +1,26 @@
+meta {
+  name: Архивные скрыты из списка по умолчанию
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{base_url}}/api/v1/users?role=worker
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Архивного исполнителя нет в списке", function () {
+    const id = Number(bru.getVar("history_temp_id"));
+    expect(res.getBody().map(function (u) { return u.id; })).not.to.include(id);
+  });
+}

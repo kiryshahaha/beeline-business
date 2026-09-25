@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
-from app.db.models import Brigade, BrigadeMember, Location, Ticket, Worker
+from app.db.models import Brigade, BrigadeMember, Location, Ticket, User, Worker
 from app.modules.routing.models import Route
 from app.modules.routing.schemas import RouteCreate, RouteGeoJSON, RouteRead
 from app.modules.users.enums import UserRole
@@ -131,13 +131,18 @@ def save_routes_in_transaction(session: Session, data: list[RouteCreate]) -> lis
     workers = list(
         session.scalars(
             select(Worker.user_id)
-            .where(Worker.user_id.in_(ids))
+            .join(User, User.id == Worker.user_id)
+            .where(
+                Worker.user_id.in_(ids),
+                User.role == UserRole.WORKER,
+                User.archived_at.is_(None),
+            )
             .order_by(Worker.user_id)
-            .with_for_update()
+            .with_for_update(of=Worker)
         )
     )
     if workers != ids:
-        raise RouteValidationError("Исполнитель не найден")
+        raise RouteValidationError("Исполнитель не найден или в архиве")
     result = []
     for item in data:
         number = (

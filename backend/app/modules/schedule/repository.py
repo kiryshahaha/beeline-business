@@ -60,6 +60,8 @@ def find_brigade_workers(session: Session, brigade_ids: list[int]) -> list[RowMa
                 JOIN workers AS w ON w.user_id = bm.worker_id
                 JOIN users AS u ON u.id = w.user_id
                 WHERE bm.brigade_id = ANY(:brigade_ids)
+                  AND u.role = 'worker'
+                  AND u.archived_at IS NULL
                 ORDER BY u.surname, u.name, u.id
             """),
             {"brigade_ids": brigade_ids},
@@ -76,9 +78,12 @@ def find_unassigned_workers(session: Session) -> list[RowMapping]:
                 SELECT {WORKER_COLUMNS_SQL}
                 FROM workers AS w
                 JOIN users AS u ON u.id = w.user_id
-                WHERE NOT EXISTS (
+                -- A former worker keeps the profile as history; it is not a free engineer.
+                WHERE u.role = 'worker'
+                  AND u.archived_at IS NULL
+                  AND NOT EXISTS (
                     SELECT 1 FROM brigade_members AS bm WHERE bm.worker_id = w.user_id
-                )
+                  )
                 ORDER BY u.surname, u.name, u.id
             """)
         )

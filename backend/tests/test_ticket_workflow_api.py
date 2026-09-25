@@ -154,7 +154,9 @@ class TicketWorkflowApiTests(DatabaseTestCase):
             headers=self.auth(self.observer),
         )
         self.assertEqual(invalid.status_code, 422)
-        self.assertEqual(invalid.json(), {"detail": "Один или несколько исполнителей не найдены"})
+        self.assertEqual(
+            invalid.json(), {"detail": "Один или несколько исполнителей не найдены или в архиве"}
+        )
         missing = self.client.put(
             "/api/v1/tickets/2147483647/assignees",
             json={"worker_ids": []},

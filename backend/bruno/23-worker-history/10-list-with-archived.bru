@@ -1,0 +1,27 @@
+meta {
+  name: Список с архивными по include_archived
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{base_url}}/api/v1/users?role=worker&include_archived=true
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Архивный исполнитель виден с отметкой времени", function () {
+    const id = Number(bru.getVar("history_temp_id"));
+    const user = res.getBody().find(function (u) { return u.id === id; });
+    expect(user.archived_at).to.be.a("string");
+  });
+}

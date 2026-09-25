@@ -1,0 +1,33 @@
+meta {
+  name: Смена роли без передачи работы — 409
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{base_url}}/api/v1/users/{{history_worker_id}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "role": "observer"
+  }
+}
+
+assert {
+  res.status: eq 409
+  res.body.detail.code: eq worker_has_active_work
+}
+
+tests {
+  test("Названы заявки или оборудование, которые надо передать", function () {
+    const detail = res.getBody().detail;
+    expect(detail.ticket_ids.length + detail.equipment_on_hand.length).to.be.above(0);
+  });
+}
