@@ -7,7 +7,7 @@ import { BrigadesPanel } from "./BrigadesPanel";
 
 const Menu = () => {
     const [isOpen, setIsOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState("vector");
+    const [activeTab, setActiveTab] = useState("");
     const [usersStage, setUsersStage] = useState(0); // 0=default, 1=wide, 2=tall
     const menuRef = useRef(null);
     const transitionRef = useRef(null);

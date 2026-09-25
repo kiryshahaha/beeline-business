@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { registerTokenSetter, updateToken } from "@/lib/tokenBus";
 import { refreshSession } from "@/lib/apiFetch";
 
@@ -10,6 +11,14 @@ export function AuthProvider({ children }) {
   // access_token — ТОЛЬКО в памяти, никакого localStorage
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (!loading && !token && pathname !== "/login") {
+      router.push("/login");
+    }
+  }, [loading, token, pathname, router]);
 
   // Регистрируем setToken в шине, чтобы apiFetch мог обновить state после рефреша
   useEffect(() => {

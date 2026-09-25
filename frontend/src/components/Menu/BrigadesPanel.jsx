@@ -3,11 +3,15 @@ import styles from './Menu.module.css';
 import Image from 'next/image';
 import { useBrigades } from '@/hooks/useBrigades';
 import { useOffices } from '@/hooks/useOffices';
+import { useUsers } from '@/hooks/useUsers';
+import { useServiceAreas } from '@/hooks/useServiceAreas';
 import { BrigadeDetailsPanel } from './BrigadeDetailsPanel';
 
 export const BrigadesPanel = ({ onClose }) => {
     const { brigades = [] } = useBrigades();
     const { offices = [] } = useOffices();
+    const { users = [] } = useUsers({ role: 'worker' });
+    const { serviceAreas = [] } = useServiceAreas();
 
     const [searchQuery, setSearchQuery] = React.useState('');
     const [filterOpen, setFilterOpen] = React.useState(false);
@@ -33,6 +37,22 @@ export const BrigadesPanel = ({ onClose }) => {
         return map;
     }, [offices]);
 
+    const serviceAreaMap = React.useMemo(() => {
+        const map = {};
+        serviceAreas.forEach(sa => {
+            map[sa.id] = sa;
+        });
+        return map;
+    }, [serviceAreas]);
+
+    const workerMap = React.useMemo(() => {
+        const map = {};
+        users.forEach(u => {
+            map[u.id] = u;
+        });
+        return map;
+    }, [users]);
+
     // Apply filters
     const filteredBrigades = React.useMemo(() => {
         return brigades.filter(b => {
@@ -42,12 +62,18 @@ export const BrigadesPanel = ({ onClose }) => {
         });
     }, [brigades, searchQuery, selectedOfficeId]);
 
-    // Grouping by actual office name instead of mockup
+    // Grouping by service_area name of the first worker in the brigade
     const grouped = filteredBrigades.reduce((acc, b) => {
-        const office = officeMap[b.office_id];
-        const districtName = office ? office.name : `Район ${b.office_id || 'Неизвестен'}`;
-        if (!acc[districtName]) acc[districtName] = [];
-        acc[districtName].push(b);
+        const firstWorkerId = b.worker_ids?.[0];
+        const firstWorker = firstWorkerId ? workerMap[firstWorkerId] : null;
+        const serviceAreaId = firstWorker?.worker_profile?.service_area_id;
+        
+        const serviceAreaName = serviceAreaId && serviceAreaMap[serviceAreaId] 
+            ? serviceAreaMap[serviceAreaId].name 
+            : `Зона Неизвестна`;
+            
+        if (!acc[serviceAreaName]) acc[serviceAreaName] = [];
+        acc[serviceAreaName].push(b);
         return acc;
     }, {});
 
