@@ -106,6 +106,7 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
         {
             "plan_id": str(plan_id),
             "planning_policy": snapshot["planning_policy"],
+            "case_policy_version": snapshot.get("policy_version"),
             "state": "ready",
             "outcome": outcome(routes, unassigned),
             "route_date": request.route_date,
@@ -114,6 +115,7 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
             "timezone": "Europe/Moscow",
             "expires_at": expires,
             "solver_status": solution.status if solution else None,
+            "objective_components": solution.objective_components.model_dump(mode="json") if solution and solution.objective_components else None,
             "metrics": plan_metrics(request, prepared, routes, unassigned),
             "routes": routes,
             "unassigned": unassigned,

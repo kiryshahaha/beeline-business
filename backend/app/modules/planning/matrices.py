@@ -125,24 +125,9 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
     depot_service = [0] * v
     finish_service = [0] * v if open_end else []
     task_service = [t["duration"] for t in tickets]
-    depot_penalties = [0] * v
-    finish_penalties = [0] * v if open_end else []
-    base_penalty = policy.penalty(v, horizon)
-    priority_values = sorted({ticket["priority"] for ticket in tickets})
-    priority_rank = {
-        priority: len(priority_values) - index for index, priority in enumerate(priority_values)
-    }
-    category_rank = {"emergency": 3, "connection": 2, "repair": 1, "additional": 1}
-    task_penalties = [
-        base_penalty
-        * (
-            category_rank[ticket["category"]] * (len(tickets) + 1)
-            + priority_rank[ticket["priority"]]
-        )
-        for ticket in tickets
-    ]
     # allowed_vehicles keys are task node indices (strings).
     allowed = {str(task_offset + i): t["allowed"] for i, t in enumerate(tickets)}
+    worker_id_to_vehicle_id = {w.get("user_id", w.get("worker_id")): i for i, w in enumerate(workers)}
     request = SolveRequest(
         policy_version=policy.policy_version,
         num_vehicles=v,
@@ -155,7 +140,6 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
         time_windows=depot_windows + finish_windows + task_windows,
         service_times=depot_service + finish_service + task_service,
         allowed_vehicles=allowed,
-        penalties=depot_penalties + finish_penalties + task_penalties,
         ticket_policies=[
             {
                 "ticket_id": ticket["id"],
@@ -169,6 +153,7 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
                     if ticket.get("sla_deadline_at")
                     else None
                 ),
+                "previous_vehicle_id": worker_id_to_vehicle_id.get(ticket.get("assigned_worker_id")),
             }
             for ticket in tickets
         ],

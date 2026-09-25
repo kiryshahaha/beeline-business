@@ -19,7 +19,6 @@ def problem(n=4, vehicles=1, horizon=100):
         "time_windows": [[0, horizon]] * n,
         "service_times": [0] * vehicles + [10] * (n - vehicles),
         "allowed_vehicles": {str(i): list(range(vehicles)) for i in range(vehicles, n)},
-        "penalties": [0] * vehicles + [vehicles * horizon + 1] * (n - vehicles),
         "ticket_policies": [
             {
                 "ticket_id": 100 + node,

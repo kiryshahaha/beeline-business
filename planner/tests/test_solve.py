@@ -85,7 +85,6 @@ class SolverObjectiveTests(unittest.TestCase):
         data["open_end"] = True
         data["time_windows"] = [[0, 100]] * 2 + [[0, 100]] * 2
         data["service_times"] = [0, 0, 10, 10]
-        data["penalties"] = [0, 0, 201, 201]
         data["allowed_vehicles"] = {"2": [0], "3": [0]}
         data["ticket_policies"] = data["ticket_policies"][1:]
         result = solve(SolveRequest.model_validate(data))
