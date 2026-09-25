@@ -61,11 +61,13 @@ const Menu = () => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
         };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Reset position when not in tall modal mode
     useEffect(() => {
         if (usersStage === 0 || !isOpen) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setPosition({ x: 0, y: 0 });
         }
     }, [usersStage, isOpen]);
