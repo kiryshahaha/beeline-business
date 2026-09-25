@@ -125,12 +125,12 @@ class PlanningApiTests(CommittedDatabaseTestCase):
                 self.assertEqual(route.geojson["features"][-1]["properties"]["source"], "geoapify")
 
     def test_exceeding_limits_returns_422(self):
-        req = preview_request().copy()
+        req = self.payload.copy()
         req["ticket_ids"] = list(range(1, 1000))
         response = self.client.post("/api/v1/planning/preview", json=req, headers=self.headers)
         self.assertEqual(response.status_code, 422)
         # Should also fail for workers limit
-        req = preview_request().copy()
+        req = self.payload.copy()
         req["worker_ids"] = list(range(1, 100))
         response = self.client.post("/api/v1/planning/preview", json=req, headers=self.headers)
         self.assertEqual(response.status_code, 422)
