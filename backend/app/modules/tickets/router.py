@@ -1,7 +1,7 @@
 """Ticket creation, filtered listing and retrieval by ID."""
 
-from typing import Annotated
 from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Response, status
 from sqlalchemy.orm import Session
@@ -19,7 +19,6 @@ from app.modules.tickets.schemas import (
     TicketCreate,
     TicketRead,
     TicketSlaEstimateRead,
-    TicketSlaEstimateRequest,
     TicketStatusUpdate,
 )
 from app.modules.users.enums import UserRole
@@ -151,7 +150,9 @@ def get_ticket(
 @router.get("/{id}/sla-estimate", response_model=TicketSlaEstimateRead)
 def estimate_ticket_sla(
     id: Annotated[int, Path(ge=1, le=2_147_483_647)],
-    previous_ticket_end_at: Annotated[datetime, Query(description="Время окончания предыдущей заявки")],
+    previous_ticket_end_at: Annotated[
+        datetime, Query(description="Время окончания предыдущей заявки")
+    ],
     travel_minutes: Annotated[int, Query(ge=0, description="Время в пути в минутах")],
     session: DatabaseSession,
     current_user: CurrentUser,

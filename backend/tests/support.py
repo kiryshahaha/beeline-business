@@ -16,6 +16,8 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 class DatabaseTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        from dotenv import load_dotenv
+        load_dotenv()
         database_url = os.getenv("TEST_DATABASE_URL")
         if not database_url:
             raise RuntimeError("TEST_DATABASE_URL is required for PostgreSQL integration tests")
