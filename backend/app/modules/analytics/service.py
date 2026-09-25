@@ -11,6 +11,7 @@ from app.modules.analytics.schemas import (
     ActivityTicket,
     AnalyticsPeriod,
     BrigadeWorkloadItem,
+    FastStats,
     TicketsSummary,
 )
 from app.modules.brigades.repository import find_brigade_by_foreman
@@ -45,6 +46,32 @@ def get_tickets_summary(
         in_progress=int(row["in_progress"]),
         completed=int(row["completed"]),
     )
+
+
+def get_fast_stats(
+    session: Session,
+    *,
+    office_id: int | None,
+    current_user: UserRead,
+) -> FastStats:
+    if current_user.role == UserRole.FOREMAN:
+        # If foreman, they can only view stats for their office / brigade area
+        brigade = find_brigade_by_foreman(session, current_user.id)
+        if brigade:
+            office_id = brigade["office_id"]
+        else:
+            return FastStats(
+                sla_compliance_percent=100,
+                at_risk_tickets_count=0,
+                average_delay_minutes=0,
+                idle_workers_count=0
+            )
+
+    data = repository.find_fast_stats(
+        session,
+        office_id=office_id,
+    )
+    return FastStats(**data)
 
 
 def get_brigades_workload(

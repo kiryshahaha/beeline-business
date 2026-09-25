@@ -11,6 +11,9 @@ class Office(IntegerIdMixin, Base):
 
     name: Mapped[str] = mapped_column(String(150))
     location_id: Mapped[int] = mapped_column(ForeignKey("locations.id", ondelete="RESTRICT"))
+    service_area_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_areas.id", ondelete="SET NULL"), unique=True
+    )
 
     __table_args__ = (
         CheckConstraint("name = btrim(name) AND name <> ''", name="name_not_blank"),
