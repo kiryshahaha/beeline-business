@@ -275,12 +275,13 @@ backend/
 ├── tests/                     # проверки приложения, безопасности, токенов и БД
 ├── seed_demo.py               # заполнение демоданными (заявки, навыки, наблюдатели, исполнители, склад)
 ├── alembic.ini                # настройка миграций
-├── requirements.txt           # совместимые диапазоны backend-зависимостей
+├── requirements.txt           # прямые backend-зависимости
+├── requirements.lock          # зафиксированные версии и хеши Python 3.12.13
 ├── ruff.toml                  # настройки проверки и оформления Python-кода
 ├── .env.example               # пример переменных окружения
 ├── .gitignore                 # исключает окружение, секреты и временные файлы
 ├── .gitattributes             # единые переводы строк LF в Git
-├── bruno/                    # коллекция HTTP-запросов и проверок Bruno (01–21)
+├── bruno/                    # коллекция HTTP-запросов и проверок Bruno (01–23)
 └── README.md
 ```
 
@@ -1078,8 +1079,8 @@ ID — примеры для новой базы после `seed_demo.py`, а �
 ### Необязательный запуск из терминала
 
 Для работы в приложении Bruno эти команды не нужны. При установленном Node.js/npm
-коллекцию можно выполнить через Bruno CLI; Python-зависимости остаются
-в `requirements.txt`, Bruno туда не входит.
+коллекцию можно выполнить через Bruno CLI 4.1.0; Python-зависимости ставятся из
+`requirements.lock`, Bruno в Python-набор не входит.
 
 Из папки `backend`:
 
@@ -1486,15 +1487,15 @@ setup-node 7.0.0 и upload-artifact 4.6.2. Backend job использует Node
 
 | Шаг в Actions | Что проверяет |
 | --- | --- |
-| `Install dependencies` | Ставит зависимости из `backend/requirements.txt` и `planner/requirements.txt` с общими ограничениями, затем запускает `pip check` |
+| `Install dependencies` | Ставит точные версии из обоих lock-файлов с проверкой хешей, затем запускает `pip check` |
 | `Check code with Ruff` | `python -m ruff check .` — ошибки и правила оформления Python-кода |
 | `Check formatting` | `python -m ruff format --check .` — соответствие форматированию без изменения файлов |
 | `Run tests with PostgreSQL` | `python -m unittest discover -s tests -v` — все тесты из `backend/tests` |
 
-`requirements.txt` задают совместимые диапазоны прямых зависимостей, а
-`constraints.txt` согласует pandas и protobuf в общем окружении CI. Кэш pip
-ускоряет скачивание. Отдельный job устанавливает planner-зависимости и проверяет
-наличие нативного wheel OR-Tools.
+`requirements.lock` закрепляют версии и хеши Python-пакетов; `requirements.txt`
+содержат прямые зависимости. Отдельный job ставит planner-набор и проверяет
+нативный wheel OR-Tools. Артефакт backend job получает имя с SHA и сохраняет
+JUnit, журналы, версии среды и benchmark без значений секретов.
 Если шаг завершается с ошибкой, job становится красной и следующие шаги не выполняются.
 При новом запуске для той же ветки или PR предыдущая незавершённая проверка отменяется.
 
@@ -1562,10 +1563,11 @@ workflow на Ubuntu в GitHub ещё не запускался.
 
 ## Установка зависимостей и их обновление
 
-`requirements.txt` задают диапазоны backend- и planner-зависимостей. Firebase Admin
-и `icalendar` указаны в backend-файле; OR-Tools закреплён на 9.15.6755 и ставится
-только из готового бинарного wheel. `constraints.txt` согласует pandas и protobuf
-для общего тестового окружения.
+`requirements.txt` задают прямые backend- и planner-зависимости, а lock-файлы
+закрепляют их версии и хеши для Python 3.12. Firebase Admin и `icalendar` указаны
+в backend-файле; OR-Tools закреплён на 9.15.6755 и ставится только из готового
+бинарного wheel. `constraints.txt` согласует pandas и protobuf для общего тестового
+окружения.
 
 Команды локальной установки описаны в [руководстве runtime](../docs/RUNTIME.md).
 

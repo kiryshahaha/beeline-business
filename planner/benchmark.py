@@ -1,62 +1,61 @@
+"""Run native solver smoke scenarios and compare the solver with a greedy baseline."""
+
+import argparse
 import json
 import random
+import subprocess
+import sys
 import time
+from pathlib import Path
 
-from app.modules.solver.baseline import solve_baseline
-from app.modules.solver.metrics import calculate_metrics
-from app.modules.solver.schemas import SolveRequest, TicketPolicy
-from app.modules.solver.service import solve
+from ortools import __version__ as ortools_version
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "tests"))
+from fixtures import problem  # noqa: E402
+
+from app.modules.solver.baseline import solve_baseline  # noqa: E402
+from app.modules.solver.metrics import calculate_metrics  # noqa: E402
+from app.modules.solver.schemas import SolveRequest  # noqa: E402
+from app.modules.solver.service import solve  # noqa: E402
 
 
 def generate_synthetic_problem(
-    seed: int, n_tasks: int, n_vehicles: int, time_limit_s: int = 5
+    seed: int, n_tasks: int, n_vehicles: int, time_limit_s: int = 2
 ) -> dict:
-    random.seed(seed)
-    n = n_tasks + n_vehicles
+    rng = random.Random(seed)
+    node_count = n_tasks + n_vehicles
     horizon = 1000
 
-    matrix = [[0] * n for _ in range(n)]
-    for i in range(n):
-        for j in range(n):
-            if i != j:
-                matrix[i][j] = random.randint(10, 50)
+    matrix = [[0] * node_count for _ in range(node_count)]
+    for source in range(node_count):
+        for target in range(node_count):
+            if source != target:
+                matrix[source][target] = rng.randint(10, 50)
 
-    time_windows = []
-    service_times = []
+    time_windows = [[0, horizon] for _ in range(n_vehicles)]
+    service_times = [0 for _ in range(n_vehicles)]
     ticket_policies = []
     allowed_vehicles = {}
 
-    # Depots
-    for i in range(n_vehicles):
-        time_windows.append([0, horizon])
-        service_times.append(0)
+    for node in range(n_vehicles, node_count):
+        window_start = rng.randint(0, horizon - 200)
+        window_end = min(horizon, window_start + rng.randint(50, 200))
+        time_windows.append([window_start, window_end])
+        service_times.append(rng.randint(20, 60))
 
-    # Tasks
-    for i in range(n_vehicles, n):
-        w_start = random.randint(0, horizon - 100)
-        w_end = w_start + random.randint(50, 200)
-        time_windows.append([w_start, w_end])
-        service_times.append(random.randint(20, 60))
-
-        is_emerg = random.random() < 0.2
-        cat = "emergency" if is_emerg else "repair"
-        priority = 1 if is_emerg else 3
-        received_at = random.randint(0, w_start)
-        sla = received_at + 120 if is_emerg else None
-
+        emergency = rng.random() < 0.2
+        received_at = rng.randint(0, window_start)
         ticket_policies.append(
-            TicketPolicy(
-                ticket_id=1000 + i,
-                category=cat,
-                priority=priority,
-                received_at=received_at,
-                sla_deadline_at=sla,
-                previous_vehicle_id=None,
-            ).model_dump()
+            {
+                "ticket_id": 1000 + node,
+                "category": "emergency" if emergency else "repair",
+                "priority": 1 if emergency else 3,
+                "received_at": received_at,
+                "sla_deadline_at": received_at + 120 if emergency else None,
+                "previous_vehicle_id": None,
+            }
         )
-
-        # Allow all vehicles
-        allowed_vehicles[str(i)] = list(range(n_vehicles))
+        allowed_vehicles[str(node)] = list(range(n_vehicles))
 
     return {
         "contract_version": 2,
@@ -69,7 +68,7 @@ def generate_synthetic_problem(
         "matrices": {
             "drive": {
                 "time_minutes": matrix,
-                "distance_meters": [[v * 10 for v in row] for row in matrix],
+                "distance_meters": [[value * 10 for value in row] for row in matrix],
             }
         },
         "time_windows": time_windows,
@@ -84,62 +83,85 @@ def generate_synthetic_problem(
     }
 
 
-def run_benchmark():
+def _result_summary(request: SolveRequest, result, elapsed_ms: float) -> dict:
+    return {
+        "status": result.status,
+        "total_cost": result.total_cost,
+        "objective_components": (
+            result.objective_components.model_dump() if result.objective_components else None
+        ),
+        "metrics": calculate_metrics(request, result),
+        "elapsed_ms": round(elapsed_ms, 2),
+    }
+
+
+def _run_baseline_comparison() -> dict:
     seed = 42
-    print(f"Generating synthetic dataset with seed {seed}")
-    data = generate_synthetic_problem(seed=seed, n_tasks=20, n_vehicles=3, time_limit_s=2)
-    req = SolveRequest.model_validate(data)
+    request = SolveRequest.model_validate(
+        generate_synthetic_problem(seed=seed, n_tasks=20, n_vehicles=3, time_limit_s=2)
+    )
 
-    print("\n--- Running Baseline ---")
-    start = time.time()
-    res_baseline = solve_baseline(req)
-    t_baseline = time.time() - start
-    metrics_baseline = calculate_metrics(req, res_baseline)
-    print(f"Runtime: {t_baseline:.3f}s")
-    print(f"Status: {res_baseline.status}")
-    print(f"Total Cost: {res_baseline.total_cost}")
-    print("Metrics:", json.dumps(metrics_baseline, indent=2))
+    started = time.perf_counter()
+    baseline_result = solve_baseline(request)
+    baseline = _result_summary(request, baseline_result, (time.perf_counter() - started) * 1000)
 
-    print("\n--- Running OR-Tools Solver ---")
-    start = time.time()
-    res_solver = solve(req)
-    t_solver = time.time() - start
-    metrics_solver = calculate_metrics(req, res_solver)
-    print(f"Runtime: {t_solver:.3f}s")
-    print(f"Status: {res_solver.status}")
-    print(f"Total Cost: {res_solver.total_cost}")
-    print("Metrics:", json.dumps(metrics_solver, indent=2))
+    started = time.perf_counter()
+    solver_result = solve(request)
+    solver = _result_summary(request, solver_result, (time.perf_counter() - started) * 1000)
 
-    # Save comparison to file
-    with open("benchmark_report.json", "w") as f:
-        json.dump(
+    return {
+        "seed": seed,
+        "tasks": 20,
+        "vehicles": 3,
+        "search_time_limit_s": 2,
+        "baseline": baseline,
+        "native_solver": solver,
+    }
+
+
+def _run_native_smoke_scenarios() -> list[dict]:
+    scenarios = []
+    for tickets in (8, 16):
+        request = SolveRequest.model_validate(problem(n=tickets + 2, vehicles=2, horizon=480))
+        request_data = request.model_dump()
+        request_data["search_time_limit_s"] = 1
+        request = SolveRequest.model_validate(request_data)
+
+        started = time.perf_counter()
+        result = solve(request)
+        scenarios.append(
             {
-                "seed": seed,
-                "tasks": 20,
-                "vehicles": 3,
-                "search_time_limit_s": 2,
-                "baseline": {
-                    "runtime_s": t_baseline,
-                    "status": res_baseline.status,
-                    "total_cost": res_baseline.total_cost,
-                    "metrics": metrics_baseline,
-                    "objective_components": res_baseline.objective_components.model_dump(),
-                },
-                "solver": {
-                    "runtime_s": t_solver,
-                    "status": res_solver.status,
-                    "total_cost": res_solver.total_cost,
-                    "metrics": metrics_solver,
-                    "objective_components": res_solver.objective_components.model_dump()
-                    if res_solver.objective_components
-                    else None,
-                },
-            },
-            f,
-            indent=2,
+                "tickets": tickets,
+                "vehicles": 2,
+                "status": result.status,
+                "assigned": tickets - len(result.dropped_nodes),
+                "dropped": len(result.dropped_nodes),
+                "objective": result.total_cost,
+                "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
+            }
         )
-    print("\nReport saved to benchmark_report.json")
+    return scenarios
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    repository = Path(__file__).resolve().parents[1]
+    commit_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repository, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    report = {
+        "commit_sha": commit_sha,
+        "python": sys.version.split()[0],
+        "ortools": ortools_version,
+        "scenarios": _run_native_smoke_scenarios(),
+        "baseline_comparison": _run_baseline_comparison(),
+    }
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"Native solver benchmark summary written to {args.output}")
 
 
 if __name__ == "__main__":
-    run_benchmark()
+    main()

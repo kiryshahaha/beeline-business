@@ -91,7 +91,7 @@ HTTPS-загрузка пакетов завершалась тайм-аутам
 ```powershell
 Set-Location backend
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r ..\planner\requirements.txt
+.\.venv\Scripts\python.exe -m pip install --only-binary=ortools --require-hashes -r requirements.lock -r ..\planner\requirements.lock
 .\.venv\Scripts\python.exe -m pip check
 
 $env:TEST_DATABASE_URL = 'postgresql+psycopg://beeline_test:beeline_test@127.0.0.1:5432/beeline_test'

@@ -6,5 +6,8 @@ meta {
 docs {
   Один существующий planner, два этапа: preview и атомарное apply.
   Требует PLANNING_ENABLED, рабочего planner и Geoapify; ошибки конфигурации не считаются успехом.
-  run_planning_e2e.py запускает этот сценарий с настоящим OR-Tools и HTTP-фикстурой Geoapify.
+  run_planning_e2e.py запускает коллекцию с настоящим OR-Tools, PostgreSQL и HTTP-фикстурой Geoapify.
+  Три preview покрывают повтор apply, устаревший конфликт и истечение срока.
+  Папки 16, 17, 19, 20 и 22 вместе проверяют preview/apply, события и ручное назначение,
+  replan/diff, выгрузки, расписание и календарный поток.
 }
