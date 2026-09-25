@@ -221,6 +221,7 @@ class RouteEndUnitTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         prepared = {
+            "epoch": EPOCH,
             "workers": [
                 {
                     "user_id": 1,
@@ -237,6 +238,10 @@ class RouteEndUnitTests(unittest.IsolatedAsyncioTestCase):
                     "window": [540, 1020],
                     "duration": 30,
                     "allowed": [0],
+                    "category": "repair",
+                    "priority": 3,
+                    "received_at": EPOCH.isoformat(),
+                    "sla_deadline_at": None,
                 }
             ],
             "locations": {
@@ -274,6 +279,7 @@ class RouteEndUnitTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         prepared = {
+            "epoch": EPOCH,
             "workers": [
                 {
                     "user_id": 1,
@@ -290,6 +296,10 @@ class RouteEndUnitTests(unittest.IsolatedAsyncioTestCase):
                     "window": [540, 1020],
                     "duration": 30,
                     "allowed": [0],
+                    "category": "repair",
+                    "priority": 3,
+                    "received_at": EPOCH.isoformat(),
+                    "sla_deadline_at": None,
                 }
             ],
             "locations": {
