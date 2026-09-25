@@ -95,6 +95,9 @@ jobs:
           python seed_synthetic.py --seed 42 --tickets 1500 --workers 120 --days 7
           python seed_synthetic.py --seed 42 --tickets 1500 --workers 120 --days 7
 
+      - name: Verify T18 scenario volume budgets
+        run: python benchmark_a26.py
+
       - name: Verify planning datasets
         run: python generate_planning_synthetic.py --output .local/planning-synthetic
 

@@ -23,10 +23,10 @@ assert {
 }
 
 tests {
-  test("51 IDs fail at the documented request boundary", () => {
+  test("101 IDs fail at the documented request boundary", () => {
     const error = res.getBody().detail[0];
     expect(error.loc).to.deep.equal(["body", "ticket_ids"]);
-    expect(error.ctx.max_length).to.equal(50);
+    expect(error.ctx.max_length).to.equal(100);
   });
 }
 

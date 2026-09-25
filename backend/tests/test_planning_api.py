@@ -124,6 +124,17 @@ class PlanningApiTests(CommittedDatabaseTestCase):
             for route in session.scalars(select(Route)):
                 self.assertEqual(route.geojson["features"][-1]["properties"]["source"], "geoapify")
 
+    def test_exceeding_limits_returns_422(self):
+        req = self.payload.copy()
+        req["ticket_ids"] = list(range(1, 1000))
+        response = self.client.post("/api/v1/planning/preview", json=req, headers=self.headers)
+        self.assertEqual(response.status_code, 422)
+        # Should also fail for workers limit
+        req = self.payload.copy()
+        req["worker_ids"] = list(range(1, 100))
+        response = self.client.post("/api/v1/planning/preview", json=req, headers=self.headers)
+        self.assertEqual(response.status_code, 422)
+
     def test_policy_is_saved_with_actual_search_parameters_and_survives_settings_change(self):
         self.settings.planning_solve_time_limit_seconds = 2
         plan = self.preview()
