@@ -16,6 +16,7 @@ from app.db.models import (
     District,
     Location,
     Office,
+    ServiceArea,
     Street,
     TicketAppliance,
 )
@@ -67,6 +68,11 @@ class ExecutionApiTests(DatabaseTestCase):
             )
         ).id
         self.district_id = district.id
+        # A day plan belongs to a service area, so the district needs the area
+        # migration 0021 seeds for it before a revision can be published.
+        self.service_area_id = self._save(
+            ServiceArea(code=f"district_{district.id}", name="Участок выполнения")
+        ).id
         self.office = self._save(
             Office(name="Офис выполнения", location_id=self.source_location_id)
         )
@@ -260,6 +266,7 @@ class ExecutionApiTests(DatabaseTestCase):
 
         self.session.add(
             DayPlanRevision(
+                service_area_id=self.service_area_id,
                 district_id=self.district_id,
                 route_date=self.route_date,
                 revision=1,

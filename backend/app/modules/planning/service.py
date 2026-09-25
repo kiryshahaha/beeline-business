@@ -8,7 +8,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
-from app.modules.planning.day_models import DayPlanRevision
+from app.modules.planning.day_plans import build_plan_state, publish_revision
 from app.modules.planning.diagnostics import (
     diagnose_dropped,
     estimate_resources,
@@ -111,6 +111,7 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
             "outcome": outcome(routes, unassigned),
             "route_date": request.route_date,
             "district_id": snapshot.get("district_id"),
+            "service_area_id": snapshot.get("service_area_id"),
             "day_revision": snapshot.get("current_day_revision"),
             "timezone": "Europe/Moscow",
             "expires_at": expires,
@@ -326,32 +327,29 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                 ],
                 "assigned_ticket_ids": ticket_ids,
             }
-            district_id = current.get("district_id")
+            service_area_id = current.get("service_area_id")
             revision_row = None
-            if district_id is not None:
-                previous_revision = current.get("current_day_revision") or 0
-                session.execute(
-                    text(
-                        """
-                        UPDATE day_plan_revisions
-                        SET is_current = false
-                        WHERE district_id = :district_id
-                          AND route_date = :route_date
-                          AND is_current
-                        """
-                    ),
-                    {"district_id": district_id, "route_date": request.route_date},
-                )
-                revision_row = DayPlanRevision(
-                    district_id=district_id,
+            if service_area_id is not None:
+                # One revision of the area-day is current; publishing hands the marker
+                # over inside this transaction, so two applies never both look current.
+                revision_row = publish_revision(
+                    session,
+                    service_area_id=service_area_id,
+                    district_id=current.get("district_id"),
                     route_date=request.route_date,
-                    revision=previous_revision + 1,
-                    previous_revision=previous_revision or None,
                     actor_id=plan.created_by,
+                    reason="plan_applied",
                     fingerprint="pending",
-                    diff={"assigned_ticket_ids": ticket_ids},
+                    plan_state=build_plan_state(
+                        plan.result_snapshot["public"],
+                        {
+                            route.worker_id: stored.id
+                            for route, stored in zip(data, saved, strict=True)
+                        },
+                    ),
                     result=result,
-                    is_current=True,
+                    at=clock(),
+                    plan_id=plan_id,
                 )
                 result["day_revision"] = revision_row.revision
                 revision_row.result = result
@@ -362,7 +360,6 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                         "day_revision": revision_row.revision,
                     },
                 }
-                session.add(revision_row)
                 session.flush()
             applied_fingerprint = fingerprint(
                 load_snapshot(

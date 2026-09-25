@@ -267,6 +267,14 @@ class RouteGeoJSON(StrictModel):
 
 
 class RouteRead(StrictModel):
+    """A saved route and the day-plan revision it was published with.
+
+    The geometry is never rewritten, so an older route keeps answering with the path
+    it was applied with. `is_current_plan` says whether that revision still holds for
+    its area-day; `None` means the route was saved outside the planner and no
+    revision claims it.
+    """
+
     model_config = ConfigDict(from_attributes=True, extra="forbid")
     id: PositiveInt32
     worker_id: PositiveInt32
@@ -274,6 +282,9 @@ class RouteRead(StrictModel):
     route_number: PositiveInt32
     geojson: RouteGeoJSON
     created_at: AwareDatetime
+    service_area_id: PositiveInt32 | None = None
+    day_revision: PositiveInt32 | None = None
+    is_current_plan: bool | None = None
 
 
 class RouteBatchCreate(StrictModel):

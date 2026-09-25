@@ -1,6 +1,6 @@
 """Bounded input selection directly from PostgreSQL, independent of paginated public APIs."""
 
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -21,6 +21,7 @@ from app.db.models import (
     Worker,
     WorkerDayState,
     WorkerSkillAssignment,
+    WorkEvent,
     WorkType,
     WorkTypePlanningRule,
     WorkTypeRequiredAppliance,
@@ -40,6 +41,57 @@ def rows(session: Session, model, *conditions):
             select(table).where(*conditions).order_by(*table.primary_key.columns)
         ).mappings()
     ]
+
+
+# The day a ticket belongs to is its promised visit in Moscow time, the same
+# boundary the warehouse already uses.
+TICKET_LOCAL_DAY = (
+    "(COALESCE(tickets.planned_start_at, tickets.visit_window_start) "
+    "AT TIME ZONE 'Europe/Moscow')::date"
+)
+
+
+def load_area_scope(session: Session, service_area_id: int | None, route_date) -> dict:
+    """Everything in this area-day that could invalidate the plan, not just chosen IDs.
+
+    A fingerprint over the explicitly selected tickets and workers cannot notice a new
+    emergency, a cancelled visit or a fresh work event elsewhere in the same area. This
+    digest closes that gap, so apply refuses a proposal the day has already moved past.
+    """
+    if service_area_id is None:
+        return {"tickets": [], "events": {"count": 0, "last_id": None}}
+    area_tickets = (
+        select(Ticket.id)
+        .where(
+            Ticket.service_area_id == service_area_id,
+            text(TICKET_LOCAL_DAY + " = :area_scope_date"),
+        )
+        .params(area_scope_date=route_date)
+    )
+    tickets = [
+        {
+            "id": row.id,
+            "status": row.status,
+            "revision": row.revision,
+            "assigned_worker_id": row.assigned_worker_id,
+        }
+        for row in session.execute(
+            select(Ticket.id, Ticket.status, Ticket.revision, Ticket.assigned_worker_id)
+            .where(Ticket.id.in_(area_tickets))
+            .order_by(Ticket.id)
+        )
+    ]
+    area_workers = select(Worker.user_id).where(Worker.service_area_id == service_area_id)
+    count, last_id = session.execute(
+        select(func.count(WorkEvent.id), func.max(WorkEvent.id)).where(
+            WorkEvent.route_date == route_date,
+            or_(
+                WorkEvent.ticket_id.in_(area_tickets),
+                WorkEvent.worker_id.in_(area_workers),
+            ),
+        )
+    ).one()
+    return {"tickets": tickets, "events": {"count": count, "last_id": last_id}}
 
 
 def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=None) -> dict:
@@ -250,14 +302,15 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
         ).mappings()
     ]
     current_day_revision = None
-    if district_id is not None:
+    if service_area_id is not None:
         current_day_revision = session.execute(
             select(DayPlanRevision.revision).where(
-                DayPlanRevision.district_id == district_id,
+                DayPlanRevision.service_area_id == service_area_id,
                 DayPlanRevision.route_date == request.route_date,
                 DayPlanRevision.is_current.is_(True),
             )
         ).scalar_one_or_none()
+    area_scope = load_area_scope(session, service_area_id, request.route_date)
     return normalize(
         {
             "request": request.model_dump(mode="json"),
@@ -295,6 +348,9 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
             "worker_service_areas": worker_service_areas,
             "worker_day_states": worker_day_states,
             "current_day_revision": current_day_revision,
+            # The whole area-day, not only the chosen IDs: a ticket that appeared or
+            # changed after the preview must make this plan stale (T09).
+            "area_scope": area_scope,
             # Only when present: snapshots of plans calculated before archiving existed,
             # and of plans without archived engineers, keep their fingerprints.
             **({"archived_worker_ids": archived_worker_ids} if archived_worker_ids else {}),
