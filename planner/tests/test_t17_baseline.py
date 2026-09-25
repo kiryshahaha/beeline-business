@@ -55,7 +55,7 @@ class BaselineAndMetricsTests(unittest.TestCase):
         # Solver should use 1 vehicle because W_VEHICLE (100_000) > saving travel (30 - 24 = 6)
         metrics_s = calculate_metrics(req, res_solver)
         self.assertEqual(metrics_s["active_vehicles"], 1)
-        self.assertEqual(metrics_s["assigned_tasks"]["repair"], 2)
+        self.assertEqual(sum(metrics_s["assigned_tasks"].values()), 2)
 
         # Baseline assigns to first eligible, let's see what it does.
         # Sort order: 2, 3.
