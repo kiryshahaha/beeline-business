@@ -64,7 +64,7 @@ def get_fast_stats(
                 sla_compliance_percent=100,
                 at_risk_tickets_count=0,
                 average_delay_minutes=0,
-                idle_workers_count=0
+                idle_workers_count=0,
             )
 
     data = repository.find_fast_stats(

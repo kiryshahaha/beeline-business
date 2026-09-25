@@ -265,11 +265,11 @@ def find_fast_stats(
     office_id: int | None = None,
 ) -> dict:
     """Calculate fast operational stats for today."""
-    
+
     scope_cond_tickets = ""
     scope_cond_workers = ""
     parameters = {}
-    
+
     if office_id is not None:
         scope_cond_tickets = """
             AND (
@@ -362,11 +362,11 @@ def find_fast_stats(
     """
 
     row = session.execute(text(query), parameters).mappings().one()
-    
+
     total = row["total_today"]
     compliant = row["compliant_today"]
     compliance_percent = int((compliant / total * 100) if total > 0 else 100)
-    
+
     return {
         "sla_compliance_percent": compliance_percent,
         "at_risk_tickets_count": row["at_risk_count"],
