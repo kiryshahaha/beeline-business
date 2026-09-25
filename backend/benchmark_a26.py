@@ -170,15 +170,15 @@ async def run_all():
     with open("../docs/T18_BUDGET_A26.md", "w") as f:
         f.write("# T18: Measured Budgets A26\n\n")
         f.write(
-            "| Tickets | Workers | Snapshot (KB) | Unique Coords | Matrix Cells (4 profs) | HTTP Matrix Blocks | Geom Time (ms) | Total Time (s) |\n"
-        )  # noqa: E501
+            "| Tickets | Workers | Snapshot (KB) | Unique Coords | Matrix Cells (4 profs) | HTTP Matrix Blocks | Geom Time (ms) | Total Time (s) |\n"  # noqa: E501
+        )
         f.write(
-            "|---------|---------|---------------|---------------|------------------------|--------------------|----------------|----------------|\n"
-        )  # noqa: E501
+            "|---------|---------|---------------|---------------|------------------------|--------------------|----------------|----------------|\n"  # noqa: E501
+        )
         for r in results:
             f.write(
-                f"| {r['tickets']} | {r['workers']} | {r['snap_kb']:.1f} | {r['unique_coords']} | {r['matrix_cells']} | {r['http_blocks']} | {r['geom_time_ms']} | {r['total_time_s']:.2f} |\n"
-            )  # noqa: E501
+                f"| {r['tickets']} | {r['workers']} | {r['snap_kb']:.1f} | {r['unique_coords']} | {r['matrix_cells']} | {r['http_blocks']} | {r['geom_time_ms']} | {r['total_time_s']:.2f} |\n"  # noqa: E501
+            )
     print("Done!")
 
 
