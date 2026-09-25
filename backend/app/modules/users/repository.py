@@ -311,12 +311,11 @@ def find_active_work(session: Session, worker_id: int) -> dict[str, list]:
     ticket_ids = (
         session.execute(
             text("""
-                SELECT assignment.ticket_id
-                FROM ticket_assignments AS assignment
-                JOIN tickets AS ticket ON ticket.id = assignment.ticket_id
-                WHERE assignment.worker_id = :worker_id
+                SELECT ticket.id
+                FROM tickets AS ticket
+                WHERE ticket.assigned_worker_id = :worker_id
                   AND ticket.status IN ('planned', 'in_progress')
-                ORDER BY assignment.ticket_id
+                ORDER BY ticket.id
             """),
             {"worker_id": worker_id},
         )
