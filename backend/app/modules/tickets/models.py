@@ -3,8 +3,8 @@
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean,
     JSON,
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum,
@@ -154,4 +154,3 @@ class TicketWorkTypeMigrationIssue(Base):
     reason: Mapped[str] = mapped_column(String(40))
     candidate_work_type_ids: Mapped[list[int]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
->>>>>>> origin/main
