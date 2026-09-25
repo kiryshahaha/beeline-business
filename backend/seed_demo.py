@@ -690,8 +690,13 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
         office_id = get_or_create_id(
             session,
             "SELECT id FROM offices WHERE name = :name",
-            "INSERT INTO offices (name, location_id, service_area_id) VALUES (:name, :location_id, :service_area_id) RETURNING id",
-            {"name": office_data.name, "location_id": location, "service_area_id": service_area_id},
+            "INSERT INTO offices (name, location_id, service_area_id) "
+            "VALUES (:name, :location_id, :service_area_id) RETURNING id",
+            {
+                "name": office_data.name,
+                "location_id": location,
+                "service_area_id": service_area_id,
+            },
         )
 
         # Only create one brigade per demo for simplicity
