@@ -89,6 +89,13 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
             select(User.id, User.role).where(User.id.in_(worker_ids)).order_by(User.id)
         ).mappings()
     ]
+    archived_worker_ids = list(
+        session.scalars(
+            select(User.id)
+            .where(User.id.in_(worker_ids), User.archived_at.is_not(None))
+            .order_by(User.id)
+        )
+    )
     active_tickets = select(Ticket.id).where(Ticket.status.in_(["planned", "in_progress"]))
 
     # Simulate assignments list of dicts for compatibility with planner
@@ -288,5 +295,8 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
             "worker_service_areas": worker_service_areas,
             "worker_day_states": worker_day_states,
             "current_day_revision": current_day_revision,
+            # Only when present: snapshots of plans calculated before archiving existed,
+            # and of plans without archived engineers, keep their fingerprints.
+            **({"archived_worker_ids": archived_worker_ids} if archived_worker_ids else {}),
         }
     )

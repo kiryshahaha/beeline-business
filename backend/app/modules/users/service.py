@@ -56,6 +56,26 @@ class WorkerNotFoundError(Exception):
     pass
 
 
+class CannotArchiveSelfError(Exception):
+    pass
+
+
+class WorkerHasActiveWorkError(Exception):
+    """Active tickets or equipment on hand must be handed over before the engineer leaves."""
+
+    def __init__(self, work: dict[str, list]):
+        super().__init__("worker_has_active_work")
+        self.work = work
+
+
+class UserHasHistoryError(Exception):
+    """Deleting the account would destroy plans, routes or other history; archive it instead."""
+
+    def __init__(self, links: dict[str, int]):
+        super().__init__("user_has_history")
+        self.links = links
+
+
 def _build_user_read(row: RowMapping) -> UserRead:
     worker_profile = None
     if row["role"] == UserRole.WORKER.value and row["workshift_start"] is not None:
@@ -82,6 +102,7 @@ def _build_user_read(row: RowMapping) -> UserRead:
         worker_profile=worker_profile,
         brigade_id=row["brigade_id"],
         brigade_name=row["brigade_name"],
+        archived_at=row["archived_at"],
     )
 
 
@@ -102,6 +123,7 @@ def list_users(
     current_user: UserRead | None = None,
     role: UserRole | None = None,
     brigade_id: int | None = None,
+    include_archived: bool = False,
 ) -> list[UserRead]:
     rows = repository.list_users(
         session,
@@ -109,6 +131,7 @@ def list_users(
         brigade_id=brigade_id,
         viewer_id=current_user.id if current_user else None,
         viewer_role=current_user.role.value if current_user else None,
+        include_archived=include_archived,
     )
     return [_build_user_read(row) for row in rows]
 
@@ -297,7 +320,7 @@ def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:
 
         if new_role in (UserRole.OBSERVER, UserRole.FOREMAN):
             if existing_user["role"] == UserRole.WORKER.value:
-                repository.delete_worker(session, user_id)
+                _retire_worker(session, user_id)
         elif new_role == UserRole.WORKER:
             worker_dump = (
                 data.worker_profile.model_dump(exclude_unset=True) if data.worker_profile else {}
@@ -354,14 +377,60 @@ def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:
         return get_user(session, user_id)
 
 
+def _retire_worker(session: Session, user_id: int) -> None:
+    """Stop giving work to the engineer while keeping the profile, routes and assignments.
+
+    The worker row stays as the historical identity referenced by plans, routes, events
+    and assignments; the role or the archive mark decides whether new work is allowed.
+    """
+    work = repository.find_active_work(session, user_id)
+    if work["ticket_ids"] or work["equipment_on_hand"]:
+        raise WorkerHasActiveWorkError(work)
+    repository.end_worker_duties(session, user_id)
+
+
+def archive_user(session: Session, user_id: int, current_user_id: int) -> UserRead:
+    if user_id == current_user_id:
+        raise CannotArchiveSelfError
+    with session.begin():
+        lock_planning_mutation(session)
+        user = repository.lock_user(session, user_id)
+        if user is None:
+            raise UserNotFoundError
+        if user["archived_at"] is None:
+            if repository.foreman_manages_brigade(session, user_id):
+                raise ActiveForemanError
+            if user["role"] == UserRole.WORKER.value:
+                _retire_worker(session, user_id)
+            repository.set_archived(session, user_id, True)
+            auth_repository.revoke_all_user_tokens(session, user_id)
+            repository.delete_push_subscriptions(session, user_id)
+        return get_user(session, user_id)
+
+
+def restore_user(session: Session, user_id: int) -> UserRead:
+    """Return the account to work; brigade membership and calendar link are set up again."""
+    with session.begin():
+        lock_planning_mutation(session)
+        user = repository.lock_user(session, user_id)
+        if user is None:
+            raise UserNotFoundError
+        if user["archived_at"] is not None:
+            repository.set_archived(session, user_id, False)
+        return get_user(session, user_id)
+
+
 def delete_user(session: Session, user_id: int, current_user_id: int | None = None) -> None:
     if current_user_id is not None and user_id == current_user_id:
         raise CannotDeleteSelfError
 
     with session.begin():
         lock_planning_mutation(session)
+        if repository.lock_user(session, user_id) is None:
+            raise UserNotFoundError
         if repository.foreman_manages_brigade(session, user_id):
             raise ActiveForemanError
-        deleted = repository.delete_user(session, user_id)
-        if not deleted:
-            raise UserNotFoundError
+        links = repository.find_history_links(session, user_id)
+        if links:
+            raise UserHasHistoryError(links)
+        repository.delete_user(session, user_id)

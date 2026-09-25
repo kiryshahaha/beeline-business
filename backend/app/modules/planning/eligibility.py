@@ -85,6 +85,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
     brigades = {x["id"]: x for x in snapshot["brigades"]}
     members = {x["worker_id"]: x["brigade_id"] for x in snapshot["members"]}
     roles = {x["id"]: x["role"] for x in snapshot["roles"]}
+    archived = set(snapshot.get("archived_worker_ids", []))
     day_states = {x["worker_id"]: x for x in snapshot.get("worker_day_states", [])}
     busy = {x["id"]: x for x in snapshot["busy_tickets"]}
     workers, excluded_workers = [], []
@@ -124,6 +125,8 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         reason = None
         if roles.get(wid) != "worker":
             reason = reasons.invalid_worker_role(roles.get(wid))
+        elif wid in archived:
+            reason = reasons.worker_archived()
         elif day_state and not day_state["available"]:
             reason = reasons.worker_unavailable(
                 dt(day_state["expected_available_at"])

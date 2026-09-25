@@ -32,6 +32,7 @@ from app.modules.routing.schemas import RouteCreate
 from app.modules.routing.service import save_routes_in_transaction
 from app.modules.tickets.models import Ticket
 from app.modules.tickets.service import update_assignment_in_transaction
+from app.modules.users.models import User
 
 
 def utc_now():
@@ -149,6 +150,43 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
     return public
 
 
+def plan_workers(session: Session, snapshot: dict) -> list[dict]:
+    """Brigade and office come from the plan's snapshot, so later membership changes,
+    a new role or archiving never rewrite whom the plan belonged to."""
+    brigades = {row["id"]: row for row in snapshot.get("brigades", [])}
+    members = {row["worker_id"]: row["brigade_id"] for row in snapshot.get("members", [])}
+    workers = sorted(snapshot.get("workers", []), key=lambda row: row["user_id"])
+    users = {
+        row.id: row
+        for row in session.execute(
+            select(
+                User.id, User.surname, User.name, User.lastname, User.role, User.archived_at
+            ).where(User.id.in_([row["user_id"] for row in workers]))
+        )
+    }
+    result = []
+    for worker in workers:
+        brigade = brigades.get(members.get(worker["user_id"]))
+        user = users.get(worker["user_id"])
+        result.append(
+            {
+                "worker_id": worker["user_id"],
+                "full_name": " ".join(
+                    part for part in (user.surname, user.name, user.lastname) if part
+                )
+                if user
+                else None,
+                "brigade_id": brigade["id"] if brigade else None,
+                "brigade_name": brigade["name"] if brigade else None,
+                "office_id": worker.get("stock_office_id")
+                or (brigade["office_id"] if brigade else None),
+                "role": user.role if user else None,
+                "archived_at": user.archived_at if user else None,
+            }
+        )
+    return result
+
+
 def plan_state(session: Session, plan: PlanningPlan, clock=utc_now) -> dict:
     """Public stored plan and its live state; the caller owns one read-only snapshot."""
     result = {**legacy_public(plan.result_snapshot["public"]), "state": plan.state}
@@ -175,7 +213,23 @@ def read_plan(engine, plan_id: UUID, clock=utc_now):
         plan = session.get(PlanningPlan, plan_id)
         if plan is None:
             raise PlanningError("plan_not_found", 404)
-        return plan_state(session, plan, clock)
+        result = {**legacy_public(plan.result_snapshot["public"]), "state": plan.state}
+        result["planning_policy"] = plan.input_snapshot.get("planning_policy")
+        if plan.state == "ready" and plan.expires_at <= clock():
+            result["state"] = "expired"
+        if plan.state == "applied":
+            request = PreviewRequest.model_validate(plan.input_snapshot["request"])
+            result["is_current"] = (
+                fingerprint(
+                    load_snapshot(
+                        session, request, policy_snapshot=recorded_policy(plan.input_snapshot)
+                    )
+                )
+                == plan.applied_fingerprint
+            )
+            result["apply_result"] = plan.apply_result
+        result["workers"] = plan_workers(session, plan.input_snapshot)
+        return result
 
 
 def apply_plan(engine, plan_id: UUID, clock=utc_now):

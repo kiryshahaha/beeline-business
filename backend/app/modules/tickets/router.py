@@ -187,7 +187,7 @@ def update_ticket_assignment(
         raise HTTPException(status_code=404, detail="Заявка не найдена") from error
     except service.WorkerNotFoundError as error:
         raise HTTPException(
-            status_code=422, detail="Один или несколько исполнителей не найдены"
+            status_code=422, detail="Один или несколько исполнителей не найдены или в архиве"
         ) from error
     except service.WorkerOffLineError as error:
         raise HTTPException(

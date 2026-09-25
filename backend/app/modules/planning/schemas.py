@@ -161,6 +161,18 @@ class ApplyResult(BaseModel):
     day_revision: int | None = None
 
 
+class PlanWorker(BaseModel):
+    """Engineer of a stored plan: affiliation when calculated, identity and state now."""
+
+    worker_id: int
+    full_name: str | None
+    brigade_id: int | None
+    brigade_name: str | None
+    office_id: int | None
+    role: str | None
+    archived_at: datetime | None
+
+
 class PlanRead(BaseModel):
     planning_policy: ExecutionPolicy | None = None
     plan_id: UUID
@@ -180,6 +192,7 @@ class PlanRead(BaseModel):
     warnings: list[str]
     is_current: bool | None = None
     apply_result: ApplyResult | None = None
+    workers: list[PlanWorker] | None = None
 
 
 class ApplyRequest(BaseModel):

@@ -40,7 +40,8 @@ def delete_token(session: Session, user_id: int) -> bool:
 
 
 def find_feed_owner(session: Session, token_hash: str) -> RowMapping | None:
-    # Only workers receive assignments, so a token of any other role opens nothing.
+    # Only active workers receive assignments: another role or an archived account opens
+    # nothing, even if a token row survived.
     return (
         session.execute(
             text("""
@@ -49,6 +50,8 @@ def find_feed_owner(session: Session, token_hash: str) -> RowMapping | None:
                 JOIN users AS u ON u.id = ct.user_id
                 JOIN workers AS w ON w.user_id = u.id
                 WHERE ct.token_hash = :token_hash
+                  AND u.role = 'worker'
+                  AND u.archived_at IS NULL
             """),
             {"token_hash": token_hash},
         )

@@ -33,6 +33,8 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/users",
             "/api/v1/users/me",
             "/api/v1/users/{id}",
+            "/api/v1/users/{id}/archive",
+            "/api/v1/users/{id}/restore",
             "/api/v1/workers/{worker_id}/line-status",
             "/api/v1/workers/{worker_id}/unavailable",
             "/api/v1/workers/{worker_id}/day-state",
@@ -58,6 +60,14 @@ class OpenApiTests(unittest.TestCase):
         self.assertIn("get", user_by_id_ops)
         self.assertIn("patch", user_by_id_ops)
         self.assertIn("delete", user_by_id_ops)
+        for action in ("archive", "restore"):
+            operation = paths[f"/api/v1/users/{{id}}/{action}"]["post"]
+            self.assertIn({"BearerAuth": []}, operation["security"])
+        self.assertIn("409", user_by_id_ops["delete"]["responses"])
+        self.assertIn(
+            "include_archived",
+            {parameter["name"] for parameter in paths["/api/v1/users"]["get"]["parameters"]},
+        )
 
         self.assertIn("post", paths["/api/v1/brigades"])
         self.assertIn("get", paths["/api/v1/brigades"])

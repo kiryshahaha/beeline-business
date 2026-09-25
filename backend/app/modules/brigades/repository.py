@@ -139,7 +139,14 @@ def find_worker_ids(session: Session, worker_ids: list[int]) -> set[int]:
         return set()
     return set(
         session.execute(
-            text("SELECT user_id FROM workers WHERE user_id = ANY(CAST(:worker_ids AS integer[]))"),
+            text("""
+                SELECT w.user_id
+                FROM workers AS w
+                JOIN users AS u ON u.id = w.user_id
+                WHERE w.user_id = ANY(CAST(:worker_ids AS integer[]))
+                  AND u.role = 'worker'
+                  AND u.archived_at IS NULL
+            """),
             {"worker_ids": worker_ids},
         ).scalars()
     )

@@ -1,0 +1,21 @@
+meta {
+  name: Архивирование исполнителя
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/api/v1/users/{{history_temp_id}}/archive
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.archived_at: isString
+  res.body.role: eq worker
+}
