@@ -19,7 +19,7 @@ class PreviewRequest(BaseModel):
     service_area_id: PositiveInt32 | None = None
     base_day_revision: PositiveInt32 | None = None
     route_end: Literal["open", "return_to_start", "specific_finish"] | None = None
-    ticket_ids: list[PositiveInt32] = Field(min_length=1, max_length=50)
+    ticket_ids: list[PositiveInt32] = Field(min_length=1, max_length=100)
     worker_ids: list[PositiveInt32] = Field(min_length=1, max_length=20)
     allow_partial: bool = Field(default=True, strict=True)
 

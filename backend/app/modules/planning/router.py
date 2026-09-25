@@ -112,6 +112,8 @@ async def preview(
         return result
     except (PlanningError, OperationalError) as error:
         fail(error)
+    except TimeoutError:
+        raise HTTPException(504, detail={"code": "planning_timeout"})
     finally:
         _preview_slots.release()
 

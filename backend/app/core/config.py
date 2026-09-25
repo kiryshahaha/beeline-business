@@ -34,9 +34,9 @@ class Settings(BaseSettings):
     planning_solve_time_limit_seconds: int = Field(default=5, ge=1, le=10)
     planning_total_timeout_seconds: float = Field(default=60, gt=0, le=300)
     planning_preview_ttl_seconds: int = Field(default=300, ge=1, le=3600)
-    planning_max_tickets: int = Field(default=50, ge=1, le=50)
+    planning_max_tickets: int = Field(default=100, ge=1, le=100)
     planning_max_workers: int = Field(default=20, ge=1, le=20)
-    planning_max_matrix_cells_total: int = Field(default=20000, ge=1, le=20000)
+    planning_max_matrix_cells_total: int = Field(default=100000, ge=1, le=100000)
     planning_provider_concurrency: int = Field(default=4, ge=1, le=8)
     planning_max_snap_meters: float = Field(default=100, gt=0, le=1000)
     cors_origins: str = (
