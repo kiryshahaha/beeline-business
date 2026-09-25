@@ -137,7 +137,7 @@ def _summary(plan: PlanRead, stored: PlanningPlan) -> list[list[Any]]:
         ["outcome", "Результат расчёта", plan.outcome],
         ["is_current", "Совпадает с текущими данными", plan.is_current],
         ["route_date", "Дата маршрутов", plan.route_date],
-        ["district_id", "Район", plan.district_id],
+        ["service_area_id", "Район", plan.service_area_id],
         ["day_revision", "Ревизия дня", plan.day_revision],
         ["timezone", "Часовой пояс", plan.timezone],
         ["created_at", "Рассчитан", _moscow(stored.created_at)],

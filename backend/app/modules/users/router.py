@@ -120,8 +120,8 @@ def mark_worker_unavailable(
         return state
     except day_state.WorkerNotFound as error:
         raise HTTPException(status_code=404, detail="Исполнитель не найден") from error
-    except day_state.DistrictNotFound as error:
-        raise HTTPException(status_code=404, detail="Район не найден") from error
+    except day_state.ServiceAreaNotFound as error:
+        raise HTTPException(status_code=404, detail="Зона обслуживания не найдена") from error
     except day_state.DayStateRevisionConflict as error:
         raise HTTPException(
             status_code=409,
@@ -141,7 +141,7 @@ def get_worker_day_state(
     worker_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     session: DatabaseSession,
     _: RequireObserver,
-    district_id: Annotated[int, Query(ge=1, le=2_147_483_647)],
+    service_area_id: Annotated[int, Query(ge=1, le=2_147_483_647)],
     route_date: Annotated[date | None, Query(alias="date")] = None,
     at: Annotated[datetime | None, Query()] = None,
 ) -> WorkerDayStateRead:
@@ -151,11 +151,11 @@ def get_worker_day_state(
         raise HTTPException(status_code=422, detail="Параметр at должен содержать часовой пояс")
     moment = at or datetime.now(UTC)
     try:
-        return day_state.day_state_at(session, worker_id, district_id, route_date, moment)
+        return day_state.day_state_at(session, worker_id, service_area_id, route_date, moment)
     except day_state.WorkerNotFound as error:
         raise HTTPException(status_code=404, detail="Исполнитель не найден") from error
-    except day_state.DistrictNotFound as error:
-        raise HTTPException(status_code=404, detail="Район не найден") from error
+    except day_state.ServiceAreaNotFound as error:
+        raise HTTPException(status_code=404, detail="Зона обслуживания не найдена") from error
 
 
 @router.get("/me", response_model=UserRead)

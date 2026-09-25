@@ -336,7 +336,7 @@ session.execute(
 
 При сборке списка заявок выражение `" AND ".join(conditions)` соединяет только
 условия, заданные в коде: `t.status = :status`, `b.city_id = :city_id` и
-`b.district_id = :district_id`. Пользователь передаёт значения, но не SQL-фрагменты,
+`b.service_area_id = :service_area_id`. Пользователь передаёт значения, но не SQL-фрагменты,
 имена колонок или порядок сортировки. Значения, включая `limit` и `offset`, попадают
 в отдельный словарь `parameters`, передаваемый в `session.execute(text(query), parameters)`.
 Поэтому кавычки и SQL-подобный текст в значениях не изменяют структуру запроса.
@@ -377,7 +377,7 @@ erDiagram
 | `cities` | `id`, `name` | Город, например `Санкт-Петербург` |
 | `districts` | `id`, `city_id`, `name` | Административный район города, например `Невский район` |
 | `streets` | `id`, `city_id`, `name` | Улица внутри города, например `улица Ленина` |
-| `buildings` | `id`, `city_id`, `street_id`, `district_id`, `number`, `block` | Дом, его район и необязательный корпус / строение |
+| `buildings` | `id`, `city_id`, `street_id`, `service_area_id`, `number`, `block` | Дом, его район и необязательный корпус / строение |
 | `entrances` | `id`, `building_id`, `number` | Подъезд конкретного дома |
 | `locations` | `id`, `building_id`, `entrance_id`, `floor`, `apartment`, `latitude`, `longitude` | Место выезда, вплоть до квартиры / помещения |
 
@@ -388,26 +388,21 @@ erDiagram
 
 ### Как район связан с заявкой
 
-Район определяется через `tickets.location_id → locations.building_id →
-buildings.district_id → districts.id`. Его название хранится один раз в справочнике.
-Все квартиры дома и все заявки на эти квартиры получают район из одной записи дома.
-Район привязан именно к дому: одна улица может проходить через несколько районов.
-Название в справочнике полное, например `Невский район`; муниципальные округа
-и микрорайоны здесь отдельно не моделируются.
+Зона обслуживания определяется по цепочке `tickets.location_id → locations.building_id →
+buildings.service_area_id → service_areas.id`. Адресный район остаётся отдельной записью
+для отображения полного адреса, например `Невский район`; дом хранит именно ID зоны.
+Все квартиры одного дома используют его зону, при этом улица может пересекать несколько
+зон обслуживания.
 
-`buildings.district_id` обязателен: PostgreSQL запрещает вставку дома без района,
-явный `NULL` и удаление значения района через `UPDATE`. Значения по умолчанию нет:
-нужно передать ID существующего района того же города. В ответе API `district_id`
-имеет тип `int`, а `district` — `str`; `null` не допускается. Строка `address`
-всегда содержит район. `seed_demo.py` указывает его при вставке каждого дома.
+`buildings.service_area_id` обязателен: PostgreSQL запрещает вставку дома без зоны,
+явный `NULL` и удаление значения через `UPDATE`. Значения по умолчанию нет, поэтому
+нужно передать ID существующей зоны. В ответе API `service_area_id` имеет тип `int`,
+а `district` — `str`; `null` не допускается. `seed_demo.py` указывает зону при вставке дома.
 
-Дополнительное `buildings.city_id` позволяет PostgreSQL проверить, что район и улица
-относятся к одному городу. Два составных внешних ключа используют один `city_id`:
-`(street_id, city_id) → streets(id, city_id)` и
-`(district_id, city_id) → districts(id, city_id)`. Указание района другого города
-будет отклонено при `INSERT` или `UPDATE`, включая ручной SQL. Уникальные ограничения
-`(id, city_id)` у улиц и районов нужны PostgreSQL для этих связей.
-При вставке дома скрипт передаёт тот же `city_id`, который использован для улицы и района.
+`buildings.city_id` вместе с `street_id` проверяет, что улица принадлежит указанному
+городу: `(street_id, city_id) → streets(id, city_id)`. Зона обслуживания может включать
+адреса из нескольких городов, поэтому её внешний ключ ведёт напрямую к
+`service_areas.id`; город зоны с городом улицы не сравнивается.
 
 `locations.building_id` обязателен, а `entrance_id` необязателен: заявку можно
 привязать к дому, даже когда подъезд ещё не известен. Если подъезд указан,
@@ -685,7 +680,7 @@ Ruff и форматирование; для этой правки обраще�
 | --- | --- | --- |
 | `status` | `planned`, `in_progress`, `completed`, `wont_fix` | Без фильтра по статусу |
 | `city_id` | ID города, целое число от 1 до 2147483647 | Без фильтра по городу |
-| `district_id` | ID района, целое число от 1 до 2147483647 | Без фильтра по району |
+| `service_area_id` | ID района, целое число от 1 до 2147483647 | Без фильтра по району |
 | `limit` | Максимум заявок в ответе, от 1 до 100 | 20 |
 | `offset` | Сколько подходящих заявок пропустить, от 0 до 2147483647 | 0 |
 
@@ -694,8 +689,8 @@ Ruff и форматирование; для этой правки обраще�
 ```http
 GET /api/v1/tickets
 GET /api/v1/tickets?city_id=1
-GET /api/v1/tickets?district_id=2&status=planned
-GET /api/v1/tickets?city_id=1&district_id=2&status=in_progress&limit=20&offset=0
+GET /api/v1/tickets?service_area_id=2&status=planned
+GET /api/v1/tickets?city_id=1&service_area_id=2&status=in_progress&limit=20&offset=0
 ```
 
 Все переданные фильтры объединяются через `AND`. Район можно передать отдельно:
@@ -725,7 +720,7 @@ GET /api/v1/tickets?city_id=1&district_id=2&status=in_progress&limit=20&offset=0
 Например, при передаче всех трёх фильтров к общему `SELECT` добавляется:
 
 ```sql
-WHERE t.status = :status AND b.city_id = :city_id AND b.district_id = :district_id
+WHERE t.status = :status AND b.city_id = :city_id AND b.service_area_id = :service_area_id
 ORDER BY t.id ASC LIMIT :limit OFFSET :offset
 ```
 
@@ -749,7 +744,7 @@ ID и номер подъезда, этаж, квартиру/помещение
 ```json
 {
   "city": "Санкт-Петербург",
-  "district_id": 1,
+  "service_area_id": 1,
   "district": "Невский район",
   "street": "Искровский проспект",
   "building_number": "4",
@@ -798,7 +793,7 @@ HTTP-тесты находятся в `tests/test_tickets_api.py`; на кажд
 | `format` | `csv` или `xlsx` | `xlsx` |
 | `status` | `planned`, `in_progress`, `completed`, `wont_fix` | Без фильтра |
 | `city_id` | Положительный ID города | Без фильтра |
-| `district_id` | Положительный ID района | Без фильтра |
+| `service_area_id` | Положительный ID района | Без фильтра |
 | `brigade_id` | Положительный ID бригады назначенных исполнителей | Без фильтра |
 
 Примеры:
@@ -807,7 +802,7 @@ HTTP-тесты находятся в `tests/test_tickets_api.py`; на кажд
 GET /api/v1/reports/tickets/export?format=csv&status=completed&city_id=1
 Authorization: Bearer <observer access token>
 
-GET /api/v1/reports/tickets/export?format=xlsx&district_id=2&brigade_id=1
+GET /api/v1/reports/tickets/export?format=xlsx&service_area_id=2&brigade_id=1
 Authorization: Bearer <observer access token>
 ```
 
@@ -1022,9 +1017,9 @@ GeoapifyRoutingClient.build_route_matrix — синхронная граница
 | --- | --- | --- |
 | `base_url` | Адрес API без завершающего `/` | `http://127.0.0.1:8000` |
 | `city_id` | Город для фильтров | `1` |
-| `district_id` | Выбранный район для фильтров и страниц | `1` |
-| `primorsky_district_id` | Отдельный пример Приморского района | `2` |
-| `krasnogvardeysky_district_id` | Отдельный пример Красногвардейского района | `3` |
+| `service_area_id` | Выбранный район для фильтров и страниц | `1` |
+| `primorsky_service_area_id` | Отдельный пример Приморского района | `2` |
+| `krasnogvardeysky_service_area_id` | Отдельный пример Красногвардейского района | `3` |
 | `ticket_id` | Существующая заявка для чтения по ID | `1` |
 | `location_id` | Существующее место для создания заявки | `1` |
 | `office_id` | Офис для фильтра аналитики | `1` |
@@ -1034,7 +1029,7 @@ GeoapifyRoutingClient.build_route_matrix — синхронная граница
 
 ID — примеры для новой базы после `seed_demo.py`, а не постоянные идентификаторы
 городов и районов. В уже заполненной базе номера могут отличаться. В ответе «Все заявки»
-нужны `id`, `location_id`, `location.city_id`, `location.district_id`;
+нужны `id`, `location_id`, `location.city_id`, `location.service_area_id`;
 название района находится в `location.district`. Для просмотра более 20 заявок
 можно добавить `limit=100` и при необходимости увеличивать `offset`.
 Скрипт заполнения также печатает `ticket_id` и `location_id`.
@@ -1143,15 +1138,17 @@ ORDER BY c.name, t.status;
 Количество заявок по районам города:
 
 ```sql
-SELECT c.name AS city, d.id AS district_id, d.name AS district, COUNT(*) AS ticket_count
+SELECT c.name AS city, sa.id AS service_area_id,
+       COALESCE(d.name, sa.name) AS district, COUNT(*) AS ticket_count
 FROM tickets AS t
 JOIN locations AS l ON l.id = t.location_id
 JOIN buildings AS b ON b.id = l.building_id
 JOIN cities AS c ON c.id = b.city_id
-JOIN districts AS d ON d.id = b.district_id
+JOIN service_areas AS sa ON sa.id = b.service_area_id
+LEFT JOIN districts AS d ON sa.code = 'district_' || d.id
 WHERE c.id = :city_id
-GROUP BY c.id, c.name, d.id, d.name
-ORDER BY d.name;
+GROUP BY c.id, c.name, sa.id, COALESCE(d.name, sa.name)
+ORDER BY COALESCE(d.name, sa.name);
 ```
 
 `:city_id` передаётся отдельно как параметр. В редакторе SQL его можно заменить

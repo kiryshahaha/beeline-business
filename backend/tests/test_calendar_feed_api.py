@@ -48,7 +48,7 @@ def ticket_row(**overrides) -> dict:
         "location_id": 7,
         "city_id": 1,
         "city": "Москва",
-        "district_id": 1,
+        "service_area_id": 1,
         "district": "Тверской район",
         "street_id": 1,
         "street": "Тверская улица",
@@ -131,7 +131,7 @@ class CalendarFeedApiTests(DatabaseTestCase):
         building = self.save(
             Building(
                 city_id=city.id,
-                district_id=district.id,
+                service_area_id=self.service_area_for_district(district.id),
                 street_id=street.id,
                 number="4",
                 block="корпус 2",

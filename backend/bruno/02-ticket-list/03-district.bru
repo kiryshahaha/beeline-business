@@ -5,7 +5,7 @@ meta {
 }
 
 get {
-  url: {{base_url}}/api/v1/tickets?district_id={{district_id}}
+  url: {{base_url}}/api/v1/tickets?service_area_id={{service_area_id}}
   body: none
   auth: bearer
 }
@@ -15,7 +15,7 @@ auth:bearer {
 }
 
 params:query {
-  district_id: {{district_id}}
+  service_area_id: {{service_area_id}}
 }
 
 assert {
@@ -25,7 +25,7 @@ assert {
 tests {
   test("Каждая заявка соответствует заданным фильтрам", function () {
     res.getBody().forEach(function (ticket) {
-      expect(ticket.location.district_id).to.equal(Number(bru.getVar("district_id")));
+      expect(ticket.location.service_area_id).to.equal(Number(bru.getVar("service_area_id")));
     });
   });
 
@@ -35,5 +35,5 @@ tests {
 }
 
 docs {
-  Район можно указать без города. Local.district_id — выбранный район, по умолчанию Невский в новой демобазе.
+  Район можно указать без города. Local.service_area_id — выбранный район, по умолчанию Невский в новой демобазе.
 }

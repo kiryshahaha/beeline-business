@@ -25,13 +25,13 @@ class TicketsApiTests(DatabaseTestCase):
         city = self.save(City(name="Санкт-Петербург"))
         self.city_id = city.id
         district = self.save(District(city_id=city.id, name="Невский район"))
-        self.district_id = district.id
+        self.service_area_id = self.service_area_for_district(district.id)
         street = self.save(Street(city_id=city.id, name="Тестовая улица"))
         building = self.save(
             Building(
                 city_id=city.id,
                 street_id=street.id,
-                district_id=district.id,
+                service_area_id=self.service_area_for_district(district.id),
                 number="12А",
                 block="корпус 2",
             )
@@ -110,7 +110,7 @@ class TicketsApiTests(DatabaseTestCase):
         self.assertEqual(created["location_id"], self.location_id)
         location = created["location"]
         self.assertEqual(location["id"], self.location_id)
-        self.assertEqual(location["district_id"], self.district_id)
+        self.assertEqual(location["service_area_id"], self.service_area_id)
         self.assertEqual(location["district"], "Невский район")
         self.assertEqual(location["apartment"], "24Б")
         self.assertEqual(location["latitude"], 59.94)
@@ -148,13 +148,13 @@ class TicketsApiTests(DatabaseTestCase):
         self.assertEqual(response.status_code, 201, response.text)
         building = self.session.get(Building, self.location.building_id)
         district = self.save(District(city_id=building.city_id, name="Тестовый район"))
-        building.district_id = district.id
-        district_id = district.id
+        building.service_area_id = self.service_area_for_district(district.id)
+        service_area_id = self.service_area_for_district(district.id)
         self.session.commit()
         fetched = self.client.get(response.headers["Location"])
         self.assertEqual(fetched.status_code, 200, fetched.text)
         location = fetched.json()["location"]
-        self.assertEqual(location["district_id"], district_id)
+        self.assertEqual(location["service_area_id"], service_area_id)
         self.assertEqual(location["district"], "Тестовый район")
         self.assertEqual(
             location["address"],
@@ -413,7 +413,12 @@ class TicketsApiTests(DatabaseTestCase):
             district = self.save(District(city_id=city_id, name=district_name))
             street = self.save(Street(city_id=city_id, name="Другая улица"))
             building = self.save(
-                Building(city_id=city_id, street_id=street.id, district_id=district.id, number="1")
+                Building(
+                    city_id=city_id,
+                    street_id=street.id,
+                    service_area_id=self.service_area_for_district(district.id),
+                    number="1",
+                )
             )
             return self.save(Location(building_id=building.id))
 
@@ -435,26 +440,30 @@ class TicketsApiTests(DatabaseTestCase):
         self.assertEqual(second.status_code, 201, second.text)
         self.assertEqual(other.status_code, 201, other.text)
         second_id, other_id = second.json()["id"], other.json()["id"]
-        second_district_id = second.json()["location"]["district_id"]
-        other_district_id = other.json()["location"]["district_id"]
+        second_service_area_id = second.json()["location"]["service_area_id"]
+        other_service_area_id = other.json()["location"]["service_area_id"]
         cases = [
             ({"city_id": self.city_id}, [*status_ids.values(), second_id]),
             ({"city_id": other_city_id}, [other_id]),
-            ({"district_id": self.district_id}, list(status_ids.values())),
-            ({"district_id": second_district_id}, [second_id]),
-            ({"district_id": other_district_id}, [other_id]),
+            ({"service_area_id": self.service_area_id}, list(status_ids.values())),
+            ({"service_area_id": second_service_area_id}, [second_id]),
+            ({"service_area_id": other_service_area_id}, [other_id]),
             ({"status": "planned"}, [status_ids["planned"], second_id]),
             ({"status": "in_progress"}, [status_ids["in_progress"], other_id]),
             ({"status": "completed"}, [status_ids["completed"]]),
             ({"status": "wont_fix"}, [status_ids["wont_fix"]]),
             ({"city_id": self.city_id, "status": "in_progress"}, [status_ids["in_progress"]]),
             (
-                {"city_id": self.city_id, "district_id": self.district_id, "status": "planned"},
+                {
+                    "city_id": self.city_id,
+                    "service_area_id": self.service_area_id,
+                    "status": "planned",
+                },
                 [status_ids["planned"]],
             ),
-            ({"city_id": other_city_id, "district_id": self.district_id}, []),
+            ({"city_id": other_city_id, "service_area_id": self.service_area_id}, []),
             ({"city_id": 2_147_483_647}, []),
-            ({"district_id": 2_147_483_647}, []),
+            ({"service_area_id": 2_147_483_647}, []),
             ({"status": "planned", "limit": 1, "offset": 1}, [second_id]),
         ]
         for params, expected_ids in cases:
@@ -487,7 +496,7 @@ class TicketsApiTests(DatabaseTestCase):
         invalid_values = {
             "status": ["unknown", "", "planned' OR 1=1 --"],
             "city_id": [0, -1, 2_147_483_648, "text", "1.5", ""],
-            "district_id": [0, -1, 2_147_483_648, "text", "1.5", ""],
+            "service_area_id": [0, -1, 2_147_483_648, "text", "1.5", ""],
             "limit": [0, -1, 101, "text", "1.5", ""],
             "offset": [-1, 2_147_483_648, "text", "1.5", ""],
         }
@@ -502,7 +511,7 @@ class TicketsApiTests(DatabaseTestCase):
         response = self.create()
         self.assertEqual(response.status_code, 201, response.text)
         with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
-            filters = {"city_id": None, "district_id": None, "limit": 100, "offset": 0}
+            filters = {"city_id": None, "service_area_id": None, "limit": 100, "offset": 0}
             normal = repository.find_tickets(session, status="planned", **filters)
             self.assertEqual([row["id"] for row in normal], [response.json()["id"]])
             # Bypass the HTTP enum check to exercise actual PostgreSQL parameter binding.
@@ -564,7 +573,8 @@ class TicketsApiTests(DatabaseTestCase):
         operation = paths["/api/v1/tickets"]["get"]
         parameters = {param["name"]: param for param in operation["parameters"]}
         self.assertEqual(
-            set(parameters), {"status", "city_id", "district_id", "brigade_id", "limit", "offset"}
+            set(parameters),
+            {"status", "city_id", "service_area_id", "brigade_id", "limit", "offset"},
         )
         self.assertFalse(parameters["brigade_id"]["required"])
         self.assertEqual(parameters["brigade_id"]["schema"]["anyOf"][0]["minimum"], 1)
@@ -576,7 +586,7 @@ class TicketsApiTests(DatabaseTestCase):
             operation["responses"]["200"]["content"]["application/json"]["schema"]["type"], "array"
         )
         location_schema = schema["components"]["schemas"]["LocationRead"]
-        for field, field_type in (("district_id", "integer"), ("district", "string")):
+        for field, field_type in (("service_area_id", "integer"), ("district", "string")):
             self.assertIn(field, location_schema["required"])
             self.assertEqual(location_schema["properties"][field]["type"], field_type)
             self.assertNotIn("anyOf", location_schema["properties"][field])

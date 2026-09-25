@@ -110,7 +110,6 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
             "state": "ready",
             "outcome": outcome(routes, unassigned),
             "route_date": request.route_date,
-            "district_id": snapshot.get("district_id"),
             "service_area_id": snapshot.get("service_area_id"),
             "day_revision": snapshot.get("current_day_revision"),
             "timezone": "Europe/Moscow",
@@ -334,8 +333,7 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                 # over inside this transaction, so two applies never both look current.
                 revision_row = publish_revision(
                     session,
-                    service_area_id=service_area_id,
-                    district_id=current.get("district_id"),
+                    service_area_id=current.get("service_area_id"),
                     route_date=request.route_date,
                     actor_id=plan.created_by,
                     reason="plan_applied",

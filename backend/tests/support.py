@@ -65,6 +65,13 @@ class DatabaseTestCase(unittest.TestCase):
         self.addCleanup(self.transaction.rollback)
         self.addCleanup(self.session.close)
 
+    def service_area_for_district(self, district_row_id: int) -> int:
+        """Resolve a legacy address row to its canonical service area in test fixtures."""
+        return self.connection.execute(
+            text("SELECT id FROM service_areas WHERE code = :code"),
+            {"code": f"district_{district_row_id}"},
+        ).scalar_one()
+
 
 class CommittedDatabaseTestCase(DatabaseTestCase):
     """Allow real commits; reset only this class's isolated schema before each test."""

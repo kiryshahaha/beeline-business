@@ -34,7 +34,7 @@ class TicketAndLocationAuthenticationTests(DatabaseTestCase):
         self.session.flush()
         building = Building(
             city_id=city.id,
-            district_id=district.id,
+            service_area_id=self.service_area_for_district(district.id),
             street_id=street.id,
             number="1",
         )

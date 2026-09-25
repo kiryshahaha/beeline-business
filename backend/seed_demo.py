@@ -385,8 +385,9 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
         {"name": CITY_NAME},
     )
     results = []
+    demo_service_area_id = None
     for visit in DEMO_VISITS:
-        district_id = get_or_create_id(
+        district_row_id = get_or_create_id(
             session,
             """
             SELECT id FROM districts
@@ -395,6 +396,12 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
             "INSERT INTO districts (city_id, name) VALUES (:city_id, :name) RETURNING id",
             {"city_id": city_id, "name": visit.district},
         )
+        service_area_id = session.execute(
+            text("SELECT id FROM service_areas WHERE code = :code"),
+            {"code": f"district_{district_row_id}"},
+        ).scalar_one()
+        if demo_service_area_id is None:
+            demo_service_area_id = service_area_id
         street_id = get_or_create_id(
             session,
             """
@@ -412,24 +419,24 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
               AND lower(block) IS NOT DISTINCT FROM lower(CAST(:block AS text))
             """,
             """
-            INSERT INTO buildings (city_id, street_id, district_id, number, block)
-            VALUES (:city_id, :street_id, :district_id, :number, :block) RETURNING id
+            INSERT INTO buildings (city_id, street_id, service_area_id, number, block)
+            VALUES (:city_id, :street_id, :service_area_id, :number, :block) RETURNING id
             """,
             {
                 "city_id": city_id,
                 "street_id": street_id,
-                "district_id": district_id,
+                "service_area_id": service_area_id,
                 "number": visit.building,
                 "block": visit.block,
             },
         )
-        existing_district_id = session.execute(
-            text("SELECT district_id FROM buildings WHERE id = :building_id FOR UPDATE"),
+        existing_service_area_id = session.execute(
+            text("SELECT service_area_id FROM buildings WHERE id = :building_id FOR UPDATE"),
             {"building_id": building_id},
         ).scalar_one()
-        if existing_district_id != district_id:
+        if existing_service_area_id != service_area_id:
             raise RuntimeError(
-                f"У building_id={building_id} уже другой район. "
+                f"У building_id={building_id} уже другая зона обслуживания. "
                 "Заполнение отменено: проверьте этот дом вручную."
             )
         entrance_id = None
@@ -585,6 +592,18 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                 created=created,
             )
         )
+    if demo_service_area_id is not None:
+        session.execute(
+            text("""
+                UPDATE workers
+                SET service_area_id = COALESCE(service_area_id, :service_area_id)
+                WHERE user_id IN (
+                    SELECT id FROM users
+                    WHERE username IN ('demo_worker_1', 'demo_worker_2')
+                )
+            """),
+            {"service_area_id": demo_service_area_id},
+        )
     observer_id = session.execute(
         text("SELECT id FROM users WHERE username = 'demo_observer'")
     ).scalar_one()
@@ -638,12 +657,16 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
             "INSERT INTO cities (name) VALUES (:name) RETURNING id",
             {"name": office_data.city},
         )
-        district_id = get_or_create_id(
+        district_row_id = get_or_create_id(
             session,
             "SELECT id FROM districts WHERE city_id = :city_id AND lower(name) = lower(:name)",
             "INSERT INTO districts (city_id, name) VALUES (:city_id, :name) RETURNING id",
             {"city_id": office_city_id, "name": office_data.district},
         )
+        service_area_id = session.execute(
+            text("SELECT id FROM service_areas WHERE code = :code"),
+            {"code": f"district_{district_row_id}"},
+        ).scalar_one()
         street_id = get_or_create_id(
             session,
             "SELECT id FROM streets WHERE city_id = :city_id AND lower(name) = lower(:name)",
@@ -653,11 +676,11 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
         building_id = get_or_create_id(
             session,
             "SELECT id FROM buildings WHERE street_id = :street_id AND lower(number) = lower(:number)",  # noqa: E501
-            "INSERT INTO buildings (city_id, street_id, district_id, number) VALUES (:city_id, :street_id, :district_id, :number) RETURNING id",  # noqa: E501
+            "INSERT INTO buildings (city_id, street_id, service_area_id, number) VALUES (:city_id, :street_id, :service_area_id, :number) RETURNING id",  # noqa: E501
             {
                 "city_id": office_city_id,
                 "street_id": street_id,
-                "district_id": district_id,
+                "service_area_id": service_area_id,
                 "number": office_data.building,
             },
         )

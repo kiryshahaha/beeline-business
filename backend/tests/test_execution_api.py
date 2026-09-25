@@ -16,7 +16,6 @@ from app.db.models import (
     District,
     Location,
     Office,
-    ServiceArea,
     Street,
     TicketAppliance,
 )
@@ -40,7 +39,7 @@ class ExecutionApiTests(DatabaseTestCase):
         first_building = self._save(
             Building(
                 city_id=city.id,
-                district_id=district.id,
+                service_area_id=self.service_area_for_district(district.id),
                 street_id=street.id,
                 number="1",
             )
@@ -48,7 +47,7 @@ class ExecutionApiTests(DatabaseTestCase):
         second_building = self._save(
             Building(
                 city_id=city.id,
-                district_id=district.id,
+                service_area_id=self.service_area_for_district(district.id),
                 street_id=street.id,
                 number="2",
             )
@@ -67,12 +66,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 longitude=37.62,
             )
         ).id
-        self.district_id = district.id
-        # A day plan belongs to a service area, so the district needs the area
-        # migration 0021 seeds for it before a revision can be published.
-        self.service_area_id = self._save(
-            ServiceArea(code=f"district_{district.id}", name="Участок выполнения")
-        ).id
+        self.service_area_id = self.service_area_for_district(district.id)
         self.office = self._save(
             Office(name="Офис выполнения", location_id=self.source_location_id)
         )
@@ -267,7 +261,6 @@ class ExecutionApiTests(DatabaseTestCase):
         self.session.add(
             DayPlanRevision(
                 service_area_id=self.service_area_id,
-                district_id=self.district_id,
                 route_date=self.route_date,
                 revision=1,
                 actor_id=self.observer.id,
@@ -279,7 +272,7 @@ class ExecutionApiTests(DatabaseTestCase):
         )
         self.session.commit()
         redirected = self.client.post(
-            f"/api/v1/planning/days/{self.district_id}/{self.route_date}/redirect",
+            f"/api/v1/planning/days/{self.service_area_id}/{self.route_date}/redirect",
             json={
                 "worker_id": self.worker.id,
                 "current_ticket_id": ticket_id,
@@ -293,7 +286,7 @@ class ExecutionApiTests(DatabaseTestCase):
         self.assertEqual(redirected.status_code, 200, redirected.text)
         self.assertEqual(redirected.json()["current_destination_id"], self.source_location_id)
         redirect_replay = self.client.post(
-            f"/api/v1/planning/days/{self.district_id}/{self.route_date}/redirect",
+            f"/api/v1/planning/days/{self.service_area_id}/{self.route_date}/redirect",
             json={
                 "worker_id": self.worker.id,
                 "current_ticket_id": ticket_id,
@@ -340,7 +333,7 @@ class ExecutionApiTests(DatabaseTestCase):
         before = self.client.get(
             f"/api/v1/workers/{self.worker.id}/day-state",
             params={
-                "district_id": self.district_id,
+                "service_area_id": self.service_area_id,
                 "date": self.route_date.isoformat(),
                 "at": "2030-01-15T13:15:00+03:00",
             },
@@ -484,7 +477,7 @@ class ExecutionApiTests(DatabaseTestCase):
             f"/api/v1/workers/{self.worker.id}/unavailable",
             json={
                 "expected_revision": 1,
-                "district_id": self.district_id,
+                "service_area_id": self.service_area_id,
                 "route_date": self.route_date.isoformat(),
                 "occurred_at": "2030-01-15T15:00:00+03:00",
                 "worker_id": self.worker.id,
@@ -514,7 +507,7 @@ class ExecutionApiTests(DatabaseTestCase):
             f"/api/v1/workers/{self.worker.id}/unavailable",
             json={
                 "expected_revision": 1,
-                "district_id": self.district_id,
+                "service_area_id": self.service_area_id,
                 "route_date": self.route_date.isoformat(),
                 "occurred_at": "2030-01-15T15:00:00+03:00",
                 "worker_id": self.worker.id,

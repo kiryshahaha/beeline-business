@@ -12,7 +12,7 @@ tests {
       expect(ticket.id).to.be.a("number");
       expect(ticket.location.id).to.equal(ticket.location_id);
       expect(ticket.location.city_id).to.be.a("number");
-      expect(ticket.location.district_id).to.be.a("number");
+      expect(ticket.location.service_area_id).to.be.a("number");
       expect(ticket.location.address).to.be.a("string").and.not.empty;
     });
   });
