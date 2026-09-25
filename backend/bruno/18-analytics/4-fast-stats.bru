@@ -1,0 +1,29 @@
+meta {
+  name: Fast stats
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/v1/analytics/fast-stats
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+tests {
+  test("status code is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  
+  test("response has all fields", function() {
+    const data = res.getBody();
+    expect(data.sla_compliance_percent).to.be.a("number");
+    expect(data.at_risk_tickets_count).to.be.a("number");
+    expect(data.average_delay_minutes).to.be.a("number");
+    expect(data.idle_workers_count).to.be.a("number");
+  });
+}
