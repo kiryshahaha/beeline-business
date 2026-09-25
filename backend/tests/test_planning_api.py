@@ -301,6 +301,16 @@ class PlanningApiTests(CommittedDatabaseTestCase):
                 "service_minutes": 0,
                 "waiting_minutes": 0,
                 "unassigned_by_category": {"data": 24},
+                "routing": {
+                    "provider_requests": {},
+                    "matrix_cells": 0,
+                    "stages": {},
+                    "cache_hits": {},
+                    "profiles": {},
+                    "retry_attempts": 0,
+                    "estimation_sources": {},
+                    "error_reasons": {},
+                },
             },
         )
         reasons = [x["reason"] for x in plan["unassigned"]]

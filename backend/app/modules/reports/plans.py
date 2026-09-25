@@ -93,6 +93,13 @@ METRIC_LABELS = (
     ("service_minutes", "Работа, мин"),
     ("waiting_minutes", "Ожидание, мин"),
 )
+ROUTING_GROUP_LABELS = {
+    "provider_requests": "Запросы провайдера",
+    "cache_hits": "Попадания кэша",
+    "profiles": "Расчёты по профилю",
+    "estimation_sources": "Оценки по источнику",
+    "error_reasons": "Ошибки по причине",
+}
 
 
 def _moscow(value: datetime | str | None) -> str | None:
@@ -156,6 +163,16 @@ def _summary(plan: PlanRead, stored: PlanningPlan) -> list[list[Any]]:
         rows += [
             [f"metrics.{name}", label, getattr(plan.metrics, name)] for name, label in METRIC_LABELS
         ]
+        routing = plan.metrics.routing or {}
+        for name in ("matrix_cells", "retry_attempts"):
+            if name in routing:
+                rows.append([f"routing.{name}", name, routing[name]])
+        for group, label in ROUTING_GROUP_LABELS.items():
+            for name, value in sorted(routing.get(group, {}).items()):
+                rows.append([f"routing.{group}.{name}", f"{label}: {name}", value])
+        for stage, values in sorted(routing.get("stages", {}).items()):
+            for name, value in sorted(values.items()):
+                rows.append([f"routing.stages.{stage}.{name}", f"Этап {stage}: {name}", value])
         rows += [
             [f"unassigned_by_category.{category}", f"Не назначено: {category}", count]
             for category, count in sorted(plan.metrics.unassigned_by_category.items())

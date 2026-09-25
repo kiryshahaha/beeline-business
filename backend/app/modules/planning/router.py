@@ -31,6 +31,7 @@ from app.modules.planning.schemas import (
     PolicyRead,
     PreviewRequest,
 )
+from app.modules.routing.cache import GEOAPIFY_RESULT_CACHE
 from app.modules.routing.client import AsyncGeoapifyRoutingClient
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
@@ -68,7 +69,12 @@ def get_provider_factory(settings=Depends(planning_settings)):
     if not settings.geoapify_api_key:
         raise HTTPException(503, detail={"code": "routing_not_configured"})
     return lambda: AsyncGeoapifyRoutingClient(
-        settings.geoapify_api_key, timeout=settings.geoapify_timeout_seconds
+        settings.geoapify_api_key,
+        timeout=settings.geoapify_timeout_seconds,
+        max_retries=settings.geoapify_max_retries,
+        cache=GEOAPIFY_RESULT_CACHE,
+        cache_ttl_seconds=settings.geoapify_cache_ttl_seconds,
+        coordinate_precision=settings.geoapify_cache_coordinate_precision,
     )
 
 

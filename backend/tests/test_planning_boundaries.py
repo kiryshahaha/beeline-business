@@ -97,13 +97,14 @@ class PlanningBoundaryTests(unittest.IsolatedAsyncioTestCase):
                     )
         async with AsyncGeoapifyRoutingClient(
             "secret",
+            max_retries=0,
             transport=httpx.MockTransport(
                 lambda _: httpx.Response(429, text="secret-provider-error")
             ),
         ) as provider:
             with self.assertRaises(PlanningError) as result:
                 await provider.build_route(origin=(37, 55), destination=(38, 55), mode="drive")
-            self.assertEqual(result.exception.code, "routing_unavailable")
+            self.assertEqual(result.exception.code, "routing_rate_limited")
             self.assertNotIn("secret", str(result.exception))
 
     async def test_planner_client_validates_schema_and_error_mapping(self):
@@ -158,7 +159,7 @@ class PlanningBoundaryTests(unittest.IsolatedAsyncioTestCase):
             response = client.post("/api/v1/planning/preview", content=b"a" * 65537)
         self.assertEqual(response.status_code, 413)
 
-    def test_disconnected_geoapify_lines_are_not_connected_artificially(self):
+    def test_disconnected_geoapify_lines_are_rejected_without_a_fake_connector(self):
         geo = {
             "type": "FeatureCollection",
             "properties": {"worker_id": 1, "route_date": "2030-01-15", "route_number": 1},
@@ -205,8 +206,8 @@ class PlanningBoundaryTests(unittest.IsolatedAsyncioTestCase):
                 },
             ],
         }
-        result = RouteGeoJSON.model_validate(geo)
-        self.assertEqual(len(result.features[-1].geometry.coordinates), 2)
+        with self.assertRaises(ValueError):
+            RouteGeoJSON.model_validate(geo)
         invalid = copy.deepcopy(geo)
         invalid["features"][-1]["geometry"]["coordinates"][0][0] = [30.0, 55.0]
         with self.assertRaises(ValueError):

@@ -17,6 +17,7 @@ RouteMode = Literal[
     "scooter",
     "motorcycle",
 ]
+MAX_INTERNAL_LINE_GAP_METERS = 1.0
 SUPPORTED_ROUTE_MODES: tuple[RouteMode, ...] = (
     "drive",
     "transit",
@@ -122,6 +123,7 @@ class GeoapifyPathProperties(StrictModel):
     kind: Literal["path"] = "path"
     source: Literal["geoapify"] = "geoapify"
     mode: RouteMode
+    approximate: bool = False
     traffic: Literal["free_flow"] = "free_flow"
     route_type: Literal["balanced"] = "balanced"
     snap_limit_meters: float = Field(default=100, gt=0, le=1000, allow_inf_nan=False)
@@ -243,14 +245,22 @@ class RouteGeoJSON(StrictModel):
                     if leg.geometry_end == cursor:
                         if start != end or leg.distance_meters != 0 or leg.duration_seconds != 0:
                             raise ValueError("Пустая линия только для совпадающих точек")
-                    elif any(
-                        position_distance(a, b) > path.properties.snap_limit_meters
-                        for a, b in (
-                            (start, lines[cursor][0]),
-                            (end, lines[leg.geometry_end - 1][-1]),
-                        )
-                    ):
-                        raise ValueError("Геометрия слишком далеко от точки визита")
+                    else:
+                        segments = lines[cursor : leg.geometry_end]
+                        if any(
+                            position_distance(a, b) > path.properties.snap_limit_meters
+                            for a, b in (
+                                (start, segments[0][0]),
+                                (end, segments[-1][-1]),
+                            )
+                        ):
+                            raise ValueError("Геометрия слишком далеко от точки визита")
+                        if any(
+                            position_distance(previous[-1], following[0])
+                            > MAX_INTERNAL_LINE_GAP_METERS
+                            for previous, following in zip(segments, segments[1:])
+                        ):
+                            raise ValueError("Разрыв внутри геометрии перехода")
                     cursor = leg.geometry_end
                 if cursor != len(lines):
                     raise ValueError("Неучтённые линии маршрута")
