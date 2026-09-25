@@ -304,6 +304,13 @@ class UserRead(BaseModel):
     worker_profile: WorkerProfileRead | None = None
     brigade_id: PositiveInt32 | None = None
     brigade_name: str | None = None
+    archived_at: AwareDatetime | None = Field(
+        default=None,
+        description=(
+            "Момент архивирования: учётная запись не входит в систему и не получает работу, "
+            "история сохраняется. null — активна."
+        ),
+    )
 
 
 USER_UPDATE_EXAMPLE = {

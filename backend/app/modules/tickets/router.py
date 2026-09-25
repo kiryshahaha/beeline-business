@@ -14,7 +14,9 @@ from app.modules.execution.schemas import ExecutionCommand, WindowChangeCommand
 from app.modules.tickets import service
 from app.modules.tickets.enums import TicketStatus
 from app.modules.tickets.schemas import (
-    TicketAssigneesUpdate,
+    AssignmentPreviewRequest,
+    AssignmentPreviewResponse,
+    TicketAssignmentUpdate,
     TicketCreate,
     TicketRead,
     TicketSlaEstimateRead,
@@ -170,20 +172,22 @@ def estimate_ticket_sla(
 
 
 @router.put("/{id}/assignees", response_model=TicketRead)
-def replace_ticket_assignees(
+def update_ticket_assignment(
     id: Annotated[int, Path(ge=1, le=2_147_483_647)],
-    data: TicketAssigneesUpdate,
+    data: TicketAssignmentUpdate,
     session: DatabaseSession,
     _current_user: CurrentObserver,
 ) -> TicketRead:
-    """Replace the complete worker list; newly assigned workers receive an event."""
+    """Replace the assigned worker; newly assigned workers receive an event."""
     try:
-        return service.replace_assignees(session, id, data.worker_ids, actor_id=_current_user.id)
+        return service.update_assignment(
+            session, id, data.worker_id, data.is_pinned, actor_id=_current_user.id
+        )
     except service.TicketNotFoundError as error:
         raise HTTPException(status_code=404, detail="Заявка не найдена") from error
     except service.WorkerNotFoundError as error:
         raise HTTPException(
-            status_code=422, detail="Один или несколько исполнителей не найдены"
+            status_code=422, detail="Один или несколько исполнителей не найдены или в архиве"
         ) from error
     except service.WorkerOffLineError as error:
         raise HTTPException(
@@ -197,6 +201,22 @@ def replace_ticket_assignees(
         ) from error
     except InventoryError as error:
         raise HTTPException(status_code=error.status, detail=error.detail()) from error
+
+
+@router.post("/{id}/assign/preview", response_model=AssignmentPreviewResponse)
+def preview_ticket_assignment(
+    id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    data: AssignmentPreviewRequest,
+    session: DatabaseSession,
+    _current_user: CurrentObserver,
+) -> AssignmentPreviewResponse:
+    """Preview the assignment of a worker to a ticket without saving."""
+    try:
+        return service.preview_assignment(session, id, data.worker_id)
+    except service.TicketNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Заявка не найдена") from error
+    except service.WorkerNotFoundError as error:
+        raise HTTPException(status_code=422, detail="Исполнитель не найден") from error
 
 
 @router.patch("/{id}/status", response_model=TicketRead)

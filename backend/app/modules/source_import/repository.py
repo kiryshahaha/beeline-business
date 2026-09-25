@@ -179,9 +179,7 @@ def ticket_state(session: Session, ticket_id: int) -> RowMapping:
     return (
         session.execute(
             text("""
-                SELECT t.lifecycle_state, t.status,
-                       EXISTS (SELECT 1 FROM ticket_assignments AS a WHERE a.ticket_id = t.id)
-                           AS assigned
+                SELECT t.lifecycle_state, t.status, t.assigned_worker_id IS NOT NULL AS assigned
                 FROM tickets AS t
                 WHERE t.id = :id
                 FOR UPDATE

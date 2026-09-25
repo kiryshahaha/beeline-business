@@ -1,6 +1,5 @@
 import math
 from datetime import UTC, datetime, timedelta
-from hashlib import sha256
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import RowMapping, text
@@ -213,7 +212,8 @@ def _ticket_from_row(details: RowMapping) -> TicketRead:
         last_event_id=details["last_event_id"],
         created_at=details["created_at"],
         updated_at=details["updated_at"],
-        assignee_ids=list(details["assignee_ids"]),
+        assigned_worker_id=details["assigned_worker_id"],
+        is_pinned=details["is_pinned"],
         location=LocationRead(
             id=details["location_id"],
             city_id=details["city_id"],
@@ -345,27 +345,39 @@ def create_ticket(
         return get_ticket_unscoped(session, ticket_id)
 
 
-def replace_assignees(
-    session: Session, ticket_id: int, worker_ids: list[int], *, actor_id: int | None = None
+def update_assignment(
+    session: Session,
+    ticket_id: int,
+    worker_id: int | None,
+    is_pinned: bool,
+    *,
+    actor_id: int | None = None,
 ) -> TicketRead:
     with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
-        return replace_assignees_in_transaction(session, ticket_id, worker_ids, actor_id=actor_id)
+        return update_assignment_in_transaction(
+            session, ticket_id, worker_id, is_pinned, actor_id=actor_id
+        )
 
 
-def replace_assignees_in_transaction(
-    session: Session, ticket_id: int, worker_ids: list[int], *, actor_id: int | None = None
+def update_assignment_in_transaction(
+    session: Session,
+    ticket_id: int,
+    worker_id: int | None,
+    is_pinned: bool,
+    *,
+    actor_id: int | None = None,
 ) -> TicketRead:
     ticket = repository.lock_ticket(session, ticket_id)
     if ticket is None:
         raise TicketNotFoundError
-    worker_line_statuses = repository.find_worker_line_statuses(session, worker_ids)
-    if set(worker_line_statuses) != set(worker_ids):
-        raise WorkerNotFoundError
-    if not all(worker_line_statuses.values()):
-        raise WorkerOffLineError
+    if worker_id is not None:
+        worker_line_statuses = repository.find_worker_line_statuses(session, [worker_id])
+        if worker_id not in worker_line_statuses:
+            raise WorkerNotFoundError
+        if not worker_line_statuses[worker_id]:
+            raise WorkerOffLineError
 
-    if worker_ids:
         t_area = ticket.get("service_area_id")
         if t_area is None and ticket.get("location_id"):
             t_area = session.execute(
@@ -382,66 +394,66 @@ def replace_assignees_in_transaction(
                 {"location_id": ticket["location_id"]},
             ).scalar_one_or_none()
 
-        for wid in worker_ids:
-            worker_row = (
-                session.execute(
-                    text("SELECT service_area_id FROM workers WHERE user_id = :user_id"),
-                    {"user_id": wid},
-                )
-                .mappings()
-                .first()
+        worker_row = (
+            session.execute(
+                text("SELECT service_area_id FROM workers WHERE user_id = :user_id"),
+                {"user_id": worker_id},
             )
-            w_area = worker_row["service_area_id"] if worker_row else None
-            if w_area is None:
-                w_area = session.execute(
-                    text(
-                        """
-                        SELECT sa.id
-                        FROM brigade_members AS bm
-                        JOIN brigades AS b ON b.id = bm.brigade_id
-                        JOIN offices AS off ON off.id = b.office_id
-                        JOIN locations AS loc ON loc.id = off.location_id
-                        JOIN buildings AS bld ON bld.id = loc.building_id
-                        JOIN service_areas AS sa ON sa.code = 'district_' || bld.district_id
-                        WHERE bm.worker_id = :wid
-                        LIMIT 1
-                        """
-                    ),
-                    {"wid": wid},
-                ).scalar_one_or_none()
+            .mappings()
+            .first()
+        )
+        w_area = worker_row["service_area_id"] if worker_row else None
+        if w_area is None:
+            w_area = session.execute(
+                text(
+                    """
+                    SELECT sa.id
+                    FROM brigade_members AS bm
+                    JOIN brigades AS b ON b.id = bm.brigade_id
+                    JOIN offices AS off ON off.id = b.office_id
+                    JOIN locations AS loc ON loc.id = off.location_id
+                    JOIN buildings AS bld ON bld.id = loc.building_id
+                    JOIN service_areas AS sa ON sa.code = 'district_' || bld.district_id
+                    WHERE bm.worker_id = :wid
+                    LIMIT 1
+                    """
+                ),
+                {"wid": worker_id},
+            ).scalar_one_or_none()
 
-            if t_area is not None and w_area is not None and t_area != w_area:
-                raise ServiceAreaMismatchError
-
+        if t_area is not None and w_area is not None and t_area != w_area:
+            raise ServiceAreaMismatchError
     from app.modules.appliances import inventory
 
-    inventory.check_reassignment(session, ticket_id, worker_ids)
-    new_worker_ids = repository.replace_assignees(session, ticket_id, worker_ids)
-    for worker_id in new_worker_ids:
+    inventory.check_reassignment(session, ticket_id, [worker_id] if worker_id else [])
+    old_worker_id, new_worker_id = repository.update_assignment(
+        session, ticket_id, worker_id, is_pinned
+    )
+
+    if new_worker_id is not None and new_worker_id != old_worker_id:
         repository.add_notification_events(
             session,
-            [worker_id],
+            [new_worker_id],
             kind=NotificationKind.TICKET_ASSIGNED,
             ticket_id=ticket_id,
-            data={"title": ticket["title"], "worker_id": worker_id},
+            data={"title": ticket["title"], "worker_id": new_worker_id},
         )
+
+    # Generate execution event if assignment changed
     if (
-        new_worker_ids
+        new_worker_id != old_worker_id
         and TicketLifecycleState(ticket["lifecycle_state"])
         == TicketLifecycleState.WAITING_ASSIGNMENT
+        and new_worker_id is not None
     ):
         command = ExecutionCommand.model_construct(
             expected_revision=ticket["revision"],
             occurred_at=datetime.now(UTC),
             reason=None,
             expected_available_at=None,
-            payload={"worker_ids": sorted(worker_ids)},
+            payload={"worker_ids": [new_worker_id]},
         )
-        assignment_key = (
-            f"assign:{ticket_id}:{ticket['revision']}:{','.join(map(str, sorted(worker_ids)))}"
-        )
-        if len(assignment_key) > 128:
-            assignment_key = "assign:" + sha256(assignment_key.encode()).hexdigest()
+        assignment_key = f"assign:{ticket_id}:{ticket['revision']}:{new_worker_id}"
         execution_service.apply_ticket_event(
             session,
             ticket_id,
@@ -496,3 +508,76 @@ def update_ticket_status(
             compatibility=True,
         )
         return result.ticket
+
+
+def preview_assignment(session: Session, ticket_id: int, worker_id: int):
+    from datetime import datetime
+
+    from app.core.config import get_settings
+    from app.modules.planning.eligibility import MOSCOW, prepare
+    from app.modules.planning.policy import execution_policy
+    from app.modules.planning.repository import load_snapshot
+    from app.modules.planning.schemas import PreviewRequest
+    from app.modules.tickets.schemas import AssignmentPreviewResponse
+
+    ticket = repository.lock_ticket(session, ticket_id)
+    if ticket is None:
+        raise TicketNotFoundError
+
+    worker_line_statuses = repository.find_worker_line_statuses(session, [worker_id])
+    if worker_id not in worker_line_statuses:
+        raise WorkerNotFoundError
+
+    district_id = session.execute(
+        text(
+            """
+            SELECT building.district_id
+            FROM locations AS location
+            JOIN buildings AS building ON building.id = location.building_id
+            WHERE location.id = :location_id
+            """
+        ),
+        {"location_id": ticket["location_id"]},
+    ).scalar()
+
+    request = PreviewRequest(
+        route_date=ticket["visit_window_start"].astimezone(MOSCOW).date().isoformat(),
+        district_id=district_id,
+        ticket_ids=[ticket_id],
+        worker_ids=[worker_id],
+        allow_partial=True,
+    )
+
+    settings = get_settings()
+    policy = execution_policy(settings)
+    snapshot = load_snapshot(
+        session,
+        request,
+        policy_snapshot={
+            "policy_version": policy.policy_version,
+            "planning_policy": policy.model_dump(mode="json"),
+        },
+    )
+    # Remove existing assignment of THIS ticket so prepare doesn't reject with 'already_assigned'
+    snapshot["assignments"] = [a for a in snapshot["assignments"] if a["ticket_id"] != ticket_id]
+
+    prepared = prepare(snapshot, datetime.now(UTC))
+
+    violations = []
+
+    worker_excluded = [
+        w for w in prepared.get("excluded_workers", []) if w["worker_id"] == worker_id
+    ]
+    if worker_excluded:
+        violations.append(worker_excluded[0]["reason"])
+
+    ticket_unassigned = [t for t in prepared.get("unassigned", []) if t["ticket_id"] == ticket_id]
+    if ticket_unassigned:
+        violations.append(ticket_unassigned[0]["reason"])
+
+    return AssignmentPreviewResponse(
+        is_eligible=len(violations) == 0,
+        violations=violations,
+        route_shift_minutes=0,
+        sla_violations_added=0,
+    )

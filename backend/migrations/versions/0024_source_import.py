@@ -1,15 +1,15 @@
 """Provenance of organizer source files: imports, addresses and per-row records.
 
-Revision ID: 0023
-Revises: 0022
+Revision ID: 0024
+Revises: 0d5647f7d664
 """
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0023"
-down_revision = "0022"
+revision = "0024"
+down_revision = "0d5647f7d664"
 branch_labels = None
 depends_on = None
 

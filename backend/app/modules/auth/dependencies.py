@@ -45,9 +45,13 @@ def get_current_user(
     try:
         # Finish the authentication read before the endpoint starts its write transaction.
         with session.begin():
-            return users_service.get_user(session, user_id)
+            user = users_service.get_user(session, user_id)
     except users_service.UserNotFoundError as error:
         raise credentials_exception from error
+    # An archived account keeps its history but a still valid access token opens nothing.
+    if user.archived_at is not None:
+        raise credentials_exception
+    return user
 
 
 def require_roles(*allowed_roles: UserRole) -> Callable[[UserRead], UserRead]:

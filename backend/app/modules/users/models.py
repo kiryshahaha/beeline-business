@@ -41,6 +41,8 @@ class User(IntegerIdMixin, Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    # Archived accounts keep their identity and history but cannot sign in or receive work.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         CheckConstraint("name = btrim(name) AND name <> ''", name="name_not_blank"),

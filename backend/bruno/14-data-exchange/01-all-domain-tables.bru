@@ -22,11 +22,9 @@ tests {
   test("Полная схема без секретов", () => {
     const schema = res.getBody();
     const tables = Object.keys(schema.tables);
-
-    expect(tables).to.have.lengthOf(31);
+    expect(tables).to.have.lengthOf(30);
     expect(tables).to.include.members([
       "divisions",
-      "service_areas",
       "equipment_movements",
       "work_events",
       "worker_day_states",

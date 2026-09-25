@@ -1,0 +1,20 @@
+meta {
+  name: Восстановление из архива
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{base_url}}/api/v1/users/{{history_temp_id}}/restore
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.archived_at: isNull
+}

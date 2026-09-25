@@ -61,6 +61,7 @@ LEGACY = {
     "not_selected_by_solver": ("search", "Решатель не включил заявку в план"),
     "invalid_worker_role": ("data", "Пользователь не является инженером"),
     "worker_offline": ("availability", "Инженер снят с линии"),
+    "worker_archived": ("availability", "Инженер в архиве"),
     "worker_unavailable": ("availability", "Инженер недоступен до конца смены"),
     "worker_en_route": ("availability", "Инженер уже направляется к заявке"),
     "missing_office": ("data", "Инженер не привязан к офису"),
@@ -146,6 +147,17 @@ def invalid_worker_role(role):
         "Пользователь не является инженером",
         observed={"role": role},
         required={"role": "worker"},
+    )
+
+
+def worker_archived():
+    return explain(
+        "worker_archived",
+        "availability",
+        "Инженер в архиве: история сохранена, новые заявки не назначаются",
+        constraint="active_account",
+        observed={"archived": True},
+        required={"archived": False},
     )
 
 

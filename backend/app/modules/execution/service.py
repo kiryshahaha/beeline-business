@@ -176,8 +176,8 @@ def _worker_context(
                 """
                 SELECT EXISTS (
                     SELECT 1
-                    FROM ticket_assignments
-                    WHERE ticket_id = :ticket_id AND worker_id = :worker_id
+                    FROM tickets
+                        WHERE id = :ticket_id AND assigned_worker_id = :worker_id
                 )
                 """
             ),
@@ -519,7 +519,7 @@ def reopen_ticket(
             {"ticket_id": ticket_id},
         )
         session.execute(
-            text("DELETE FROM ticket_assignments WHERE ticket_id = :ticket_id"),
+            text("UPDATE tickets SET assigned_worker_id = NULL WHERE id = :ticket_id"),
             {"ticket_id": ticket_id},
         )
         repository.attach_last_event(session, ticket_id, event_id)

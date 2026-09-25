@@ -16,6 +16,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.cell import WriteOnlyCell
 from sqlalchemy import JSON, Boolean, Date, DateTime, Enum, Integer, Numeric, String, Time
 
+from app.core.spreadsheet import XLSX_MAX_CELL_UNITS, starts_like_formula, xlsx_length
 from app.modules.data_exchange.registry import (
     FORMAT_VERSION,
     READABLE_FORMATS,
@@ -77,9 +78,7 @@ def encode_cell(value) -> str:
         return "\\T" + json.dumps(value, ensure_ascii=True)
     # Escape strings so opening CSV in a spreadsheet cannot execute a formula.
     # Prefix backslashes too, preserving the distinction between NULL and literal \N.
-    if value.startswith(("'", "\\")) or value.lstrip().startswith(("=", "+", "-", "@")):
-        return "'" + value
-    if value.startswith(("\t", "\r", "\n")):
+    if value.startswith(("'", "\\")) or starts_like_formula(value):
         return "'" + value
     return value
 
@@ -94,9 +93,7 @@ def _decode_cell(value):
             return json.loads(value[2:])
         if value.startswith("'"):
             rest = value[1:]
-            if rest.startswith(("'", "\\", "\t", "\r", "\n")) or rest.lstrip().startswith(
-                ("=", "+", "-", "@")
-            ):
+            if rest.startswith(("'", "\\")) or starts_like_formula(rest):
                 return rest
     return value
 
@@ -446,7 +443,7 @@ def serialize(tables: dict[str, list[dict]], format: str) -> bytes:
         for name, rows in tables.items():
             for row_number, row in enumerate(rows, 2):
                 for column in columns_for(name):
-                    if len(encode_cell(row.get(column.name))) > 32767:
+                    if xlsx_length(encode_cell(row.get(column.name))) > XLSX_MAX_CELL_UNITS:
                         raise ExchangeError(
                             "Ячейка длиннее лимита XLSX (32767); используйте CSV",
                             name,

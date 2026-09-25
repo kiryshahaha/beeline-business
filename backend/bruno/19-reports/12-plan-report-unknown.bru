@@ -1,0 +1,20 @@
+meta {
+  name: Отчёт по неизвестному плану — 404
+  type: http
+  seq: 12
+}
+
+get {
+  url: {{base_url}}/api/v1/reports/plans/00000000-0000-4000-8000-000000000000/export
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 404
+  res.body.detail.code: eq plan_not_found
+}

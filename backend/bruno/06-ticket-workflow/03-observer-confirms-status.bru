@@ -30,6 +30,6 @@ tests {
   test("Статус изменён наблюдателем, исполнитель сохранён", function () {
     const ticket = res.getBody();
     expect(ticket.status).to.equal("in_progress");
-    expect(ticket.assignee_ids).to.include(Number(bru.getVar("worker_id")));
+    expect(ticket.assigned_worker_id).to.equal(Number(bru.getVar("worker_id")));
   });
 }

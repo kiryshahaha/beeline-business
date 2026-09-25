@@ -1,0 +1,31 @@
+meta {
+  name: План показывает инженера и его бригаду
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/planning/plans/{{planning_plan_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Принадлежность на момент расчёта и текущее состояние", function () {
+    const id = Number(bru.getVar("history_worker_id"));
+    const worker = res.getBody().workers.find(function (w) { return w.worker_id === id; });
+    expect(worker, "инженер в плане").to.be.an("object");
+    expect(worker.brigade_id).to.be.a("number");
+    expect(worker.full_name).to.be.a("string");
+    expect(worker.role).to.equal("worker");
+    expect(worker.archived_at).to.equal(null);
+  });
+}

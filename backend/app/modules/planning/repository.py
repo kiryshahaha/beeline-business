@@ -17,7 +17,6 @@ from app.db.models import (
     Ticket,
     TicketAppliance,
     TicketApplianceState,
-    TicketAssignment,
     User,
     Worker,
     WorkerDayState,
@@ -90,22 +89,38 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
             select(User.id, User.role).where(User.id.in_(worker_ids)).order_by(User.id)
         ).mappings()
     ]
+    archived_worker_ids = list(
+        session.scalars(
+            select(User.id)
+            .where(User.id.in_(worker_ids), User.archived_at.is_not(None))
+            .order_by(User.id)
+        )
+    )
     active_tickets = select(Ticket.id).where(Ticket.status.in_(["planned", "in_progress"]))
-    assignments = rows(
+
+    # Simulate assignments list of dicts for compatibility with planner
+    assigned_tickets = rows(
         session,
-        TicketAssignment,
+        Ticket,
         or_(
-            TicketAssignment.ticket_id.in_(ticket_ids),
+            Ticket.id.in_(ticket_ids),
             and_(
-                TicketAssignment.worker_id.in_(worker_ids),
-                TicketAssignment.ticket_id.in_(active_tickets),
+                Ticket.assigned_worker_id.in_(worker_ids),
+                Ticket.id.in_(active_tickets),
             ),
         ),
     )
+    assignments = [
+        {"ticket_id": t["id"], "worker_id": t["assigned_worker_id"], "assigned_at": t["updated_at"]}
+        for t in assigned_tickets
+        if t["assigned_worker_id"] is not None
+    ]
     busy_ids = {a["ticket_id"] for a in assignments if a["worker_id"] in worker_ids}
-    busy = rows(
-        session, Ticket, Ticket.id.in_(busy_ids), Ticket.status.in_(["planned", "in_progress"])
-    )
+    busy = [
+        t
+        for t in assigned_tickets
+        if t["id"] in busy_ids and t["status"] in ("planned", "in_progress")
+    ]
     members = rows(session, BrigadeMember, BrigadeMember.worker_id.in_(worker_ids))
     brigades = rows(session, Brigade, Brigade.id.in_({m["brigade_id"] for m in members}))
     brigade_by_id = {brigade["id"]: brigade for brigade in brigades}
@@ -280,5 +295,8 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
             "worker_service_areas": worker_service_areas,
             "worker_day_states": worker_day_states,
             "current_day_revision": current_day_revision,
+            # Only when present: snapshots of plans calculated before archiving existed,
+            # and of plans without archived engineers, keep their fingerprints.
+            **({"archived_worker_ids": archived_worker_ids} if archived_worker_ids else {}),
         }
     )

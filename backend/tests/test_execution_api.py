@@ -122,8 +122,8 @@ class ExecutionApiTests(DatabaseTestCase):
                 "description": "Проверка execution API",
                 "work_type_id": 1,
                 "status": "planned",
-                "visit_window_start": "2030-01-15T08:00:00+00:00",
-                "visit_window_end": "2030-01-15T16:00:00+00:00",
+                "visit_window_start": "2030-01-15T11:00:00+03:00",
+                "visit_window_end": "2030-01-15T19:00:00+03:00",
                 "planned_start_at": None,
                 "planned_end_at": None,
                 "estimated_duration_minutes": 60,
@@ -137,7 +137,7 @@ class ExecutionApiTests(DatabaseTestCase):
     def _assign(self, ticket_id):
         response = self.client.put(
             f"/api/v1/tickets/{ticket_id}/assignees",
-            json={"worker_ids": [self.worker.id]},
+            json={"worker_id": self.worker.id},
             headers=self._auth(self.observer),
         )
         self.assertEqual(response.status_code, 200, response.text)
@@ -176,7 +176,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 f"/api/v1/tickets/{ticket_id}/dispatch",
                 2,
                 f"dispatch-{ticket_id}",
-                "2030-01-15T09:00:00+00:00",
+                "2030-01-15T12:00:00+03:00",
             ).status_code,
             200,
         )
@@ -185,7 +185,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 f"/api/v1/tickets/{ticket_id}/start-route",
                 3,
                 f"route-{ticket_id}",
-                "2030-01-15T10:00:00+00:00",
+                "2030-01-15T13:00:00+03:00",
                 worker=True,
                 location_id=self.source_location_id,
             ).status_code,
@@ -195,7 +195,7 @@ class ExecutionApiTests(DatabaseTestCase):
             f"/api/v1/tickets/{ticket_id}/start",
             4,
             f"start-{ticket_id}",
-            "2030-01-15T11:00:00+00:00",
+            "2030-01-15T14:00:00+03:00",
             worker=True,
             location_id=self.destination_location_id,
         )
@@ -211,10 +211,10 @@ class ExecutionApiTests(DatabaseTestCase):
             f"/api/v1/tickets/{ticket_id}/window-change",
             2,
             "lifecycle-window-change",
-            "2030-01-15T08:30:00+00:00",
+            "2030-01-15T11:30:00+03:00",
             reason="Клиент подтвердил новое окно",
-            new_window_start="2030-01-15T09:00:00+00:00",
-            new_window_end="2030-01-15T17:00:00+00:00",
+            new_window_start="2030-01-15T12:00:00+03:00",
+            new_window_end="2030-01-15T20:00:00+03:00",
         )
         self.assertEqual(shifted.status_code, 200, shifted.text)
         self.assertEqual(shifted.json()["revision"], 3)
@@ -244,7 +244,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 f"/api/v1/tickets/{ticket_id}/dispatch",
                 3,
                 "lifecycle-dispatch",
-                "2030-01-15T09:00:00+00:00",
+                "2030-01-15T12:00:00+03:00",
             ).json()["state"],
             "dispatched",
         )
@@ -252,7 +252,7 @@ class ExecutionApiTests(DatabaseTestCase):
             f"/api/v1/tickets/{ticket_id}/start-route",
             4,
             "lifecycle-route",
-            "2030-01-15T10:00:00+00:00",
+            "2030-01-15T13:00:00+03:00",
             worker=True,
             location_id=self.source_location_id,
         )
@@ -278,7 +278,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 "current_ticket_id": ticket_id,
                 "new_destination_id": self.source_location_id,
                 "expected_day_revision": 1,
-                "occurred_at": "2030-01-15T10:30:00+00:00",
+                "occurred_at": "2030-01-15T13:30:00+03:00",
                 "reason": "Клиент подтвердил новый адрес",
             },
             headers=self._auth(self.observer) | {"Idempotency-Key": "lifecycle-redirect"},
@@ -292,7 +292,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 "current_ticket_id": ticket_id,
                 "new_destination_id": self.source_location_id,
                 "expected_day_revision": 1,
-                "occurred_at": "2030-01-15T10:30:00+00:00",
+                "occurred_at": "2030-01-15T13:30:00+03:00",
                 "reason": "Клиент подтвердил новый адрес",
             },
             headers=self._auth(self.observer) | {"Idempotency-Key": "lifecycle-redirect"},
@@ -304,7 +304,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 f"/api/v1/tickets/{ticket_id}/start",
                 5,
                 "lifecycle-start",
-                "2030-01-15T11:00:00+00:00",
+                "2030-01-15T14:00:00+03:00",
                 worker=True,
                 location_id=self.source_location_id,
             ).json()["state"],
@@ -314,17 +314,17 @@ class ExecutionApiTests(DatabaseTestCase):
             f"/api/v1/tickets/{ticket_id}/delay",
             6,
             "lifecycle-delay",
-            "2030-01-15T12:00:00+00:00",
+            "2030-01-15T15:00:00+03:00",
             worker=True,
             reason="Работа заняла больше времени",
-            expected_available_at="2030-01-15T14:00:00+00:00",
+            expected_available_at="2030-01-15T17:00:00+03:00",
         )
         self.assertEqual(delay.status_code, 200, delay.text)
         complete = self._command(
             f"/api/v1/tickets/{ticket_id}/complete",
             7,
             "lifecycle-complete",
-            "2030-01-15T15:00:00+00:00",
+            "2030-01-15T18:00:00+03:00",
             worker=True,
             location_id=self.source_location_id,
         )
@@ -335,7 +335,7 @@ class ExecutionApiTests(DatabaseTestCase):
             params={
                 "district_id": self.district_id,
                 "date": self.route_date.isoformat(),
-                "at": "2030-01-15T10:15:00+00:00",
+                "at": "2030-01-15T13:15:00+03:00",
             },
             headers=self._auth(self.observer),
         )
@@ -347,7 +347,7 @@ class ExecutionApiTests(DatabaseTestCase):
             f"/api/v1/tickets/{ticket_id}/complete",
             7,
             "lifecycle-complete",
-            "2030-01-15T15:00:00+00:00",
+            "2030-01-15T18:00:00+03:00",
             worker=True,
             location_id=self.source_location_id,
         )
@@ -356,7 +356,7 @@ class ExecutionApiTests(DatabaseTestCase):
             f"/api/v1/tickets/{ticket_id}/reopen",
             8,
             "lifecycle-reopen",
-            "2030-01-15T16:00:00+00:00",
+            "2030-01-15T19:00:00+03:00",
             reason="Повторный выезд подтверждён",
         )
         self.assertEqual(
@@ -367,7 +367,7 @@ class ExecutionApiTests(DatabaseTestCase):
             f"/api/v1/tickets/{ticket_id}/cancel",
             9,
             "lifecycle-cancel",
-            "2030-01-15T17:00:00+00:00",
+            "2030-01-15T20:00:00+03:00",
             reason="Клиент отменил визит",
         )
         self.assertEqual(cancelled.json()["state"], "cancelled")
@@ -414,7 +414,7 @@ class ExecutionApiTests(DatabaseTestCase):
             f"/api/v1/tickets/{ticket_id}/dispatch",
             2,
             "same-command-key",
-            "2030-01-15T09:00:00+00:00",
+            "2030-01-15T12:00:00+03:00",
         )
         self.assertEqual(first.status_code, 200, first.text)
         self.assertEqual(
@@ -422,7 +422,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 f"/api/v1/tickets/{ticket_id}/dispatch",
                 2,
                 "same-command-key",
-                "2030-01-15T09:00:00+00:00",
+                "2030-01-15T12:00:00+03:00",
             ).status_code,
             200,
         )
@@ -431,7 +431,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 f"/api/v1/tickets/{ticket_id}/start-route",
                 3,
                 "same-command-key",
-                "2030-01-15T10:00:00+00:00",
+                "2030-01-15T13:00:00+03:00",
                 worker=True,
             ).status_code,
             409,
@@ -440,7 +440,7 @@ class ExecutionApiTests(DatabaseTestCase):
             f"/api/v1/tickets/{ticket_id}/start-route",
             2,
             "stale-command",
-            "2030-01-15T10:00:00+00:00",
+            "2030-01-15T13:00:00+03:00",
             worker=True,
         )
         self.assertEqual(stale.status_code, 409, stale.text)
@@ -466,7 +466,7 @@ class ExecutionApiTests(DatabaseTestCase):
             f"/api/v1/tickets/{ticket_id}/cancel",
             2,
             "missing-cancel-reason",
-            "2030-01-15T09:00:00+00:00",
+            "2030-01-15T12:00:00+03:00",
         )
         self.assertEqual(missing_reason.status_code, 422)
 
@@ -479,7 +479,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 "expected_revision": 1,
                 "district_id": self.district_id,
                 "route_date": self.route_date.isoformat(),
-                "occurred_at": "2030-01-15T12:00:00+00:00",
+                "occurred_at": "2030-01-15T15:00:00+03:00",
                 "worker_id": self.worker.id,
                 "reason": "Инженер сообщил о недоступности",
                 "payload": {},
@@ -495,7 +495,10 @@ class ExecutionApiTests(DatabaseTestCase):
         )
         self.assertEqual(
             self.session.execute(
-                text("SELECT count(*) FROM ticket_assignments WHERE ticket_id=:ticket_id"),
+                text(
+                    "SELECT count(*) FROM tickets "
+                    "WHERE id=:ticket_id AND assigned_worker_id IS NOT NULL"
+                ),
                 {"ticket_id": ticket_id},
             ).scalar_one(),
             0,
@@ -506,7 +509,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 "expected_revision": 1,
                 "district_id": self.district_id,
                 "route_date": self.route_date.isoformat(),
-                "occurred_at": "2030-01-15T12:00:00+00:00",
+                "occurred_at": "2030-01-15T15:00:00+03:00",
                 "worker_id": self.worker.id,
                 "reason": "Инженер сообщил о недоступности",
                 "payload": {},
@@ -541,7 +544,7 @@ class ExecutionApiTests(DatabaseTestCase):
             f"/api/v1/tickets/{ticket_id}/complete",
             5,
             "equipment-complete",
-            "2030-01-15T12:00:00+00:00",
+            "2030-01-15T15:00:00+03:00",
             worker=True,
             location_id=self.destination_location_id,
         )
@@ -561,7 +564,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 f"/api/v1/tickets/{ticket_id}/complete",
                 5,
                 "equipment-complete",
-                "2030-01-15T12:00:00+00:00",
+                "2030-01-15T15:00:00+03:00",
                 worker=True,
                 location_id=self.destination_location_id,
             ).status_code,
@@ -571,7 +574,7 @@ class ExecutionApiTests(DatabaseTestCase):
             f"/api/v1/tickets/{ticket_id}/reopen",
             6,
             "equipment-reopen",
-            "2030-01-15T13:00:00+00:00",
+            "2030-01-15T16:00:00+03:00",
             reason="Повторная заявка",
         )
         self.assertEqual(reopened.status_code, 200, reopened.text)

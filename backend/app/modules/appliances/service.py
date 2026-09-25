@@ -92,7 +92,7 @@ def _check_foreman_ticket_access(
     if current_user.role == UserRole.WORKER:
         # Worker can view their assigned tickets
         row = tickets_repo.find_ticket(session, ticket_id)
-        if row is None or current_user.id not in row["assignee_ids"]:
+        if row is None or current_user.id != row["assigned_worker_id"]:
             raise PermissionDeniedError("Нет доступа к заявке")
 
 

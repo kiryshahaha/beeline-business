@@ -12,7 +12,8 @@ from app.db.base import Base, IntegerIdMixin
 class Route(IntegerIdMixin, Base):
     __tablename__ = "routes"
 
-    worker_id: Mapped[int] = mapped_column(ForeignKey("workers.user_id", ondelete="CASCADE"))
+    # RESTRICT: an engineer with route history is archived, not deleted (T14).
+    worker_id: Mapped[int] = mapped_column(ForeignKey("workers.user_id", ondelete="RESTRICT"))
     route_date: Mapped[date] = mapped_column(Date)
     route_number: Mapped[int]
     geojson: Mapped[dict] = mapped_column(JSONB)

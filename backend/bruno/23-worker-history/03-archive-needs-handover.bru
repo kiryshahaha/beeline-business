@@ -1,0 +1,20 @@
+meta {
+  name: Архив без передачи работы — 409
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/v1/users/{{history_worker_id}}/archive
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 409
+  res.body.detail.code: eq worker_has_active_work
+}

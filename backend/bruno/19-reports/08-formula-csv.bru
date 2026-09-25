@@ -1,0 +1,36 @@
+meta {
+  name: CSV не превращает текст заявки в формулу
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/api/v1/reports/tickets/export?format=csv&status=planned
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Опасный префикс закрыт апострофом, остальной текст читаем", function () {
+    const lines = String(res.getBody()).split("\r\n");
+    const id = String(bru.getVar("report_formula_ticket_id"));
+    const row = lines.find(function (line) { return line.startsWith(id + ","); });
+    expect(row, "строка созданной заявки").to.be.a("string");
+    expect(row).to.include(",'=1+1 отчёт T15,");
+    expect(row).to.include(",' @SUM(A1) и +7 999,");
+    expect(row).not.to.include(",=1+1");
+  });
+
+  test("Файл не угадывается браузером и не кешируется", function () {
+    expect(res.getHeader("x-content-type-options")).to.equal("nosniff");
+    expect(res.getHeader("cache-control")).to.equal("no-store");
+  });
+}

@@ -184,6 +184,9 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             "completed": "completed",
             "wont_fix": "cancelled",
         }[status]
+        worker = (i - 1) % workers + 9
+        assigned_worker_id = worker if scenario not in ("unassigned", "missing_skill") else None
+
         add(
             "tickets",
             id=i,
@@ -229,11 +232,10 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             planned_end_at=start + timedelta(minutes=duration + 10)
             if status in ("in_progress", "completed")
             else None,
+            assigned_worker_id=assigned_worker_id,
+            is_pinned=False,
         )
 
-        worker = (i - 1) % workers + 9
-        if scenario not in ("unassigned", "missing_skill"):
-            add("ticket_assignments", ticket_id=i, worker_id=worker)
         if i % 3 == 0:
             add(
                 "ticket_comments",
@@ -318,12 +320,9 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
         created_at=stamp,
     )
     # Equipment on hand: the first allocation was issued to its engineer (T08 ledger).
-    allocation = tables["ticket_appliances"][0]
-    holder = next(
-        a["worker_id"]
-        for a in tables["ticket_assignments"]
-        if a["ticket_id"] == allocation["ticket_id"]
-    )
+    assignees = {t["id"]: t["assigned_worker_id"] for t in tables["tickets"]}
+    allocation = next(a for a in tables["ticket_appliances"] if assignees[a["ticket_id"]])
+    holder = assignees[allocation["ticket_id"]]
     add("office_kit_reserves", office_id=1, appliance_id=1, quantity=2, updated_at=stamp)
     add(
         "worker_appliances",

@@ -40,7 +40,8 @@ def delete_token(session: Session, user_id: int) -> bool:
 
 
 def find_feed_owner(session: Session, token_hash: str) -> RowMapping | None:
-    # Only workers receive assignments, so a token of any other role opens nothing.
+    # Only active workers receive assignments: another role or an archived account opens
+    # nothing, even if a token row survived.
     return (
         session.execute(
             text("""
@@ -49,6 +50,8 @@ def find_feed_owner(session: Session, token_hash: str) -> RowMapping | None:
                 JOIN users AS u ON u.id = ct.user_id
                 JOIN workers AS w ON w.user_id = u.id
                 WHERE ct.token_hash = :token_hash
+                  AND u.role = 'worker'
+                  AND u.archived_at IS NULL
             """),
             {"token_hash": token_hash},
         )
@@ -76,8 +79,7 @@ def find_feed_tickets(session: Session, worker_id: int, since: datetime) -> list
                     b.id AS building_id, b.number AS building_number, b.block,
                     l.entrance_id, e.number AS entrance_number,
                     l.floor, l.apartment, l.latitude, l.longitude
-                FROM ticket_assignments AS ta
-                JOIN tickets AS t ON t.id = ta.ticket_id
+                FROM tickets AS t
                 LEFT JOIN work_types AS wt ON wt.id = t.work_type_id
                 JOIN locations AS l ON l.id = t.location_id
                 JOIN buildings AS b ON b.id = l.building_id
@@ -85,7 +87,7 @@ def find_feed_tickets(session: Session, worker_id: int, since: datetime) -> list
                 JOIN cities AS c ON c.id = s.city_id
                 JOIN districts AS d ON d.id = b.district_id
                 LEFT JOIN entrances AS e ON e.id = l.entrance_id
-                WHERE ta.worker_id = :worker_id
+                WHERE t.assigned_worker_id = :worker_id
                   AND t.planned_start_at IS NOT NULL
                   AND t.planned_end_at >= :since
                 ORDER BY t.planned_start_at, t.id
