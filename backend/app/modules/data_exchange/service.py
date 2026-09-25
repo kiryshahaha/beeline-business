@@ -41,6 +41,26 @@ def _remap(name: str, value, tables: dict, ids: dict):
     return ids[name][value]
 
 
+def _remap_operation_request(request, tables: dict, ids: dict):
+    """Replay of an inventory operation compares this request, so its IDs must follow."""
+    if not isinstance(request, dict):
+        return request
+    result = dict(request)
+    for key, target in (("worker_id", "users"), ("office_id", "offices"), ("ticket_id", "tickets")):
+        if result.get(key) is not None:
+            result[key] = _remap(target, result[key], tables, ids)
+    if "ticket_ids" in result:
+        result["ticket_ids"] = sorted(
+            _remap("tickets", t, tables, ids) for t in result["ticket_ids"]
+        )
+    if "items" in result:
+        result["items"] = sorted(
+            [_remap("appliances", appliance, tables, ids), quantity]
+            for appliance, quantity in result["items"]
+        )
+    return result
+
+
 def _validate_route(session: Session, values: dict, tables: dict, ids: dict) -> None:
     geo = RouteGeoJSON.model_validate(values["geojson"])
     geo.properties.worker_id = _remap("workers", geo.properties.worker_id, tables, ids)
@@ -172,6 +192,18 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                         # city_id participates in two composite FKs, neither targets cities.id.
                         if name == "buildings":
                             values["city_id"] = _remap("cities", values["city_id"], tables, ids)
+                        # The composite key targets ticket_appliances, whose parts are IDs.
+                        if name == "ticket_appliance_states":
+                            values["ticket_id"] = _remap(
+                                "tickets", values["ticket_id"], tables, ids
+                            )
+                            values["appliance_id"] = _remap(
+                                "appliances", values["appliance_id"], tables, ids
+                            )
+                        if name == "appliance_operations":
+                            values["request"] = _remap_operation_request(
+                                values.get("request"), tables, ids
+                            )
                         for column in table.columns:
                             for foreign in column.foreign_keys:
                                 if foreign.column.name == "id" or (

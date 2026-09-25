@@ -29,7 +29,15 @@ TABLE_NAMES = frozenset(
         "appliances",
         "appliance_stocks",
         "ticket_appliances",
+        "office_kit_reserves",
+        "worker_appliances",
+        "appliance_operations",
+        "appliance_movements",
+        "ticket_appliance_states",
         "equipment_movements",
+        "source_imports",
+        "source_addresses",
+        "source_records",
         "notification_events",
         "work_events",
         "worker_day_states",
@@ -40,7 +48,10 @@ TABLE_NAMES = frozenset(
 TABLES = {table.name: table for table in Base.metadata.sorted_tables if table.name in TABLE_NAMES}
 TABLES["routes"] = TABLES.pop("routes")  # GeoJSON also refers to tickets and locations.
 EXCLUDED_COLUMNS = {"users": {"password_hash"}}
-FORMAT_VERSION = "2"
+# Format 3 adds equipment on hand with its journal and the provenance of source files;
+# packages of formats 1 and 2 are still read (the tables are simply absent).
+FORMAT_VERSION = "3"
+READABLE_FORMATS = ("1", "2", FORMAT_VERSION)
 
 
 def columns_for(name: str):
@@ -71,10 +82,6 @@ def describe_tables() -> dict:
             "data_imports",
             "planning_plans",
             "planning_plan_routes",
-            "office_kit_reserves",
-            "worker_appliances",
-            "appliance_operations",
-            "appliance_movements",
-            "ticket_appliance_states",
+            "ticket_work_type_migration_issues",
         ],
     }

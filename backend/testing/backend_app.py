@@ -10,8 +10,11 @@ from app.main import app
 from app.modules.planning.router import get_clock, get_provider_factory
 from app.modules.routing.client import AsyncGeoapifyRoutingClient, GeoapifyRoutingClient
 from app.modules.routing.router import get_geoapify_routing_client
+from app.modules.source_import.geocoding import GeoapifyGeocoder
+from app.modules.source_import.router import get_geocoder
 from planning_scenarios import NOW
 from tests.planning_fakes import geoapify_response
+from tests.source_fixtures import geocode_response
 
 if os.getenv("APP_ENV") != "test" or not (
     make_url(os.environ["DATABASE_URL"]).database or ""
@@ -28,4 +31,7 @@ app.dependency_overrides[get_provider_factory] = lambda: (
 )
 app.dependency_overrides[get_geoapify_routing_client] = lambda: GeoapifyRoutingClient(
     "fixture-only-key", transport=httpx.MockTransport(geoapify_response)
+)
+app.dependency_overrides[get_geocoder] = lambda: GeoapifyGeocoder(
+    "fixture-only-key", transport=httpx.MockTransport(geocode_response)
 )

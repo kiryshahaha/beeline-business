@@ -17,7 +17,12 @@ from openpyxl.cell import WriteOnlyCell
 from sqlalchemy import JSON, Boolean, Date, DateTime, Enum, Integer, Numeric, String, Time
 
 from app.core.spreadsheet import XLSX_MAX_CELL_UNITS, starts_like_formula, xlsx_length
-from app.modules.data_exchange.registry import FORMAT_VERSION, TABLES, columns_for
+from app.modules.data_exchange.registry import (
+    FORMAT_VERSION,
+    READABLE_FORMATS,
+    TABLES,
+    columns_for,
+)
 
 MAX_FILE_BYTES = 20 * 1024 * 1024
 MAX_UNPACKED_BYTES = 100 * 1024 * 1024
@@ -346,7 +351,7 @@ def parse_file(content: bytes, filename: str, entity: str | None = None) -> dict
         if extension == "zip":
             with ZipFile(io.BytesIO(content)) as archive:
                 manifest = json.loads(archive.read("manifest.json"))
-                if manifest not in ({"format_version": "1"}, {"format_version": FORMAT_VERSION}):
+                if manifest not in [{"format_version": version} for version in READABLE_FORMATS]:
                     raise ExchangeError("Неподдерживаемая версия CSV-пакета")
                 for entry in archive.infolist():
                     if entry.filename == "manifest.json":
@@ -367,7 +372,7 @@ def parse_file(content: bytes, filename: str, entity: str | None = None) -> dict
                     (meta.max_row or 0) > 1
                     or (meta.max_column or 0) > 2
                     or list(meta.iter_rows(max_row=1, max_col=2, values_only=True))
-                    not in ([("format_version", "1")], [("format_version", FORMAT_VERSION)])
+                    not in [[("format_version", version)] for version in READABLE_FORMATS]
                 ):
                     raise ExchangeError("Нет версии формата в листе _meta")
                 for sheet in workbook:
