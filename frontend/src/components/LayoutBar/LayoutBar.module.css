@@ -1,8 +1,15 @@
-.container {
+.wrapper {
     position: fixed;
     bottom: 22px;
     left: 22px;
     z-index: 1000;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.container {
+    position: relative;
     display: flex;
     flex-direction: column;
     padding: 12px;

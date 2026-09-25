@@ -160,7 +160,7 @@ def update_user(
         ) from error
     except IntegrityError as error:
         # Leaving the worker role deletes the profile; units on hand must not vanish with it.
-        if getattr(error.orig, "sqlstate", None) != "23503":
+        if getattr(error.orig, "sqlstate", None) not in ("23503", "23001"):
             raise
         raise HTTPException(
             409, "У исполнителя есть оборудование на руках или история маршрутов"
