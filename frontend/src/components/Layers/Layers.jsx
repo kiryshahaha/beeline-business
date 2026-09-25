@@ -1,9 +1,16 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import ExpandableMenu from "@/components/ui/ExpandableMenu/ExpandableMenu";
 import styles from "./Layers.module.css";
+
+const DEFAULT_VIEW = {
+  center: [35, 55],
+  zoom: 1,
+  bearing: 0,
+  pitch: 0,
+};
 
 const MAP_STYLES = {
   standard: {
@@ -23,33 +30,8 @@ const MAP_STYLES = {
 export default function Layers({ mapRef }) {
   const [activeStyle, setActiveStyle] = useState("standard");
   const [isGlobe, setIsGlobe] = useState(false);
-  const [defaultView, setDefaultView] = useState(null);
 
   const getMap = () => mapRef?.current?.getMap?.() || mapRef?.current;
-
-  useEffect(() => {
-    const map = mapRef?.current?.getMap?.() || mapRef?.current;
-    if (!map) return;
-
-    const syncMapState = () => {
-      const projectionType = map.getProjection?.()?.type || "mercator";
-      setIsGlobe(projectionType === "globe");
-
-      if (!defaultView) {
-        setDefaultView({
-          center: map.getCenter?.() || { lng: 0, lat: 0 },
-          zoom: map.getZoom?.() || 2,
-          bearing: map.getBearing?.() || 0,
-          pitch: map.getPitch?.() || 0,
-        });
-      }
-    };
-
-    syncMapState();
-    if (!map.isStyleLoaded?.()) {
-      map.once("load", syncMapState);
-    }
-  }, [mapRef, defaultView]);
 
   const setStyle = (id) => {
     const map = getMap();
@@ -69,15 +51,10 @@ export default function Layers({ mapRef }) {
 
   const resetCamera = () => {
     const map = getMap();
-    if (!map || !defaultView) return;
+    if (!map) return;
 
-    map.setProjection({ type: "mercator" });
-    setIsGlobe(false);
     map.flyTo({
-      center: defaultView.center,
-      zoom: defaultView.zoom,
-      bearing: defaultView.bearing,
-      pitch: defaultView.pitch,
+      ...DEFAULT_VIEW,
       duration: 800,
       essential: true,
     });

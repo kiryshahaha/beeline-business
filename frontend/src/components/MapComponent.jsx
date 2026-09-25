@@ -61,7 +61,7 @@ export default function MapComponent({ mapRef, tickets }) {
       <FullscreenControl></FullscreenControl>
       <GeolocateControl></GeolocateControl>
       <ScaleControl></ScaleControl> */}
-      <ProjectionControl></ProjectionControl>
+      {/* <ProjectionControl></ProjectionControl> */}
       <Source type="geojson" data={data}>
         <Layer type="heatmap"></Layer>
       </Source>
