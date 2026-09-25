@@ -19,8 +19,28 @@ from app.modules.execution.schemas import (
     WorkerUnavailableCommand,
 )
 from app.modules.execution.service import ExecutionConflict, IdempotencyConflict
+from app.modules.planning.day_plans import publish_revision, service_area_for_district
 
 MOSCOW = ZoneInfo("Europe/Moscow")
+
+
+def _current_plan_state(session: Session, service_area_id: int | None, route_date: date) -> dict:
+    """Promised visits of the revision in force, so an event-driven one keeps them."""
+    if service_area_id is None:
+        return {}
+    state = session.execute(
+        text(
+            """
+            SELECT plan_state
+            FROM day_plan_revisions
+            WHERE service_area_id = :service_area_id
+              AND route_date = :route_date
+              AND is_current
+            """
+        ),
+        {"service_area_id": service_area_id, "route_date": route_date},
+    ).scalar_one_or_none()
+    return {key: value for key, value in (state or {}).items() if key != "redirect"}
 
 
 def _event_payload(event: dict) -> dict:
@@ -389,17 +409,18 @@ def _read_state(
     in_progress_ticket_id = state["current_ticket_id"]
     if in_progress_ticket_id is not None:
         remaining_ticket_ids.discard(in_progress_ticket_id)
+    service_area_id = service_area_for_district(session, district_id, worker_id=worker_id)
     current_plan_revision = session.execute(
         text(
             """
             SELECT max(revision)
             FROM day_plan_revisions
-            WHERE district_id = :district_id
+            WHERE service_area_id = :service_area_id
               AND route_date = :route_date
               AND created_at <= :at
             """
         ),
-        {"district_id": district_id, "route_date": route_date, "at": at},
+        {"service_area_id": service_area_id, "route_date": route_date, "at": at},
     ).scalar_one_or_none()
     return WorkerDayStateRead(
         worker_id=worker_id,
@@ -651,18 +672,23 @@ def redirect_worker(
         ).scalar_one_or_none()
         if district_exists is None:
             raise DistrictNotFound
+        service_area_id = service_area_for_district(
+            session, district_id, worker_id=command.worker_id
+        )
+        if service_area_id is None:
+            raise UnsafeRedirect("Участок обслуживания для этого района не определён")
         current_plan_revision = session.execute(
             text(
                 """
                 SELECT revision
                 FROM day_plan_revisions
-                WHERE district_id = :district_id
+                WHERE service_area_id = :service_area_id
                   AND route_date = :route_date
                   AND is_current
                 FOR UPDATE
                 """
             ),
-            {"district_id": district_id, "route_date": route_date},
+            {"service_area_id": service_area_id, "route_date": route_date},
         ).scalar_one_or_none()
         if current_plan_revision != command.expected_day_revision:
             raise DayStateRevisionConflict(
@@ -735,44 +761,22 @@ def redirect_worker(
                 "route_date": route_date,
             },
         )
-        new_plan_revision = current_plan_revision + 1
         fingerprint = sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
-        session.execute(
-            text(
-                """
-                UPDATE day_plan_revisions
-                SET is_current = false
-                WHERE district_id = :district_id
-                  AND route_date = :route_date
-                  AND is_current
-                """
-            ),
-            {"district_id": district_id, "route_date": route_date},
-        )
-        session.execute(
-            text(
-                """
-                INSERT INTO day_plan_revisions (
-                    district_id, route_date, revision, previous_revision,
-                    event_id, actor_id, fingerprint, diff, result
-                ) VALUES (
-                    :district_id, :route_date, :revision, :previous_revision,
-                    :event_id, :actor_id, :fingerprint, CAST(:diff AS JSONB),
-                    CAST(:result AS JSONB)
-                )
-                """
-            ),
-            {
-                "district_id": district_id,
-                "route_date": route_date,
-                "revision": new_plan_revision,
-                "previous_revision": current_plan_revision,
-                "event_id": event_id,
-                "actor_id": actor_id,
-                "fingerprint": fingerprint,
-                "diff": json.dumps(payload, ensure_ascii=False),
-                "result": json.dumps({"event_id": event_id}, ensure_ascii=False),
-            },
+        # A redirect moves one engineer, it does not recompute the day: the promised
+        # visits carry over unchanged so the diff shows only what the event changed.
+        carried = _current_plan_state(session, service_area_id, route_date)
+        publish_revision(
+            session,
+            service_area_id=service_area_id,
+            district_id=district_id,
+            route_date=route_date,
+            actor_id=actor_id,
+            reason="worker_redirected",
+            fingerprint=fingerprint,
+            plan_state={**carried, "redirect": payload},
+            result={"event_id": event_id},
+            at=command.occurred_at,
+            event_id=event_id,
         )
         return _read_state(
             session,

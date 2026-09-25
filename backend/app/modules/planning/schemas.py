@@ -181,6 +181,7 @@ class PlanRead(BaseModel):
     outcome: Literal["complete", "partial", "empty"]
     route_date: date
     district_id: int | None = None
+    service_area_id: int | None = None
     day_revision: int | None = None
     timezone: Literal["Europe/Moscow"]
     expires_at: datetime
@@ -204,3 +205,74 @@ class ApplyRequest(BaseModel):
 class PolicyRead(BaseModel):
     execution: ExecutionPolicy
     case_contract: CasePolicy
+
+
+class VisitPlacement(BaseModel):
+    """One promised visit as a revision published it."""
+
+    ticket_id: int
+    worker_id: int | None = None
+    route_id: int | None = None
+    sequence: int | None = None
+    arrival_at: datetime | None = None
+    service_start_at: datetime | None = None
+    service_end_at: datetime | None = None
+
+
+class FieldChange(BaseModel):
+    previous: Any = Field(alias="from")
+    current: Any = Field(alias="to")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class VisitChange(BaseModel):
+    ticket_id: int
+    changes: dict[str, FieldChange]
+
+
+class MetricChange(FieldChange):
+    delta: float | None = None
+
+
+class DayPlanDiff(BaseModel):
+    """What changed between two published revisions of the same area-day."""
+
+    service_area_id: int
+    route_date: date
+    from_revision: int | None
+    to_revision: int
+    reason: str
+    is_current: bool
+    added: list[VisitPlacement]
+    removed: list[VisitPlacement]
+    changed: list[VisitChange]
+    unchanged_ticket_ids: list[int]
+    metrics: dict[str, MetricChange]
+
+
+class DayPlanRevisionRead(BaseModel):
+    """A published revision: who changed the day, why, and whether it still holds."""
+
+    service_area_id: int
+    district_id: int | None
+    route_date: date
+    revision: int
+    previous_revision: int | None
+    superseded_by_revision: int | None
+    superseded_at: datetime | None
+    is_current: bool
+    reason: str
+    plan_id: UUID | None
+    event_id: int | None
+    actor_id: int
+    fingerprint: str
+    effective_at: datetime
+    created_at: datetime
+    metrics: dict[str, Any]
+
+
+class DayPlanRevisionDetail(DayPlanRevisionRead):
+    visits: list[VisitPlacement]
+    unassigned_ticket_ids: list[int]
+    diff: dict[str, Any]

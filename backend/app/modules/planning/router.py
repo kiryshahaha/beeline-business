@@ -16,7 +16,7 @@ from app.modules.appliances.inventory import InventoryError
 from app.modules.auth.dependencies import require_roles
 from app.modules.execution import day_state
 from app.modules.execution.schemas import RedirectCommand, WorkerDayStateRead
-from app.modules.planning import service
+from app.modules.planning import day_plans, service
 from app.modules.planning.case_policy import case_policy
 from app.modules.planning.errors import PlanningError
 from app.modules.planning.planner_client import PlannerClient
@@ -24,6 +24,9 @@ from app.modules.planning.policy import execution_policy
 from app.modules.planning.schemas import (
     ApplyRequest,
     ApplyResult,
+    DayPlanDiff,
+    DayPlanRevisionDetail,
+    DayPlanRevisionRead,
     PlanRead,
     PolicyRead,
     PreviewRequest,
@@ -168,4 +171,65 @@ async def apply_plan(
     try:
         return await asyncio.to_thread(service.apply_plan, engine, plan_id, clock)
     except (PlanningError, InventoryError, OperationalError) as error:
+        fail(error)
+
+
+# A day plan is identified by its service area and date. `routes/{id}` still answers
+# with the geometry it was applied with, so these endpoints say which revision holds
+# now and which one a historical route belongs to.
+
+
+@router.get(
+    "/areas/{service_area_id}/{route_date}/revisions",
+    response_model=list[DayPlanRevisionRead],
+)
+def list_day_revisions(
+    service_area_id: int, route_date: date, _: Observer, session: DatabaseSession
+):
+    return day_plans.read_revisions(session, service_area_id, route_date)
+
+
+@router.get(
+    "/areas/{service_area_id}/{route_date}/current",
+    response_model=DayPlanRevisionDetail,
+)
+def read_current_day_revision(
+    service_area_id: int, route_date: date, _: Observer, session: DatabaseSession
+):
+    try:
+        return day_plans.read_revision(session, service_area_id, route_date)
+    except PlanningError as error:
+        fail(error)
+
+
+@router.get(
+    "/areas/{service_area_id}/{route_date}/revisions/{revision}",
+    response_model=DayPlanRevisionDetail,
+)
+def read_day_revision(
+    service_area_id: int,
+    route_date: date,
+    revision: int,
+    _: Observer,
+    session: DatabaseSession,
+):
+    try:
+        return day_plans.read_revision(session, service_area_id, route_date, revision)
+    except PlanningError as error:
+        fail(error)
+
+
+@router.get("/areas/{service_area_id}/{route_date}/diff", response_model=DayPlanDiff)
+def read_day_diff(
+    service_area_id: int,
+    route_date: date,
+    _: Observer,
+    session: DatabaseSession,
+    base: int | None = None,
+    target: int | None = None,
+):
+    """Without parameters: the current revision against the one it replaced."""
+    try:
+        return day_plans.read_diff(session, service_area_id, route_date, base=base, target=target)
+    except PlanningError as error:
         fail(error)

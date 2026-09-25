@@ -261,7 +261,7 @@ def normalize_dataframe(
     return result
 
 
-def normalize_rows(name: str, rows) -> list[dict]:
+def normalize_rows(name: str, rows, *, allow_legacy_day_plan_revision: bool = False) -> list[dict]:
     if name not in TABLES:
         raise ExchangeError("Неизвестная таблица", name)
     iterator = iter(rows)
@@ -281,6 +281,14 @@ def normalize_rows(name: str, rows) -> list[dict]:
         if not c.nullable and c.server_default is None and c.default is None
     }
     required |= {c.name for c in columns.values() if c.primary_key}
+    legacy_day_plan_revision = (
+        allow_legacy_day_plan_revision
+        and name == "day_plan_revisions"
+        and "service_area_id" not in header
+        and "district_id" in header
+    )
+    if legacy_day_plan_revision:
+        required.discard("service_area_id")
     if required - set(header):
         raise ExchangeError("Нет столбцов: " + ", ".join(sorted(required - set(header))), name, 1)
 
@@ -302,10 +310,16 @@ def normalize_rows(name: str, rows) -> list[dict]:
 
     df = pd.DataFrame(raw_data, columns=header, dtype=object)
     row_nums = pd.Series(source_row_numbers, index=df.index)
-    return normalize_dataframe(name, df, row_nums)
+    result = normalize_dataframe(name, df, row_nums)
+    if legacy_day_plan_revision:
+        for row in result:
+            row["service_area_id"] = None
+    return result
 
 
-def read_csv(content: bytes, name: str) -> list[dict]:
+def read_csv(
+    content: bytes, name: str, *, allow_legacy_day_plan_revision: bool = False
+) -> list[dict]:
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError as error:
@@ -316,7 +330,9 @@ def read_csv(content: bytes, name: str) -> list[dict]:
         delimiter = max((",", ";", "\t"), key=first.count)
         csv.field_size_limit(MAX_CELL_CHARS)
         return normalize_rows(
-            name, csv.reader(io.StringIO(text, newline=""), delimiter=delimiter, strict=True)
+            name,
+            csv.reader(io.StringIO(text, newline=""), delimiter=delimiter, strict=True),
+            allow_legacy_day_plan_revision=allow_legacy_day_plan_revision,
         )
     except csv.Error as error:
         raise ExchangeError("Некорректный CSV: " + str(error), name) from error
@@ -341,7 +357,13 @@ def parse_file(content: bytes, filename: str, entity: str | None = None) -> dict
         if extension == "csv":
             if entity is None:
                 raise ExchangeError("Для CSV укажите параметр entity")
-            return {entity: read_csv(content, entity)}
+            return {
+                entity: read_csv(
+                    content,
+                    entity,
+                    allow_legacy_day_plan_revision=(entity == "day_plan_revisions"),
+                )
+            }
         if extension not in ("zip", "xlsx"):
             raise ExchangeError("Поддерживаются .csv, .zip (CSV-пакет) и .xlsx")
         if entity is not None:
@@ -353,13 +375,18 @@ def parse_file(content: bytes, filename: str, entity: str | None = None) -> dict
                 manifest = json.loads(archive.read("manifest.json"))
                 if manifest not in [{"format_version": version} for version in READABLE_FORMATS]:
                     raise ExchangeError("Неподдерживаемая версия CSV-пакета")
+                allow_legacy = manifest["format_version"] != FORMAT_VERSION
                 for entry in archive.infolist():
                     if entry.filename == "manifest.json":
                         continue
                     if not entry.filename.endswith(".csv") or entry.filename[:-4] not in TABLES:
                         raise ExchangeError("Неизвестный файл в CSV-пакете: " + entry.filename)
                     name = entry.filename[:-4]
-                    result[name] = read_csv(archive.read(entry), name)
+                    result[name] = read_csv(
+                        archive.read(entry),
+                        name,
+                        allow_legacy_day_plan_revision=allow_legacy,
+                    )
         else:
             workbook = load_workbook(
                 io.BytesIO(content), read_only=True, data_only=False, keep_links=False
@@ -375,6 +402,7 @@ def parse_file(content: bytes, filename: str, entity: str | None = None) -> dict
                     not in [[("format_version", version)] for version in READABLE_FORMATS]
                 ):
                     raise ExchangeError("Нет версии формата в листе _meta")
+                allow_legacy = meta["B1"].value != FORMAT_VERSION
                 for sheet in workbook:
                     if sheet.title == "_meta":
                         continue
@@ -394,7 +422,11 @@ def parse_file(content: bytes, filename: str, entity: str | None = None) -> dict
                                     )
                             yield [cell.value for cell in row]
 
-                    result[sheet.title] = normalize_rows(sheet.title, values(sheet))
+                    result[sheet.title] = normalize_rows(
+                        sheet.title,
+                        values(sheet),
+                        allow_legacy_day_plan_revision=allow_legacy,
+                    )
             finally:
                 workbook.close()
         if not result or sum(map(len, result.values())) > MAX_TOTAL_ROWS:

@@ -6,7 +6,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
-from app.db.models import Brigade, BrigadeMember, Location, Ticket, User, Worker
+from app.db.models import (
+    Brigade,
+    BrigadeMember,
+    DayPlanRevision,
+    Location,
+    Ticket,
+    User,
+    Worker,
+)
+from app.modules.planning.models import PlanningPlanRoute
 from app.modules.routing.models import Route
 from app.modules.routing.schemas import RouteCreate, RouteGeoJSON, RouteRead
 from app.modules.users.enums import UserRole
@@ -32,6 +41,37 @@ def visible_routes(viewer: UserRead):
     return query
 
 
+def plan_revisions_of(session: Session, route_ids: list[int]) -> dict[int, dict]:
+    """Which published revision each route belongs to, if the planner created it."""
+    if not route_ids:
+        return {}
+    return {
+        row.route_id: {
+            "service_area_id": row.service_area_id,
+            "day_revision": row.revision,
+            "is_current_plan": row.is_current,
+        }
+        for row in session.execute(
+            select(
+                PlanningPlanRoute.route_id,
+                DayPlanRevision.service_area_id,
+                DayPlanRevision.revision,
+                DayPlanRevision.is_current,
+            )
+            .join(DayPlanRevision, DayPlanRevision.plan_id == PlanningPlanRoute.plan_id)
+            .where(PlanningPlanRoute.route_id.in_(route_ids))
+        )
+    }
+
+
+def with_plan_revision(session: Session, routes: list[Route]) -> list[RouteRead]:
+    marks = plan_revisions_of(session, [route.id for route in routes])
+    return [
+        RouteRead.model_validate(route).model_copy(update=marks.get(route.id, {}))
+        for route in routes
+    ]
+
+
 def list_routes(
     session: Session,
     viewer: UserRead,
@@ -46,14 +86,14 @@ def list_routes(
     if route_date is not None:
         query = query.where(Route.route_date == route_date)
     query = query.order_by(Route.route_date, Route.worker_id, Route.route_number)
-    return [
-        RouteRead.model_validate(row) for row in session.scalars(query.limit(limit).offset(offset))
-    ]
+    return with_plan_revision(session, list(session.scalars(query.limit(limit).offset(offset))))
 
 
 def get_route(session: Session, viewer: UserRead, route_id: int) -> RouteRead | None:
     route = session.scalar(visible_routes(viewer).where(Route.id == route_id))
-    return RouteRead.model_validate(route) if route is not None else None
+    if route is None:
+        return None
+    return with_plan_revision(session, [route])[0]
 
 
 def build_geojson(session: Session, data: RouteCreate, number: int) -> dict:

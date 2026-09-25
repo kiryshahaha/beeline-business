@@ -307,16 +307,23 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
     add(
         "day_plan_revisions",
         id=1,
+        service_area_id=1,
         district_id=1,
         route_date=start_date,
         revision=1,
         previous_revision=None,
+        superseded_at=None,
+        superseded_by_revision=None,
+        plan_id=None,
         event_id=1,
         actor_id=1,
+        reason="plan_applied",
         fingerprint=hashlib.sha256(f"synthetic-{seed}".encode()).hexdigest(),
         diff={},
         result={},
+        plan_state={},
         is_current=True,
+        effective_at=stamp,
         created_at=stamp,
     )
     # Equipment on hand: the first allocation was issued to its engineer (T08 ledger).
