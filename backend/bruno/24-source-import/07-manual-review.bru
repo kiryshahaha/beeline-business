@@ -1,0 +1,27 @@
+meta {
+  name: Проверенные координаты вручную
+  type: http
+  seq: 7
+}
+
+put {
+  url: {{base_url}}/api/v1/data/sources/addresses/{{source_address_id}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "latitude": 55.7,
+    "longitude": 37.6
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq manual
+}

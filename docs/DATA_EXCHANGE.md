@@ -8,8 +8,8 @@
 | Метод | Путь | Результат |
 | --- | --- | --- |
 | GET | `/api/v1/data/schema` | Таблицы, поля, типы, nullable, версия и исключения |
-| GET | `/api/v1/data/export?format=xlsx` | Один XLSX со всеми 25 таблицами |
-| GET | `/api/v1/data/export?format=csv` | ZIP с 25 CSV и `manifest.json` |
+| GET | `/api/v1/data/export?format=xlsx` | Один XLSX со всеми 38 таблицами |
+| GET | `/api/v1/data/export?format=csv` | ZIP с 38 CSV и `manifest.json` |
 | POST | `/api/v1/data/import?dry_run=true` | Проверка файла и ограничений БД без записи |
 | POST | `/api/v1/data/import?dry_run=false` | Атомарное добавление пакета |
 | POST | `/api/v1/data/import?entity=cities&dry_run=false` | Импорт одиночного CSV указанной таблицы |
@@ -65,7 +65,7 @@ ticket_appliance_states) пока тоже не переносятся — эт�
 У XLSX каждый предметный лист назван по таблице. Первая строка — имена полей.
 Лист `_meta` содержит ровно одну строку: `format_version` и строковое значение `1`.
 CSV-пакет содержит плоские файлы `<table>.csv` и
-`manifest.json` с `{"format_version":"2"}`. Подпапки и неизвестные файлы запрещены.
+`manifest.json` с `{"format_version":"3"}` (пакеты форматов 1 и 2 тоже читаются). Подпапки и неизвестные файлы запрещены.
 Можно передавать подмножество таблиц. Пустые таблицы содержат строку заголовков.
 
 CSV: UTF-8 с необязательным BOM; разделитель запятая, точка с запятой или табуляция.

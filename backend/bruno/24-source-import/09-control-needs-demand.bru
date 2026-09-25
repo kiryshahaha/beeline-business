@@ -1,0 +1,24 @@
+meta {
+  name: Контроль без синтетики участка — 409
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{base_url}}/api/v1/data/sources/import?dataset=Empty&dry_run=false
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:multipart-form {
+  file: @file(fixtures/source-control.csv)
+}
+
+assert {
+  res.status: eq 409
+  res.body.detail.code: eq demand_import_required
+}

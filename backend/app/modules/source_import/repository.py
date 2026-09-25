@@ -77,7 +77,7 @@ def find_addresses(session: Session, area_id: int, raws: list[str]) -> dict[str,
     rows = session.execute(
         text("""
             SELECT a.id, a.raw_address, a.location_id, a.status, a.source, a.confidence,
-                   l.latitude, l.longitude
+                   a.candidate_latitude, a.candidate_longitude, l.latitude, l.longitude
             FROM source_addresses AS a
             JOIN locations AS l ON l.id = a.location_id
             WHERE a.service_area_id = :area_id AND a.raw_address = ANY(:raws)

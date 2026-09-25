@@ -1,0 +1,15 @@
+meta {
+  name: Импорт без токена — 401
+  type: http
+  seq: 12
+}
+
+get {
+  url: {{base_url}}/api/v1/data/sources/imports
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 401
+}

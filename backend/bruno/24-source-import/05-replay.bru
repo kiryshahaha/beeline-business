@@ -1,0 +1,30 @@
+meta {
+  name: Replay контрольного дня
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/data/sources/areas/{{source_area_id}}/replay
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Итоги по окну визита, снимок без времени", function () {
+    const events = res.getBody().events;
+    expect(events).to.have.lengthOf(6);
+    const done = events.find(function (e) { return e.status === "completed"; });
+    expect(done.at).to.match(/\+03:00$/);
+    const moving = events.find(function (e) { return e.status === "en_route"; });
+    expect(moving.at).to.equal(null);
+  });
+}

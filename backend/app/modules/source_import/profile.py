@@ -220,7 +220,7 @@ def work_date(moments: list[datetime]) -> date | None:
 
 
 def dataset_from_filename(filename: str) -> str:
-    """«Восток Синтетические данные.csv» and «Восток Контрольное распределение..csv» -> Восток."""
+    """«Север Синтетические данные.csv» and «Север Контрольное распределение..csv» -> Север."""
     stem = filename.rsplit("/", 1)[-1].rsplit(".", 1)[0]
     stem = re.split(r"\s+(?:синтетические данные|контрольное распределение)", stem, flags=re.I)[0]
     return " ".join(stem.strip(" ._-").split())

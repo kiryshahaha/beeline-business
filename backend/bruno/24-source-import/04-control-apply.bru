@@ -1,0 +1,34 @@
+meta {
+  name: Контрольное распределение — базовая линия
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/api/v1/data/sources/import?dataset=Bruno&dry_run=false
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:multipart-form {
+  file: @file(fixtures/source-control.csv)
+}
+
+assert {
+  res.status: eq 200
+  res.body.kind: eq control
+}
+
+tests {
+  test("Бригады стали исполнителями, строки сопоставлены", function () {
+    const body = res.getBody();
+    expect(body.counts.created).to.equal(6);
+    expect(body.baseline.workers).to.equal(3);
+    expect(body.baseline.rows_without_brigade).to.equal(1);
+    expect(body.replay.final).to.equal(3);
+  });
+}

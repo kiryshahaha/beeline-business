@@ -242,12 +242,13 @@ def _address_status(known, result: GeocodeResult | None) -> dict:
             "longitude": result.longitude if result.status == "geocoded" else None,
         }
     if known is not None:
+        # A repeated import without geocoding keeps what was found or reviewed before.
         return {
             "status": known["status"],
             "source": known["source"],
             "confidence": known["confidence"],
-            "candidate_latitude": None,
-            "candidate_longitude": None,
+            "candidate_latitude": known["candidate_latitude"],
+            "candidate_longitude": known["candidate_longitude"],
             "latitude": None,
             "longitude": None,
         }
@@ -353,7 +354,7 @@ def _apply_demand(session, source, prepared, options, area, context, import_id) 
     catalog = context["catalog"]
     existing = repository.find_records(session, area["id"], "demand")
     counts = Counter()
-    categories, coordinates = Counter(), Counter({office_status: 0})
+    categories, coordinates = Counter(), Counter()
     for item in prepared:
         counts["read"] += 1
         record = existing.get(item.external_id)

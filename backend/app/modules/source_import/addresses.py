@@ -1,7 +1,7 @@
 """Split the free-text source address into the directory levels city/street/building.
 
-The files write one address in many ways («ул.Ташкентская», «Кржижановского ул.»,
-«д. 3/1к2», «д 83с 4»). Street types are brought to one spelling so the same street is
+The files write one address in many ways («ул.Учебная», «Учебная ул.», «д. 3/1к2»,
+«д 83с 4»). Street types are brought to one spelling so the same street is
 not stored twice. The raw text stays in the provenance record; an address that does not
 fit these forms is rejected with its row, never guessed.
 """
@@ -94,7 +94,7 @@ def parse_address(text: str) -> ParsedAddress | None:
             kind = "корп." if match["kind"].lower().startswith("к") else "стр."
             block = f"{kind} {match['block']}"
     elif (match := BLOCK_ONLY.match(house)) and (quarter := QUARTER.search(before)):
-        # «Самаркандский Квартал 137а, д. к5»: the quarter is the house, «к5» its block.
+        # «б-р.Тестовый Квартал 12а, д. к3»: the quarter is the house, «к3» its block.
         number, block = quarter["quarter"].lower(), f"корп. {match['block']}"
         before = before[: quarter.start()]
     if number is None:

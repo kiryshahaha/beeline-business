@@ -1,0 +1,23 @@
+meta {
+  name: Исполнитель не загружает исходные файлы
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{base_url}}/api/v1/data/sources/import
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{worker_access_token}}
+}
+
+body:multipart-form {
+  file: @file(fixtures/source-demand.csv)
+}
+
+assert {
+  res.status: eq 403
+}
