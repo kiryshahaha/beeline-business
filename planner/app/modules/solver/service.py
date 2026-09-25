@@ -51,7 +51,10 @@ def solve(data: SolveRequest) -> SolveResponse:
             cost = travel * W_TRAVEL
             if b in task_index_to_position:
                 policy = data.ticket_policies[task_index_to_position[b]]
-                if policy.previous_vehicle_id is not None and policy.previous_vehicle_id != vehicle_id:
+                if (
+                    policy.previous_vehicle_id is not None
+                    and policy.previous_vehicle_id != vehicle_id
+                ):
                     cost += W_CHANGE
             return cost
 
@@ -68,7 +71,7 @@ def solve(data: SolveRequest) -> SolveResponse:
         "Time",
     )
     dimension = routing.GetDimensionOrDie("Time")
-    
+
     cost_callbacks = []
     for v, profile in enumerate(data.vehicle_profiles):
         cb = routing.RegisterTransitCallback(make_cost_callback(profile, v))
@@ -86,19 +89,19 @@ def solve(data: SolveRequest) -> SolveResponse:
         lower = max(lower, ticket_policy.received_at)
         if ticket_policy.sla_deadline_at is not None:
             upper = min(upper, ticket_policy.sla_deadline_at - data.service_times[node])
-            
+
         penalty = W_DROP_TOTAL
         if ticket_policy.category == "emergency":
             penalty += W_DROP_EMERG
         elif ticket_policy.category == "connection":
             penalty += W_DROP_CONN
-            
+
         routing.AddDisjunction([index], penalty)
         if lower > upper:
             routing.ActiveVar(index).SetValue(0)
         else:
             dimension.CumulVar(index).SetRange(lower, upper)
-            
+
         if ticket_policy.category == "emergency":
             dimension.SetCumulVarSoftUpperBound(index, ticket_policy.received_at, W_DELAY_EMERG)
 
@@ -166,7 +169,7 @@ def solve(data: SolveRequest) -> SolveResponse:
             service_total += data.service_times[previous]
             waiting += wait
             steps.append(Step(node=node, arrival_time=arrival))
-            
+
             if node in task_index_to_position:
                 policy = data.ticket_policies[task_index_to_position[node]]
                 if policy.previous_vehicle_id is not None and policy.previous_vehicle_id != vehicle:
@@ -174,12 +177,12 @@ def solve(data: SolveRequest) -> SolveResponse:
                 if policy.category == "emergency":
                     delay = max(0, arrival - policy.received_at)
                     emergency_delays += delay
-                    
+
             previous = node
-            
+
         if len(steps) > 2:
             active_vehicles += 1
-            
+
         routes.append(
             Route(
                 vehicle_id=vehicle,
@@ -190,13 +193,13 @@ def solve(data: SolveRequest) -> SolveResponse:
                 waiting_minutes=waiting,
             )
         )
-        
+
     dropped = [
         node
         for node in tasks
         if assignment.Value(routing.NextVar(manager.NodeToIndex(node))) == manager.NodeToIndex(node)
     ]
-    
+
     for node in dropped:
         policy = data.ticket_policies[task_index_to_position[node]]
         if policy.category == "emergency":
@@ -211,7 +214,7 @@ def solve(data: SolveRequest) -> SolveResponse:
         dropped_total=len(dropped),
         active_vehicles=active_vehicles,
         travel_time=sum(route.travel_minutes for route in routes),
-        changed_assignments=changed_assignments
+        changed_assignments=changed_assignments,
     )
 
     return SolveResponse(

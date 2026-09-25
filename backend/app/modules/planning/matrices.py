@@ -127,7 +127,9 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
     task_service = [t["duration"] for t in tickets]
     # allowed_vehicles keys are task node indices (strings).
     allowed = {str(task_offset + i): t["allowed"] for i, t in enumerate(tickets)}
-    worker_id_to_vehicle_id = {w.get("user_id", w.get("worker_id")): i for i, w in enumerate(workers)}
+    worker_id_to_vehicle_id = {
+        w.get("user_id", w.get("worker_id")): i for i, w in enumerate(workers)
+    }
     request = SolveRequest(
         policy_version=policy.policy_version,
         num_vehicles=v,
@@ -153,7 +155,9 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
                     if ticket.get("sla_deadline_at")
                     else None
                 ),
-                "previous_vehicle_id": worker_id_to_vehicle_id.get(ticket.get("assigned_worker_id")),
+                "previous_vehicle_id": worker_id_to_vehicle_id.get(
+                    ticket.get("assigned_worker_id")
+                ),
             }
             for ticket in tickets
         ],

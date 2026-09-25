@@ -115,7 +115,9 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
             "timezone": "Europe/Moscow",
             "expires_at": expires,
             "solver_status": solution.status if solution else None,
-            "objective_components": solution.objective_components.model_dump(mode="json") if solution and solution.objective_components else None,
+            "objective_components": solution.objective_components.model_dump(mode="json")
+            if solution and solution.objective_components
+            else None,
             "metrics": plan_metrics(request, prepared, routes, unassigned),
             "routes": routes,
             "unassigned": unassigned,
