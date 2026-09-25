@@ -20,7 +20,11 @@ HISTORY_KEYS = (
 
 
 def _recreate(ondelete: str) -> None:
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
     for table, name in HISTORY_KEYS:
+        if not insp.has_table(table):
+            continue
         op.drop_constraint(name, table, type_="foreignkey")
         op.create_foreign_key(name, table, "workers", ["worker_id"], ["user_id"], ondelete=ondelete)
 
