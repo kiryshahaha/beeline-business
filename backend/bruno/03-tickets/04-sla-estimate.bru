@@ -4,9 +4,9 @@ meta {
   seq: 4
 }
 
-post {
-  url: {{base_url}}/api/v1/tickets/{{created_ticket_id}}/sla-estimate
-  body: json
+get {
+  url: {{base_url}}/api/v1/tickets/{{created_ticket_id}}/sla-estimate?previous_ticket_end_at={{sla_previous_ticket_end_at}}&travel_minutes=15
+  body: none
   auth: bearer
 }
 
@@ -18,12 +18,6 @@ headers {
   Content-Type: application/json
 }
 
-body:json {
-  {
-    "previous_ticket_end_at": "{{sla_previous_ticket_end_at}}",
-    "travel_minutes": 15
-  }
-}
 
 script:pre-request {
   bru.setVar("sla_previous_ticket_end_at", new Date(Date.now() + 30 * 60 * 1000).toISOString());

@@ -6,9 +6,10 @@ export function useOffices() {
   const { token } = useAuth();
 
   const { data: offices = [], ...officesData } = useQuery({
-    queryKey: ["officesList", token],
+    queryKey: ["officesList"],
+    enabled: !!token,
     queryFn: async () => {
-      const res = await apiFetch("/offices", token);
+      const res = await apiFetch("/offices");
       if (!res.ok) throw new Error("Ошибка в получении офисов");
       return res.json();
     },
@@ -17,3 +18,5 @@ export function useOffices() {
 
   return { offices, officesData };
 }
+
+

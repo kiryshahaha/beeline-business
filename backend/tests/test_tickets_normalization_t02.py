@@ -175,10 +175,10 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
             ),
         )
         headers = self.auth_headers(self.observer)
-        response = self.client.post(
+        response = self.client.get(
             f"/api/v1/tickets/{ticket.id}/sla-estimate",
             headers=headers,
-            json={
+            params={
                 "previous_ticket_end_at": (start + timedelta(minutes=10)).isoformat(),
                 "travel_minutes": 10,
             },
@@ -194,9 +194,9 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
         self.assertEqual(estimate["sla_late_minutes"], 20)
         self.assertEqual(estimate["duration_source"], "ticket_estimate")
         self.assertEqual(estimate["duration_minutes"], 30)
-        denied = self.client.post(
+        denied = self.client.get(
             f"/api/v1/tickets/{ticket.id}/sla-estimate",
-            json={
+            params={
                 "previous_ticket_end_at": (start + timedelta(minutes=10)).isoformat(),
                 "travel_minutes": 10,
             },

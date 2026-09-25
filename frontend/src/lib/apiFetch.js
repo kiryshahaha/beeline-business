@@ -1,4 +1,4 @@
-import { updateToken } from "@/lib/tokenBus";
+import { updateToken, getToken } from "@/lib/tokenBus";
 
 const BASE = process.env.NEXT_PUBLIC_ENDPOINT;
 
@@ -29,8 +29,12 @@ export function refreshSession() {
  * Обертка над fetch с автоматическим обновлением токена при 401.
  * При невозможности обновить — очищает access_token и перенаправляет на /login.
  * refresh_token передаётся браузером автоматически через httpOnly cookie.
+ *
+ * @param {string} path — путь API (например "/tickets")
+ * @param {object} [options] — стандартные опции fetch (method, body, headers и т.д.)
  */
-export async function apiFetch(path, token, options = {}) {
+export async function apiFetch(path, options = {}) {
+  const token = getToken();
   const headers = {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),

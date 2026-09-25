@@ -2,12 +2,12 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session
 from app.modules.auth.dependencies import require_roles
-from app.modules.locations import service, repository
+from app.modules.locations import repository, service
 from app.modules.locations.schemas import LocationCreate, LocationRead
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
@@ -23,6 +23,7 @@ def create_location(
 ) -> LocationRead:
     """Создать или получить существующий адрес из справочника."""
     return service.get_or_create_location(session, data)
+
 
 @router.get("/{location_id}", response_model=LocationRead)
 def get_location(
