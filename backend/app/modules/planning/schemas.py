@@ -175,6 +175,7 @@ class PlanWorker(BaseModel):
 
 class PlanRead(BaseModel):
     planning_policy: ExecutionPolicy | None = None
+    case_policy_version: int | None = None
     plan_id: UUID
     state: Literal["ready", "applied", "expired", "stale"]
     outcome: Literal["complete", "partial", "empty"]
@@ -184,6 +185,7 @@ class PlanRead(BaseModel):
     timezone: Literal["Europe/Moscow"]
     expires_at: datetime
     solver_status: Literal["FEASIBLE", "OPTIMAL"] | None
+    objective_components: dict[str, int] | None = None
     metrics: PlanMetrics | None = None
     routes: list[PlannedRoute]
     unassigned: list[Rejection]

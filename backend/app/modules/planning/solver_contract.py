@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Minute = Annotated[int, Field(strict=True, ge=0, le=2880)]
 Index = Annotated[int, Field(strict=True, ge=0, le=99)]
-Cost = Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+Cost = Annotated[int, Field(strict=True, ge=0, le=9_000_000_000_000_000_000)]
 MinuteOffset = Annotated[int, Field(strict=True, ge=-2_147_483_648, le=2_147_483_647)]
 
 
@@ -25,6 +25,7 @@ class TicketPolicy(StrictModel):
     priority: Annotated[int, Field(strict=True, ge=1, le=2_147_483_647)]
     received_at: MinuteOffset
     sla_deadline_at: MinuteOffset | None
+    previous_vehicle_id: Annotated[int, Field(strict=True, ge=0, le=19)] | None = None
 
 
 class SolveRequest(StrictModel):
@@ -39,7 +40,6 @@ class SolveRequest(StrictModel):
     time_windows: list[tuple[Minute, Minute]]
     service_times: list[Minute]
     allowed_vehicles: dict[str, list[Annotated[int, Field(strict=True, ge=0, le=19)]]]
-    penalties: list[Cost]
     ticket_policies: list[TicketPolicy]
     time_capacity: Annotated[int, Field(strict=True, ge=1, le=2880)]
     slack_max: Minute
@@ -71,7 +71,7 @@ class SolveRequest(StrictModel):
             raise ValueError("Depot index outside matrices")
         if any(p not in self.matrices for p in self.vehicle_profiles):
             raise ValueError("Unknown vehicle matrix profile")
-        if any(len(a) != n for a in (self.time_windows, self.service_times, self.penalties)):
+        if any(len(a) != n for a in (self.time_windows, self.service_times)):
             raise ValueError("Node array dimensions must match matrices")
         if any(
             a > b or b > self.time_capacity
@@ -80,8 +80,8 @@ class SolveRequest(StrictModel):
             raise ValueError("Invalid time window or horizon")
         if self.slack_max > self.time_capacity:
             raise ValueError("Waiting exceeds horizon")
-        if any(self.service_times[i] or self.penalties[i] for i in depots):
-            raise ValueError("Depots cannot have service or dropping costs")
+        if any(self.service_times[i] for i in depots):
+            raise ValueError("Depots cannot have service costs")
         tasks = set(range(n)) - depots
         if len(self.ticket_policies) != len(tasks):
             raise ValueError("Ticket policy count must match task count")
@@ -124,6 +124,16 @@ class Route(StrictModel):
     waiting_minutes: Cost
 
 
+class ObjectiveComponents(StrictModel):
+    dropped_emergencies: Cost
+    emergency_delays: Cost
+    dropped_connections: Cost
+    dropped_total: Cost
+    active_vehicles: Cost
+    travel_time: Cost
+    changed_assignments: Cost
+
+
 class SolveResponse(StrictModel):
     contract_version: Literal[2] = 2
     status: Literal["FEASIBLE", "OPTIMAL", "INFEASIBLE", "NOT_SOLVED"]
@@ -132,3 +142,4 @@ class SolveResponse(StrictModel):
     dropped_nodes: list[Index] = Field(default_factory=list, max_length=100)
     total_cost: Cost = 0
     total_distance: Cost = 0
+    objective_components: ObjectiveComponents | None = None
