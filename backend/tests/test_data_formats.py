@@ -126,6 +126,16 @@ class DataFormatTests(unittest.TestCase):
                         self.assertEqual(book["cities"]["B2"].data_type, "s")
                         book.close()
 
+    def test_xlsx_cell_limit_counts_utf16_units(self):
+        fits = "🙂" * 16_383 + "я"  # 32 767 UTF-16 units: an emoji takes two
+        book = load_workbook(io.BytesIO(serialize({"cities": [{"id": 1, "name": fits}]}, "xlsx")))
+        header = [cell.value for cell in book["cities"][1]]
+        self.assertEqual(book["cities"].cell(2, header.index("name") + 1).value, fits)
+        book.close()
+        with self.assertRaises(ExchangeError) as result:
+            serialize({"cities": [{"id": 1, "name": "🙂" * 16_384}]}, "xlsx")
+        self.assertEqual(result.exception.detail["column"], "name")
+
     def test_csv_delimiters_bom_and_errors_with_coordinates(self):
         for delimiter in (",", ";", "\t"):
             self.assertEqual(

@@ -1,0 +1,30 @@
+meta {
+  name: Пустая выгрузка содержит только заголовок
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{base_url}}/api/v1/reports/tickets/export?format=csv&city_id=2147483647
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Одна строка заголовков", function () {
+    const raw = String(res.getBody());
+    // Bruno may drop the UTF-8 BOM; its presence is checked by the Python tests.
+    const body = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
+    expect(body.startsWith("id,location_id,title,")).to.equal(true);
+    expect(body.endsWith(",address\r\n")).to.equal(true);
+    expect(body.split("\r\n").length).to.equal(2);
+  });
+}

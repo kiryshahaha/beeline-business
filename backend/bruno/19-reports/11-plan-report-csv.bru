@@ -1,0 +1,28 @@
+meta {
+  name: Отчёт по плану в CSV — ZIP с таблицами
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{base_url}}/api/v1/reports/plans/{{planning_empty_id}}/export?format=csv
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Пустой план тоже выгружается архивом", function () {
+    expect(res.getHeader("content-type")).to.equal("application/zip");
+    expect(res.getHeader("content-disposition")).to.include(
+      "plan-" + bru.getVar("planning_empty_id") + ".zip"
+    );
+  });
+}
