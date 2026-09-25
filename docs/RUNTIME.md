@@ -4,14 +4,14 @@
 
 | Компонент | Поддержка для backend/planner |
 | --- | --- |
-| Python | CPython 3.12.x; версия записана в `.python-version` |
+| Python | CPython 3.12.13; версия записана в `.python-version`, CI и Docker |
 | Node.js | 24.x LTS для Bruno CLI 4.1.0 в backend API E2E; отдельный frontend job использует 22.x |
 | PostgreSQL | 17.x; локальный Compose и CI используют одну основную версию |
 | ОС | Ubuntu 24.04 x86-64 — опорная среда CI; Docker Compose запускает Linux-образы backend и planner |
 | Docker Compose | Compose CLI 2.17.0 или новее; локальная проверка выполнена на 5.1.1 |
-| CI | GitHub Actions, `ubuntu-24.04`, Python 3.12, PostgreSQL 17, Node 24 для Bruno |
+| CI | GitHub Actions, `ubuntu-24.04`, Python 3.12.13, PostgreSQL 17, Node 24 для Bruno |
 
-Python-зависимости рассчитаны на CPython 3.12. Установка OR-Tools требует готовое
+Python-зависимости рассчитаны на CPython 3.12.13. Установка OR-Tools требует готовое
 нативное колесо: Docker и CI используют Linux x86-64; пакет 9.15.6755 также публикует
 колёса для Linux ARM64, macOS ARM64/x86-64 и Windows x86-64.
 Для Node.js сверяйте [таблицу поддержки релизов](https://nodejs.org/en/about/previous-releases):
@@ -79,22 +79,21 @@ Firebase. Секреты остаются в `.env` или secret store; фай�
 ```sh
 python3.12 -m venv .venv
 .venv/bin/python -m pip install --no-cache-dir --only-binary=ortools \
-  -c constraints.txt -r backend/requirements.txt -r planner/requirements.txt
+  --require-hashes -r backend/requirements.lock -r planner/requirements.lock
 .venv/bin/python -m pip check
 ```
 
-Файлы `requirements.txt` задают совместимые диапазоны прямых зависимостей;
-`constraints.txt` согласует версии pandas и protobuf для общего окружения.
-Firebase Admin и `icalendar` указаны в backend requirements; OR-Tools закреплён
-на 9.15.6755 в planner requirements.
+Файлы `requirements.lock` закрепляют все транзитивные зависимости и их хеши для
+Python 3.12. `requirements.txt` остаются перечнем прямых пакетов. Bruno CLI в E2E
+закреплён на 4.1.0; версия Node.js фиксируется в отчёте CI.
 
 ## Проверки в CI
 
 Workflow `Backend CI` запускает backend-тесты с PostgreSQL 17, затем синтетические
 проверки и Bruno E2E с реальным planner. Отдельная задача `Planner API checks` ставит
-`planner/requirements.txt` с общими ограничениями, принудительно выбирает бинарный OR-Tools и выполняет тесты
-решателя. Job `Frontend lint and build` находится в том же workflow, но не относится
-к этому backend-сценарию.
+`planner/requirements.lock` с хешами и выполняет тесты решателя. Артефакт с SHA в имени
+содержит JUnit Bruno, журналы тестов и процессов, версии среды и сводку benchmark.
+Job `Frontend lint and build` находится в том же workflow.
 
 Результат этого clean-run прогона с версиями среды, миграцией, readiness и отчётами
 проверок записан в [T20_CLEAN_RUN.md](T20_CLEAN_RUN.md). В нём нет `.env`, токенов

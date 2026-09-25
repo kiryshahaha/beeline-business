@@ -23,7 +23,10 @@ assert {
 }
 
 script:post-response {
-  if (res.getStatus() === 201) bru.setVar("planning_plan_id", res.getBody().plan_id);
+  if (res.getStatus() === 201) {
+    bru.setVar("planning_plan_id", res.getBody().plan_id);
+    bru.setVar("planning_service_area_id", res.getBody().service_area_id);
+  }
 }
 
 tests {

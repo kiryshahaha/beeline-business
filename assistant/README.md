@@ -89,7 +89,7 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```bash
 cd assistant
 python -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/python -m pip install --require-hashes -r requirements.lock
 .venv/bin/uvicorn app.main:app --reload --port 8002
 ```
 
@@ -102,6 +102,9 @@ python -m venv .venv
 .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format --check .
 .venv/bin/python -m unittest discover -s tests -t .
 ```
+
+`requirements.lock` фиксирует точные версии и хеши пакетов для Python 3.12.13; Docker
+и GitHub Actions ставят тот же набор.
 
 ## Сравнение моделей
 

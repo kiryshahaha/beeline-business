@@ -17,11 +17,14 @@ def oracle(data):
         for order in itertools.permutations(tasks, size):
             clock = travel = previous = 0
             for node in (*order, 0):
-                clock += data["service_times"][previous] + matrix[previous][node]
+                arc = matrix[previous][node]
+                if arc is None:
+                    break
+                clock += data["service_times"][previous] + arc
                 clock = max(clock, data["time_windows"][node][0])
                 if clock > data["time_windows"][node][1] or clock > data["time_capacity"]:
                     break
-                travel += matrix[previous][node]
+                travel += arc
                 previous = node
             else:
                 feasible.append((-size, travel))
@@ -41,6 +44,38 @@ class SolverObjectiveTests(unittest.TestCase):
         selected = 3 - len(result.dropped_nodes)
         self.assertEqual((-selected, sum(r.travel_minutes for r in result.routes)), oracle(data))
         self.assertEqual(selected, 3)
+
+    def test_native_solver_matches_oracle_for_asymmetric_unreachable_arcs(self):
+        data = problem(n=4, horizon=28)
+        matrix = [
+            [0, 2, 4, 10],
+            [3, 0, 2, 6],
+            [7, None, 0, 2],
+            [2, 5, 4, 0],
+        ]
+        data["matrices"]["drive"]["time_minutes"] = matrix
+        data["matrices"]["drive"]["distance_meters"] = [
+            [None if value is None else value * 100 for value in row] for row in matrix
+        ]
+        for policy in data["ticket_policies"]:
+            policy["category"] = "repair"
+            policy["priority"] = 3
+
+        result = solve(SolveRequest.model_validate(data))
+        selected = 3 - len(result.dropped_nodes)
+
+        self.assertEqual(
+            (-selected, sum(route.travel_minutes for route in result.routes)), oracle(data)
+        )
+        self.assertEqual(len(result.dropped_nodes), 1)
+        self.assertNotIn(
+            (2, 1),
+            {
+                (route.steps[i].node, route.steps[i + 1].node)
+                for route in result.routes
+                for i in range(len(route.steps) - 1)
+            },
+        )
 
     def test_overload_serves_maximum_and_returns_before_shift_end(self):
         data = problem(n=6, horizon=50)

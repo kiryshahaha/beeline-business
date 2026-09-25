@@ -189,3 +189,116 @@ class ExchangeRoundtripTests(DatabaseTestCase):
                     connection.execute(text("SELECT user_id FROM workers")).scalar_one(), user_id
                 )
                 self.assertNotIn("routes", inspect(connection).get_table_names())
+
+    def test_populated_day_revisions_upgrade_downgrade_and_upgrade_again(self):
+        with migrated_schema(self.admin_engine, "0024") as (engine, config):
+            with engine.begin() as connection:
+                city_id = connection.execute(
+                    text("INSERT INTO cities (name) VALUES ('T21 migration city') RETURNING id")
+                ).scalar_one()
+                district_id = connection.execute(
+                    text(
+                        "INSERT INTO districts (city_id,name) VALUES (:city,'T21 migration area') "
+                        "RETURNING id"
+                    ),
+                    {"city": city_id},
+                ).scalar_one()
+                connection.execute(
+                    text(
+                        "INSERT INTO service_areas (code,name) VALUES (:code,'T21 migration area')"
+                    ),
+                    {"code": f"district_{district_id}"},
+                )
+                service_area_id = connection.execute(
+                    text("SELECT id FROM service_areas WHERE code = :code"),
+                    {"code": f"district_{district_id}"},
+                ).scalar_one()
+                actor_id = connection.execute(
+                    text(
+                        "INSERT INTO users (name,surname,username,password_hash,role) "
+                        "VALUES ('T21','Migration','t21_migration','hash','observer') "
+                        "RETURNING id"
+                    )
+                ).scalar_one()
+                first_id = connection.execute(
+                    text(
+                        "INSERT INTO day_plan_revisions "
+                        "(district_id,route_date,revision,actor_id,"
+                        "fingerprint,result,is_current,created_at) "
+                        "VALUES (:district,'2030-01-15',7,:actor,:fingerprint,:result,false,"
+                        "'2030-01-15T08:00:00+00:00') RETURNING id"
+                    ),
+                    {
+                        "district": district_id,
+                        "actor": actor_id,
+                        "fingerprint": "a" * 64,
+                        "result": '{"legacy": 1}',
+                    },
+                ).scalar_one()
+                second_id = connection.execute(
+                    text(
+                        "INSERT INTO day_plan_revisions "
+                        "(district_id,route_date,revision,previous_revision,"
+                        "actor_id,fingerprint,result,is_current,created_at) "
+                        "VALUES (:district,'2030-01-15',8,7,:actor,:fingerprint,:result,true,"
+                        "'2030-01-15T09:00:00+00:00') RETURNING id"
+                    ),
+                    {
+                        "district": district_id,
+                        "actor": actor_id,
+                        "fingerprint": "b" * 64,
+                        "result": '{"legacy": 2}',
+                    },
+                ).scalar_one()
+
+            with engine.connect() as connection:
+                config.attributes["connection"] = connection
+                command.upgrade(config, "head")
+                command.check(config)
+                rows = (
+                    connection.execute(
+                        text(
+                            "SELECT id, service_area_id, revision, previous_revision, is_current, "
+                            "reason, plan_state, superseded_by_revision "
+                            "FROM day_plan_revisions ORDER BY id"
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                self.assertEqual([row["id"] for row in rows], [first_id, second_id])
+                self.assertEqual([row["service_area_id"] for row in rows], [service_area_id] * 2)
+                self.assertEqual([row["revision"] for row in rows], [1, 2])
+                self.assertEqual([row["previous_revision"] for row in rows], [None, 1])
+                self.assertEqual([row["is_current"] for row in rows], [False, True])
+                self.assertEqual(rows[0]["superseded_by_revision"], 2)
+                self.assertEqual(rows[1]["reason"], "plan_applied")
+                self.assertEqual(
+                    [row["plan_state"] for row in rows], [{"legacy": 1}, {"legacy": 2}]
+                )
+                connection.commit()
+
+                command.downgrade(config, "0024")
+                legacy = (
+                    connection.execute(
+                        text(
+                            "SELECT id, district_id, revision, result "
+                            "FROM day_plan_revisions ORDER BY id"
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                self.assertEqual([row["id"] for row in legacy], [first_id, second_id])
+                self.assertEqual([row["district_id"] for row in legacy], [district_id] * 2)
+                self.assertEqual([row["result"] for row in legacy], [{"legacy": 1}, {"legacy": 2}])
+                connection.commit()
+
+                command.upgrade(config, "head")
+                command.check(config)
+                self.assertEqual(
+                    connection.execute(
+                        text("SELECT count(*) FROM day_plan_revisions")
+                    ).scalar_one(),
+                    2,
+                )

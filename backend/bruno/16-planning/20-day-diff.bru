@@ -1,0 +1,33 @@
+meta {
+  name: Diff опубликованного плана дня
+  type: http
+  seq: 21
+}
+
+get {
+  url: {{base_url}}/api/v1/planning/areas/{{planning_service_area_id}}/2030-01-15/diff
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.service_area_id: eq {{planning_service_area_id}}
+  res.body.route_date: eq "2030-01-15"
+  res.body.is_current: eq true
+}
+
+tests {
+  test("Ответ сравнивает текущую ревизию с предыдущей", () => {
+    const body = res.getBody();
+    expect(body.to_revision).to.be.a("number").and.above(1);
+    expect(body.from_revision).to.equal(body.to_revision - 1);
+    expect(body.reason).to.equal("plan_applied");
+    expect(body.added).to.be.an("array");
+    expect(body.removed).to.be.an("array");
+    expect(body.changed).to.be.an("array");
+  });
+}
