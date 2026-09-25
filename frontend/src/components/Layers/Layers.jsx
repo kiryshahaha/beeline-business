@@ -63,7 +63,7 @@ export default function Layers({ mapRef }) {
   return (
     <ExpandableMenu
       className={styles.menu}
-      baseSize={56}
+      baseSize={46}
       renderHeader={() => (
         <div className={styles.trigger}>
           <Image src="/icons/lauers.svg" alt="Слои" width={19} height={19} />

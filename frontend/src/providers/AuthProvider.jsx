@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { registerTokenSetter } from "@/lib/tokenBus";
+import { refreshSession } from "@/lib/apiFetch";
 
 const AuthContext = createContext(null);
 
@@ -24,14 +25,8 @@ export function AuthProvider({ children }) {
 
     const restoreSession = async () => {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/auth/refresh`, {
-          method: "POST",
-          credentials: "include",
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setToken(data.access_token);
-        }
+        const accessToken = await refreshSession();
+        setToken(accessToken);
       } catch {
         // Нет сети или нет cookie — пользователь не авторизован
       } finally {

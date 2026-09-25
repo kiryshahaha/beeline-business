@@ -1,8 +1,6 @@
 "use client"
 
 import React, { useState } from "react";
-import { usePathname } from "next/navigation";
-import Menu from "../Menu/Menu";
 import styles from "./LayoutBar.module.css";
 
 const icons = [
@@ -14,7 +12,6 @@ const icons = [
 const LayoutBar = () => {
   const [activeIcon, setActiveIcon] = useState("map");
   const activeIndex = icons.findIndex(icon => icon.id === activeIcon);
-  const pathname = usePathname();
 
   return (
     <div className={styles.wrapper}>
@@ -40,7 +37,6 @@ const LayoutBar = () => {
         </div>
       ))}
       </div>
-      {pathname === "/" && <Menu />}
     </div>
   );
 };

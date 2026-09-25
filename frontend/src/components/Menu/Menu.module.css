@@ -1,8 +1,8 @@
 .menuContainer {
     border-radius: 12px;
-    height: 60px;
-    max-width: 60px;
-    min-width: 60px;
+    height: 46px;
+    max-width: 46px;
+    min-width: 46px;
     width: max-content;
     padding: 0;
     border: 2px solid var(--stroke);
@@ -24,9 +24,9 @@
 }
 
 .iconWrapper {
-    width: 56px;
-    /* 60px - 4px borders */
-    height: 56px;
+    width: 42px;
+    /* 56px - 4px borders */
+    height: 42px;
     display: flex;
     justify-content: center;
     align-items: center;
