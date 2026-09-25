@@ -31,7 +31,7 @@ from app.modules.routing.client import GeoapifyRoutingError
 from app.modules.routing.schemas import RouteCreate
 from app.modules.routing.service import save_routes_in_transaction
 from app.modules.tickets.models import Ticket
-from app.modules.tickets.service import replace_assignees_in_transaction
+from app.modules.tickets.service import update_assignment_in_transaction
 from app.modules.users.models import User
 
 
