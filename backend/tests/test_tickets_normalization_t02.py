@@ -81,7 +81,12 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
         district = self.save(District(city_id=city.id, name="Центральный"))
         street = self.save(Street(city_id=city.id, name="Тверская"))
         building = self.save(
-            Building(city_id=city.id, street_id=street.id, district_id=district.id, number="1")
+            Building(
+                city_id=city.id,
+                street_id=street.id,
+                service_area_id=self.service_area_for_district(district.id),
+                number="1",
+            )
         )
         entrance = self.save(Entrance(building_id=building.id, number="1"))
         self.location = self.save(

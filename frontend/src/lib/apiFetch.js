@@ -56,6 +56,7 @@ export async function apiFetch(path, options = {}) {
     return fetch(`${BASE}${path}`, { ...options, headers: retryHeaders, credentials: "include" });
   } catch (error) {
     updateToken(null);
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     if (typeof window !== "undefined") window.location.href = "/login";
     throw new Error("Сессия истекла. Перенаправление на страницу входа.");
   }

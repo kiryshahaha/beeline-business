@@ -21,7 +21,7 @@ class DatabaseTests(DatabaseTestCase):
         self.building = self.save(
             Building(
                 city_id=self.city.id,
-                district_id=self.district.id,
+                service_area_id=self.service_area_for_district(self.district.id),
                 street_id=self.street.id,
                 number="12А",
             )
@@ -97,68 +97,65 @@ class DatabaseTests(DatabaseTestCase):
             with self.subTest(name=name):
                 self.rejected(District(city_id=self.city.id, name=name))
 
-    def test_building_rejects_district_or_street_from_another_city(self):
+    def test_building_area_is_global_but_street_must_belong_to_its_city(self):
         other_city = self.save(City(name="Другой город"))
         district = self.save(District(city_id=other_city.id, name="Центральный район"))
         other_street = self.save(Street(city_id=other_city.id, name="улица Ленина"))
-        for values in (
-            {"street_id": self.street.id, "district_id": district.id},
-            {"street_id": other_street.id, "district_id": self.district.id},
-        ):
-            with self.subTest(values=values):
-                self.rejected(Building(city_id=self.city.id, number="100", **values))
-        # Updating an existing row through literal SQL must enforce the same rule.
+        other_area_id = self.service_area_for_district(district.id)
+        local_building = self.save(
+            Building(
+                city_id=self.city.id,
+                street_id=self.street.id,
+                service_area_id=other_area_id,
+                number="100",
+            )
+        )
+        self.assertEqual(local_building.service_area_id, other_area_id)
+
+        # The street-city composite key still blocks a street from another city.
         with self.assertRaises(IntegrityError):
             with self.session.begin_nested():
                 self.session.execute(
-                    text("UPDATE buildings SET district_id = :district_id WHERE id = :id"),
-                    {"district_id": district.id, "id": self.building.id},
+                    text("UPDATE buildings SET street_id = :street_id WHERE id = :id"),
+                    {"street_id": other_street.id, "id": self.building.id},
                 )
 
     def test_one_street_can_have_buildings_in_different_districts(self):
         first = self.save(District(city_id=self.city.id, name="Первый район"))
         second = self.save(District(city_id=self.city.id, name="Второй район"))
-        self.building.district_id = first.id
+        self.building.service_area_id = self.service_area_for_district(first.id)
         other = self.save(
             Building(
-                city_id=self.city.id, street_id=self.street.id, district_id=second.id, number="14"
+                city_id=self.city.id,
+                street_id=self.street.id,
+                service_area_id=self.service_area_for_district(second.id),
+                number="14",
             )
         )
         self.assertEqual(other.street_id, self.building.street_id)
-        self.assertNotEqual(other.district_id, self.building.district_id)
-        other_city = self.save(City(name="Другой город"))
-        for query in (
-            "DELETE FROM districts WHERE id = :id",
-            "UPDATE districts SET city_id = :city_id WHERE id = :id",
-        ):
-            with self.subTest(query=query):
-                with self.assertRaises(IntegrityError):
-                    with self.session.begin_nested():
-                        self.session.execute(
-                            text(query), {"id": first.id, "city_id": other_city.id}
-                        )
+        self.assertNotEqual(other.service_area_id, self.building.service_area_id)
 
     def test_building_without_block_cannot_be_duplicated(self):
         self.rejected(
             Building(
                 city_id=self.city.id,
-                district_id=self.district.id,
+                service_area_id=self.service_area_for_district(self.district.id),
                 street_id=self.street.id,
                 number="12а",
             )
         )
 
-    def test_building_district_cannot_be_omitted_null_or_cleared(self):
+    def test_building_service_area_cannot_be_omitted_null_or_cleared(self):
         statements = (
             """
             INSERT INTO buildings (city_id, street_id, number)
             VALUES (:city_id, :street_id, '100')
             """,
             """
-            INSERT INTO buildings (city_id, street_id, district_id, number)
+            INSERT INTO buildings (city_id, street_id, service_area_id, number)
             VALUES (:city_id, :street_id, NULL, '100')
             """,
-            "UPDATE buildings SET district_id = NULL WHERE id = :id",
+            "UPDATE buildings SET service_area_id = NULL WHERE id = :id",
         )
         for statement in statements:
             with self.subTest(statement=statement):
@@ -173,15 +170,17 @@ class DatabaseTests(DatabaseTestCase):
                             },
                         )
                 self.assertEqual(raised.exception.orig.sqlstate, "23502")
-                self.assertEqual(raised.exception.orig.diag.column_name, "district_id")
+                self.assertEqual(raised.exception.orig.diag.column_name, "service_area_id")
         self.session.refresh(self.building)
-        self.assertEqual(self.building.district_id, self.district.id)
+        self.assertEqual(
+            self.building.service_area_id, self.service_area_for_district(self.district.id)
+        )
 
     def test_buildings_with_different_blocks_are_distinct(self):
         other_building = self.save(
             Building(
                 city_id=self.city.id,
-                district_id=self.district.id,
+                service_area_id=self.service_area_for_district(self.district.id),
                 street_id=self.street.id,
                 number="12А",
                 block="корпус 2",
@@ -194,7 +193,7 @@ class DatabaseTests(DatabaseTestCase):
         other_building = self.save(
             Building(
                 city_id=self.city.id,
-                district_id=self.district.id,
+                service_area_id=self.service_area_for_district(self.district.id),
                 street_id=self.street.id,
                 number="14",
             )
@@ -217,7 +216,7 @@ class DatabaseTests(DatabaseTestCase):
         other_building = self.save(
             Building(
                 city_id=self.city.id,
-                district_id=self.district.id,
+                service_area_id=self.service_area_for_district(self.district.id),
                 street_id=self.street.id,
                 number="14",
             )
@@ -289,7 +288,7 @@ class DatabaseTests(DatabaseTestCase):
         other_building = self.save(
             Building(
                 city_id=other_city.id,
-                district_id=other_district.id,
+                service_area_id=self.service_area_for_district(other_district.id),
                 street_id=other_street.id,
                 number="12А",
             )

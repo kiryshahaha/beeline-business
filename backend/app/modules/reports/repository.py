@@ -15,7 +15,7 @@ def _ticket_filters(
     *,
     status: str | None,
     city_id: int | None,
-    district_id: int | None,
+    service_area_id: int | None,
     brigade_id: int | None,
 ) -> tuple[str, dict[str, object]]:
     conditions: list[str] = []
@@ -26,9 +26,9 @@ def _ticket_filters(
     if city_id is not None:
         conditions.append("b.city_id = :city_id")
         parameters["city_id"] = city_id
-    if district_id is not None:
-        conditions.append("b.district_id = :district_id")
-        parameters["district_id"] = district_id
+    if service_area_id is not None:
+        conditions.append("b.service_area_id = :service_area_id")
+        parameters["service_area_id"] = service_area_id
     if brigade_id is not None:
         conditions.append("""
             EXISTS (

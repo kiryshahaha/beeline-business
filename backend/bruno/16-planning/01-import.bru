@@ -29,6 +29,10 @@ script:post-response {
     bru.setVar("planning_rule_payload", JSON.stringify({service_duration_source: "ticket_estimate", required_skill_ids: [ids.worker_skills["1"]], required_appliances: [{appliance_id: ids.appliances["1"], quantity: 1}]}));
     bru.setVar("planning_ticket_ids", JSON.stringify(Object.values(ids.tickets)));
     bru.setVar("planning_worker_ids", JSON.stringify(Object.values(ids.workers)));
+    bru.setVar(
+      "planning_over_limit_ticket_ids",
+      JSON.stringify(Array.from({length: 101}, (_, index) => 100000 + index))
+    );
   }
 }
 

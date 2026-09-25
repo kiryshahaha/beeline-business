@@ -1,0 +1,29 @@
+meta {
+  name: Истёкший preview нельзя применить
+  type: http
+  seq: 23
+}
+
+post {
+  url: {{base_url}}/api/v1/planning/plans/{{planning_expired_id}}/apply
+
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+headers {
+  X-E2E-Clock-Offset-Seconds: 301
+}
+
+assert {
+  res.status: eq 409
+}
+
+tests {
+  test("Срок preview проверен по детерминированным часам", () => {
+    expect(res.getBody().detail.code).to.equal("plan_expired");
+  });
+}

@@ -1,5 +1,6 @@
 """Transaction boundaries and domain logic for the address directory."""
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
@@ -20,7 +21,7 @@ def get_or_create_location(session: Session, data: LocationCreate) -> LocationRe
             id=details["id"],
             city_id=details["city_id"],
             city=details["city"],
-            district_id=details["district_id"],
+            service_area_id=details["service_area_id"],
             district=details["district"],
             street_id=details["street_id"],
             street=details["street"],
@@ -45,7 +46,7 @@ def resolve_location_id(session: Session, data: LocationCreate) -> int:
         {"name": data.city},
     )
 
-    district_id = repository.get_or_create_id(
+    district_row_id = repository.get_or_create_id(
         session,
         """
         SELECT id FROM districts
@@ -54,6 +55,10 @@ def resolve_location_id(session: Session, data: LocationCreate) -> int:
         "INSERT INTO districts (city_id, name) VALUES (:city_id, :name) RETURNING id",
         {"city_id": city_id, "name": data.district},
     )
+    service_area_id = session.execute(
+        text("SELECT id FROM service_areas WHERE code = :code"),
+        {"code": f"district_{district_row_id}"},
+    ).scalar_one()
 
     street_id = repository.get_or_create_id(
         session,
@@ -73,13 +78,13 @@ def resolve_location_id(session: Session, data: LocationCreate) -> int:
           AND lower(block) IS NOT DISTINCT FROM lower(CAST(:block AS text))
         """,
         """
-        INSERT INTO buildings (city_id, street_id, district_id, number, block)
-        VALUES (:city_id, :street_id, :district_id, :number, :block) RETURNING id
+        INSERT INTO buildings (city_id, street_id, service_area_id, number, block)
+        VALUES (:city_id, :street_id, :service_area_id, :number, :block) RETURNING id
         """,
         {
             "city_id": city_id,
             "street_id": street_id,
-            "district_id": district_id,
+            "service_area_id": service_area_id,
             "number": data.building_number,
             "block": data.block,
         },

@@ -31,6 +31,9 @@ MAX_TOTAL_ROWS = 250_000
 MAX_CELL_CHARS = 1_000_000
 NULL = "\\N"
 EMPTY = "\\E"
+LEGACY_DISTRICT_ID_TABLES = frozenset(
+    {"buildings", "divisions", "work_events", "worker_day_states", "day_plan_revisions"}
+)
 
 
 class ExchangeError(ValueError):
@@ -261,7 +264,7 @@ def normalize_dataframe(
     return result
 
 
-def normalize_rows(name: str, rows, *, allow_legacy_day_plan_revision: bool = False) -> list[dict]:
+def normalize_rows(name: str, rows, *, allow_legacy_district_ids: bool = False) -> list[dict]:
     if name not in TABLES:
         raise ExchangeError("Неизвестная таблица", name)
     iterator = iter(rows)
@@ -271,23 +274,24 @@ def normalize_rows(name: str, rows, *, allow_legacy_day_plan_revision: bool = Fa
     if not all(isinstance(c, str) and c for c in header) or len(header) != len(set(header)):
         raise ExchangeError("Пустые или повторяющиеся заголовки", name, 1)
     columns = {c.name: c for c in columns_for(name)}
-    if set(header) - columns.keys():
-        raise ExchangeError(
-            "Неизвестные столбцы: " + ", ".join(sorted(set(header) - columns.keys())), name, 1
-        )
+    legacy_district_ids = (
+        allow_legacy_district_ids
+        and name in LEGACY_DISTRICT_ID_TABLES
+        and "service_area_id" not in header
+        and "district_id" in header
+    )
+    unknown_columns = set(header) - columns.keys()
+    if legacy_district_ids:
+        unknown_columns.discard("district_id")
+    if unknown_columns:
+        raise ExchangeError("Неизвестные столбцы: " + ", ".join(sorted(unknown_columns)), name, 1)
     required = {
         c.name
         for c in columns.values()
         if not c.nullable and c.server_default is None and c.default is None
     }
     required |= {c.name for c in columns.values() if c.primary_key}
-    legacy_day_plan_revision = (
-        allow_legacy_day_plan_revision
-        and name == "day_plan_revisions"
-        and "service_area_id" not in header
-        and "district_id" in header
-    )
-    if legacy_day_plan_revision:
+    if legacy_district_ids:
         required.discard("service_area_id")
     if required - set(header):
         raise ExchangeError("Нет столбцов: " + ", ".join(sorted(required - set(header))), name, 1)
@@ -309,17 +313,27 @@ def normalize_rows(name: str, rows, *, allow_legacy_day_plan_revision: bool = Fa
         return []
 
     df = pd.DataFrame(raw_data, columns=header, dtype=object)
+    district_values = df.pop("district_id") if legacy_district_ids else None
     row_nums = pd.Series(source_row_numbers, index=df.index)
     result = normalize_dataframe(name, df, row_nums)
-    if legacy_day_plan_revision:
-        for row in result:
+    if legacy_district_ids:
+        for row, legacy_id in zip(result, district_values, strict=True):
+            if isinstance(legacy_id, bool):
+                raise ExchangeError("Ожидается положительный ID района", name)
+            try:
+                numeric_id = Decimal(str(legacy_id))
+            except InvalidOperation as error:
+                raise ExchangeError("Ожидается положительный ID района", name) from error
+            if not numeric_id.is_finite() or numeric_id != numeric_id.to_integral_value():
+                raise ExchangeError("Ожидается положительный ID района", name)
+            if not 1 <= numeric_id <= 2_147_483_647:
+                raise ExchangeError("Ожидается положительный ID района", name)
             row["service_area_id"] = None
+            row["_legacy_district_id"] = int(numeric_id)
     return result
 
 
-def read_csv(
-    content: bytes, name: str, *, allow_legacy_day_plan_revision: bool = False
-) -> list[dict]:
+def read_csv(content: bytes, name: str, *, allow_legacy_district_ids: bool = False) -> list[dict]:
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError as error:
@@ -332,7 +346,7 @@ def read_csv(
         return normalize_rows(
             name,
             csv.reader(io.StringIO(text, newline=""), delimiter=delimiter, strict=True),
-            allow_legacy_day_plan_revision=allow_legacy_day_plan_revision,
+            allow_legacy_district_ids=allow_legacy_district_ids,
         )
     except csv.Error as error:
         raise ExchangeError("Некорректный CSV: " + str(error), name) from error
@@ -361,7 +375,7 @@ def parse_file(content: bytes, filename: str, entity: str | None = None) -> dict
                 entity: read_csv(
                     content,
                     entity,
-                    allow_legacy_day_plan_revision=(entity == "day_plan_revisions"),
+                    allow_legacy_district_ids=(entity in LEGACY_DISTRICT_ID_TABLES),
                 )
             }
         if extension not in ("zip", "xlsx"):
@@ -385,7 +399,7 @@ def parse_file(content: bytes, filename: str, entity: str | None = None) -> dict
                     result[name] = read_csv(
                         archive.read(entry),
                         name,
-                        allow_legacy_day_plan_revision=allow_legacy,
+                        allow_legacy_district_ids=allow_legacy,
                     )
         else:
             workbook = load_workbook(
@@ -425,7 +439,7 @@ def parse_file(content: bytes, filename: str, entity: str | None = None) -> dict
                     result[sheet.title] = normalize_rows(
                         sheet.title,
                         values(sheet),
-                        allow_legacy_day_plan_revision=allow_legacy,
+                        allow_legacy_district_ids=allow_legacy,
                     )
             finally:
                 workbook.close()

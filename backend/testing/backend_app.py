@@ -1,9 +1,11 @@
 """Backend with fixed clock and deterministic Geoapify only; planner remains real HTTP."""
 
 import os
+from datetime import timedelta
 from urllib.parse import urlparse
 
 import httpx
+from fastapi import Request
 from sqlalchemy.engine import make_url
 
 from app.main import app
@@ -25,7 +27,15 @@ provider_url = os.environ["TEST_GEOAPIFY_URL"]
 if urlparse(provider_url).hostname not in ("127.0.0.1", "localhost"):
     raise RuntimeError("Fixture server must be on loopback")
 
-app.dependency_overrides[get_clock] = lambda: lambda: NOW
+
+def test_clock(request: Request):
+    offset = request.headers.get("X-E2E-Clock-Offset-Seconds", "0")
+    if not offset.isdecimal() or int(offset) > 3600:
+        raise ValueError("Invalid deterministic E2E clock offset")
+    return lambda: NOW + timedelta(seconds=int(offset))
+
+
+app.dependency_overrides[get_clock] = test_clock
 app.dependency_overrides[get_provider_factory] = lambda: (
     lambda: AsyncGeoapifyRoutingClient("fixture-only-key", base_url=provider_url)
 )

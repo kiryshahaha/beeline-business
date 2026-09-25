@@ -23,14 +23,15 @@ from planning_scenarios import generate_planning_dataset
 
 
 class PlanningPolicyTests(unittest.TestCase):
-    def test_planning_fixture_keeps_one_district_per_day(self):
+    def test_planning_fixture_keeps_one_service_area_per_day(self):
         data = generate_planning_dataset()
         locations = {row["id"]: row["building_id"] for row in data["locations"]}
         buildings = {row["id"]: row for row in data["buildings"]}
-        districts = {
-            buildings[locations[ticket["location_id"]]]["district_id"] for ticket in data["tickets"]
+        service_areas = {
+            buildings[locations[ticket["location_id"]]]["service_area_id"]
+            for ticket in data["tickets"]
         }
-        self.assertEqual(districts, {1})
+        self.assertEqual(service_areas, {101})
 
     def test_reviewable_synthetic_tradeoffs(self):
         path = Path(__file__).resolve().parents[2] / "data/planning/policy_objective_cases.json"

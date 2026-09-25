@@ -10,6 +10,11 @@ async def bounded_request(client, method, url, *, max_bytes=4 * 1024 * 1024, **k
             content.extend(chunk)
             if len(content) > max_bytes:
                 raise ValueError("Upstream response exceeds size limit")
+        headers = {
+            key: value
+            for key, value in response.headers.items()
+            if key.lower() not in {"content-length", "content-encoding", "transfer-encoding"}
+        }
         return httpx.Response(
-            response.status_code, content=bytes(content), request=response.request
+            response.status_code, headers=headers, content=bytes(content), request=response.request
         )

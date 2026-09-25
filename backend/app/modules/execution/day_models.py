@@ -1,4 +1,4 @@
-"""Current materialized state for one worker's district-day."""
+"""Current materialized state for one worker's service-area day."""
 
 from datetime import date, datetime
 
@@ -24,8 +24,8 @@ class WorkerDayState(IntegerIdMixin, Base):
     worker_id: Mapped[int] = mapped_column(
         ForeignKey("workers.user_id", ondelete="CASCADE"), nullable=False
     )
-    district_id: Mapped[int] = mapped_column(
-        ForeignKey("districts.id", ondelete="RESTRICT"), nullable=False
+    service_area_id: Mapped[int] = mapped_column(
+        ForeignKey("service_areas.id", ondelete="RESTRICT"), nullable=False
     )
     route_date: Mapped[date] = mapped_column(Date, nullable=False)
     revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
@@ -53,9 +53,9 @@ class WorkerDayState(IntegerIdMixin, Base):
 
     __table_args__ = (
         Index(
-            "uq_worker_day_states_worker_district_date",
+            "uq_worker_day_states_worker_service_area_date",
             "worker_id",
-            "district_id",
+            "service_area_id",
             "route_date",
             unique=True,
         ),

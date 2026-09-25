@@ -60,7 +60,7 @@ def find_tickets_summary(
                         JOIN locations AS off_loc ON off_loc.id = off.location_id
                         JOIN buildings AS off_bld ON off_bld.id = off_loc.building_id
                         JOIN service_areas AS bld_sa
-                          ON bld_sa.code = 'district_' || off_bld.district_id
+                          ON bld_sa.id = off_bld.service_area_id
                         WHERE off.id = :office_id
                     )
                 )
@@ -257,3 +257,119 @@ def find_recent_activity(
         LIMIT :limit OFFSET :offset
     """)
     return list(session.execute(query, parameters).mappings().all())
+
+
+def find_fast_stats(
+    session: Session,
+    *,
+    office_id: int | None = None,
+) -> dict:
+    """Calculate fast operational stats for today."""
+
+    scope_cond_tickets = ""
+    scope_cond_workers = ""
+    parameters = {}
+
+    if office_id is not None:
+        scope_cond_tickets = """
+            AND (
+                EXISTS (
+                    SELECT 1
+                    FROM brigade_members AS scope_member
+                    JOIN brigades AS scope_brigade ON scope_brigade.id = scope_member.brigade_id
+                    WHERE scope_member.worker_id = t.assigned_worker_id
+                      AND scope_brigade.office_id = :office_id
+                )
+                OR (
+                    t.assigned_worker_id IS NULL
+                    AND t.service_area_id = (
+                        SELECT off.service_area_id
+                        FROM offices AS off
+                        WHERE off.id = :office_id
+                    )
+                )
+            )
+        """
+        scope_cond_workers = """
+            AND EXISTS (
+                SELECT 1 
+                FROM brigade_members bm 
+                JOIN brigades b ON b.id = bm.brigade_id 
+                WHERE bm.worker_id = w.user_id AND b.office_id = :office_id
+            )
+        """
+        parameters["office_id"] = office_id
+
+    query = f"""
+    WITH today_tickets AS (
+        SELECT 
+            t.status,
+            t.sla_deadline_at,
+            t.visit_window_end,
+            t.estimated_duration_minutes,
+            t.actual_started_at,
+            CASE 
+                WHEN t.status = 'planned' 
+                     AND t.visit_window_end IS NOT NULL 
+                     AND CURRENT_TIMESTAMP > t.visit_window_end 
+                THEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - t.visit_window_end)) / 60
+                WHEN t.status = 'in_progress' 
+                     AND t.actual_started_at IS NOT NULL 
+                     AND t.estimated_duration_minutes IS NOT NULL 
+                     AND CURRENT_TIMESTAMP > (
+                        t.actual_started_at + t.estimated_duration_minutes * interval '1 minute'
+                     )
+                THEN EXTRACT(EPOCH FROM (
+                    CURRENT_TIMESTAMP - (
+                        t.actual_started_at + t.estimated_duration_minutes * interval '1 minute'
+                    )
+                )) / 60
+                ELSE 0
+            END AS delay_minutes
+        FROM tickets t
+        WHERE t.created_at >= date_trunc('day', CURRENT_TIMESTAMP)
+        {scope_cond_tickets}
+    ),
+    ticket_stats AS (
+        SELECT
+            COUNT(*) AS total_today,
+            COUNT(*) FILTER (
+                WHERE status IN ('completed', 'wont_fix') 
+                   OR (sla_deadline_at IS NULL OR sla_deadline_at >= CURRENT_TIMESTAMP)
+            ) AS compliant_today,
+            COUNT(*) FILTER (WHERE delay_minutes > 0) AS at_risk_count,
+            COALESCE(AVG(delay_minutes) FILTER (WHERE delay_minutes > 0), 0) AS avg_delay
+        FROM today_tickets
+    ),
+    idle_workers AS (
+        SELECT COUNT(*) AS idle_count
+        FROM workers w
+        WHERE w.is_on_line = TRUE
+          {scope_cond_workers}
+          AND NOT EXISTS (
+              SELECT 1 FROM tickets t 
+              WHERE t.assigned_worker_id = w.user_id AND t.status IN ('planned', 'in_progress')
+          )
+    )
+    SELECT 
+        ts.total_today,
+        ts.compliant_today,
+        ts.at_risk_count,
+        ts.avg_delay,
+        iw.idle_count
+    FROM ticket_stats ts
+    CROSS JOIN idle_workers iw;
+    """
+
+    row = session.execute(text(query), parameters).mappings().one()
+
+    total = row["total_today"]
+    compliant = row["compliant_today"]
+    compliance_percent = int((compliant / total * 100) if total > 0 else 100)
+
+    return {
+        "sla_compliance_percent": compliance_percent,
+        "at_risk_tickets_count": row["at_risk_count"],
+        "average_delay_minutes": int(row["avg_delay"]),
+        "idle_workers_count": row["idle_count"],
+    }

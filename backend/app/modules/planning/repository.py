@@ -97,28 +97,22 @@ def load_area_scope(session: Session, service_area_id: int | None, route_date) -
 def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=None) -> dict:
     ticket_ids, worker_ids = request.ticket_ids, request.worker_ids
     tickets = rows(session, Ticket, Ticket.id.in_(ticket_ids))
-    ticket_districts = {
-        row["id"]: row["district_id"]
+    ticket_building_areas = {
+        row["id"]: row["service_area_id"]
         for row in session.execute(
-            select(Ticket.id, Building.district_id)
+            select(Ticket.id, Building.service_area_id)
             .join(Location, Location.id == Ticket.location_id)
             .join(Building, Building.id == Location.building_id)
             .where(Ticket.id.in_(ticket_ids))
         ).mappings()
     }
     all_service_areas = rows(session, ServiceArea)
-    service_areas_by_code = {sa["code"]: sa["id"] for sa in all_service_areas}
-    default_service_area_id = all_service_areas[0]["id"] if all_service_areas else None
-
     ticket_service_areas = {
         t["id"]: t["service_area_id"] for t in tickets if t.get("service_area_id") is not None
     }
     for t in tickets:
-        if t["id"] not in ticket_service_areas and t["id"] in ticket_districts:
-            dist_id = ticket_districts[t["id"]]
-            ticket_service_areas[t["id"]] = service_areas_by_code.get(
-                f"district_{dist_id}", default_service_area_id or dist_id
-            )
+        if t["id"] not in ticket_service_areas and t["id"] in ticket_building_areas:
+            ticket_service_areas[t["id"]] = ticket_building_areas[t["id"]]
     service_area_ids = set(ticket_service_areas.values())
     if request.service_area_id is not None and service_area_ids - {request.service_area_id}:
         raise PlanningError("ticket_service_area_mismatch", ticket_areas=sorted(service_area_ids))
@@ -126,14 +120,6 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
         raise PlanningError("multiple_service_areas", service_areas=sorted(service_area_ids))
     service_area_id = request.service_area_id or next(iter(service_area_ids), None)
 
-    district_ids = set(ticket_districts.values())
-    if request.district_id is not None and district_ids - {request.district_id}:
-        raise PlanningError("ticket_district_mismatch", ticket_districts=sorted(district_ids))
-    if len(district_ids) > 1 and len(service_area_ids) <= 1:
-        pass  # allow multiple administrative districts within a single service area
-    elif len(district_ids) > 1:
-        raise PlanningError("multiple_districts", districts=sorted(district_ids))
-    district_id = request.district_id or next(iter(district_ids), None)
     workers = rows(session, Worker, Worker.user_id.in_(worker_ids))
     roles = [
         dict(row)
@@ -178,7 +164,7 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
     brigade_by_id = {brigade["id"]: brigade for brigade in brigades}
     member_by_worker = {m["worker_id"]: m for m in members}
     divisions = {
-        row["id"]: row["district_id"]
+        row["id"]: row["service_area_id"]
         for row in rows(session, Division, Division.id.in_({b["division_id"] for b in brigades}))
     }
 
@@ -190,12 +176,7 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
         else:
             mb = member_by_worker.get(wid)
             br = brigade_by_id.get(mb["brigade_id"]) if mb else None
-            dist_id = divisions.get(br["division_id"]) if br else None
-            worker_service_areas[wid] = (
-                service_areas_by_code.get(f"district_{dist_id}", default_service_area_id or dist_id)
-                if dist_id is not None
-                else default_service_area_id
-            )
+            worker_service_areas[wid] = divisions.get(br["division_id"]) if br else None
 
     target_area = service_area_id
     if target_area is not None:
@@ -206,15 +187,6 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
         )
         if invalid_area_workers:
             raise PlanningError("worker_service_area_mismatch", worker_ids=invalid_area_workers)
-    elif district_id is not None:
-        invalid_worker_ids = sorted(
-            member["worker_id"]
-            for member in members
-            if divisions.get(brigade_by_id.get(member["brigade_id"], {}).get("division_id"))
-            != district_id
-        )
-        if invalid_worker_ids:
-            raise PlanningError("worker_district_mismatch", worker_ids=invalid_worker_ids)
 
     worker_office_ids = {
         w["stock_office_id"] for w in workers if w.get("stock_office_id") is not None
@@ -227,7 +199,11 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
         WorkerDayState,
         WorkerDayState.worker_id.in_(worker_ids),
         WorkerDayState.route_date == request.route_date,
-        *([WorkerDayState.district_id == district_id] if district_id is not None else []),
+        *(
+            [WorkerDayState.service_area_id == service_area_id]
+            if service_area_id is not None
+            else []
+        ),
     )
     state_location_ids = {
         state["last_location_id"]
@@ -340,10 +316,8 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
             "appliances": appliances,
             "stocks": stocks,
             "reservations": reservations,
-            "ticket_districts": ticket_districts,
-            "district_id": district_id,
-            "service_areas": all_service_areas,
             "service_area_id": service_area_id,
+            "service_areas": all_service_areas,
             "ticket_service_areas": ticket_service_areas,
             "worker_service_areas": worker_service_areas,
             "worker_day_states": worker_day_states,

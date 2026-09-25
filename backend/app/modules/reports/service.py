@@ -46,7 +46,7 @@ EXPORT_COLUMNS = (
     "is_pinned",
     "city_id",
     "city",
-    "district_id",
+    "service_area_id",
     "district",
     "street_id",
     "street",
@@ -111,13 +111,13 @@ def export_tickets(
     format: str,
     status: TicketStatus | None,
     city_id: int | None,
-    district_id: int | None,
+    service_area_id: int | None,
     brigade_id: int | None,
 ) -> ExportFile:
     filters = {
         "status": status.value if status is not None else None,
         "city_id": city_id,
-        "district_id": district_id,
+        "service_area_id": service_area_id,
         "brigade_id": brigade_id,
     }
 

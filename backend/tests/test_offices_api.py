@@ -35,15 +35,16 @@ class OfficesApiTests(DatabaseTestCase):
             text("INSERT INTO streets (name, city_id) VALUES ('Улица', :city_id) RETURNING id"),
             {"city_id": city_id},
         ).scalar_one()
-        district_id = self.connection.execute(
+        district_row_id = self.connection.execute(
             text("INSERT INTO districts (name, city_id) VALUES ('Район', :city_id) RETURNING id"),
             {"city_id": city_id},
         ).scalar_one()
+        service_area_id = self.service_area_for_district(district_row_id)
         building_id = self.connection.execute(
             text(
-                "INSERT INTO buildings (city_id, street_id, district_id, number) VALUES (:city_id, :street_id, :district_id, '1') RETURNING id"  # noqa: E501
+                "INSERT INTO buildings (city_id, street_id, service_area_id, number) VALUES (:city_id, :street_id, :service_area_id, '1') RETURNING id"  # noqa: E501
             ),
-            {"city_id": city_id, "street_id": street_id, "district_id": district_id},
+            {"city_id": city_id, "street_id": street_id, "service_area_id": service_area_id},
         ).scalar_one()
 
         self.location_id = self.connection.execute(

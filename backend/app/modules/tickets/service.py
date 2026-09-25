@@ -167,7 +167,7 @@ def list_tickets(
     *,
     status: TicketStatus | None,
     city_id: int | None,
-    district_id: int | None,
+    service_area_id: int | None,
     limit: int,
     offset: int,
     brigade_id: int | None = None,
@@ -177,7 +177,7 @@ def list_tickets(
         session,
         status=status.value if status is not None else None,
         city_id=city_id,
-        district_id=district_id,
+        service_area_id=service_area_id,
         limit=limit,
         offset=offset,
         brigade_id=brigade_id,
@@ -218,7 +218,7 @@ def _ticket_from_row(details: RowMapping) -> TicketRead:
             id=details["location_id"],
             city_id=details["city_id"],
             city=details["city"],
-            district_id=details["district_id"],
+            service_area_id=details["service_area_id"],
             district=details["district"],
             street_id=details["street_id"],
             street=details["street"],
@@ -295,26 +295,21 @@ def create_ticket(
             resolved_area = session.execute(
                 text(
                     """
-                    SELECT sa.id
+                    SELECT b.service_area_id
                     FROM locations AS loc
                     JOIN buildings AS b ON b.id = loc.building_id
-                    JOIN service_areas AS sa ON sa.code = 'district_' || b.district_id
                     WHERE loc.id = :location_id
                     LIMIT 1
                     """
                 ),
                 {"location_id": values["location_id"]},
             ).scalar_one_or_none()
-            if resolved_area is None:
-                resolved_area = session.execute(
-                    text("SELECT id FROM service_areas ORDER BY id LIMIT 1")
-                ).scalar_one_or_none()
             values["service_area_id"] = resolved_area
         ticket_id = repository.add_ticket(session, values)
-        district_id = session.execute(
+        service_area_id = session.execute(
             text(
                 """
-                SELECT building.district_id
+                SELECT building.service_area_id
                 FROM tickets AS ticket
                 JOIN locations AS location ON location.id = ticket.location_id
                 JOIN buildings AS building ON building.id = location.building_id
@@ -328,7 +323,7 @@ def create_ticket(
             event_type=WorkEventType.NEW_TICKET.value,
             ticket_id=ticket_id,
             worker_id=None,
-            district_id=district_id,
+            service_area_id=service_area_id,
             route_date=data.visit_window_start.astimezone(MOSCOW).date(),
             occurred_at=datetime.now(UTC),
             actor_id=actor_id,
@@ -383,10 +378,9 @@ def update_assignment_in_transaction(
             t_area = session.execute(
                 text(
                     """
-                    SELECT sa.id
+                    SELECT b.service_area_id
                     FROM locations AS loc
                     JOIN buildings AS b ON b.id = loc.building_id
-                    JOIN service_areas AS sa ON sa.code = 'district_' || b.district_id
                     WHERE loc.id = :location_id
                     LIMIT 1
                     """
@@ -407,13 +401,12 @@ def update_assignment_in_transaction(
             w_area = session.execute(
                 text(
                     """
-                    SELECT sa.id
+                    SELECT bld.service_area_id
                     FROM brigade_members AS bm
                     JOIN brigades AS b ON b.id = bm.brigade_id
                     JOIN offices AS off ON off.id = b.office_id
                     JOIN locations AS loc ON loc.id = off.location_id
                     JOIN buildings AS bld ON bld.id = loc.building_id
-                    JOIN service_areas AS sa ON sa.code = 'district_' || bld.district_id
                     WHERE bm.worker_id = :wid
                     LIMIT 1
                     """
@@ -529,10 +522,10 @@ def preview_assignment(session: Session, ticket_id: int, worker_id: int):
     if worker_id not in worker_line_statuses:
         raise WorkerNotFoundError
 
-    district_id = session.execute(
+    service_area_id = session.execute(
         text(
             """
-            SELECT building.district_id
+            SELECT building.service_area_id
             FROM locations AS location
             JOIN buildings AS building ON building.id = location.building_id
             WHERE location.id = :location_id
@@ -543,7 +536,7 @@ def preview_assignment(session: Session, ticket_id: int, worker_id: int):
 
     request = PreviewRequest(
         route_date=ticket["visit_window_start"].astimezone(MOSCOW).date().isoformat(),
-        district_id=district_id,
+        service_area_id=service_area_id,
         ticket_ids=[ticket_id],
         worker_ids=[worker_id],
         allow_partial=True,

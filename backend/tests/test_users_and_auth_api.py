@@ -35,7 +35,10 @@ class UsersAndAuthApiTests(DatabaseTestCase):
         self.session.add(street)
         self.session.flush()
         building = Building(
-            city_id=city.id, district_id=district.id, street_id=street.id, number="1"
+            city_id=city.id,
+            service_area_id=self.service_area_for_district(district.id),
+            street_id=street.id,
+            number="1",
         )
         self.session.add(building)
         self.session.flush()

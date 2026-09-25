@@ -29,7 +29,7 @@ def lock_ticket_for_execution(session: Session, ticket_id: int) -> RowMapping | 
                     ticket.visit_window_start, ticket.visit_window_end,
                     ticket.planned_start_at, ticket.planned_end_at,
                     ticket.actual_started_at, ticket.actual_completed_at,
-                    ticket.cancel_reason, building.district_id
+                    ticket.cancel_reason, building.service_area_id
                 FROM tickets AS ticket
                 JOIN locations AS location ON location.id = ticket.location_id
                 JOIN buildings AS building ON building.id = location.building_id
@@ -49,7 +49,7 @@ def find_event_by_key(session: Session, idempotency_key: str) -> RowMapping | No
         session.execute(
             text(
                 """
-                SELECT id, event_type, ticket_id, worker_id, district_id, route_date,
+                SELECT id, event_type, ticket_id, worker_id, service_area_id, route_date,
                        occurred_at, recorded_at, reason, previous_state, new_state,
                        before_revision, after_revision, idempotency_key, payload
                 FROM work_events
@@ -69,7 +69,7 @@ def insert_work_event(
     event_type: str,
     ticket_id: int | None,
     worker_id: int | None,
-    district_id: int | None,
+    service_area_id: int | None,
     route_date,
     occurred_at,
     actor_id: int | None,
@@ -85,11 +85,11 @@ def insert_work_event(
         text(
             """
             INSERT INTO work_events (
-                event_type, ticket_id, worker_id, district_id, route_date,
+                event_type, ticket_id, worker_id, service_area_id, route_date,
                 occurred_at, actor_id, reason, previous_state, new_state,
                 before_revision, after_revision, idempotency_key, payload
             ) VALUES (
-                :event_type, :ticket_id, :worker_id, :district_id, :route_date,
+                :event_type, :ticket_id, :worker_id, :service_area_id, :route_date,
                 :occurred_at, :actor_id, :reason, :previous_state, :new_state,
                 :before_revision, :after_revision, :idempotency_key,
                 CAST(:payload AS JSONB)
@@ -102,7 +102,7 @@ def insert_work_event(
             "event_type": event_type,
             "ticket_id": ticket_id,
             "worker_id": worker_id,
-            "district_id": district_id,
+            "service_area_id": service_area_id,
             "route_date": route_date,
             "occurred_at": occurred_at,
             "actor_id": actor_id,
@@ -184,7 +184,7 @@ def append_worker_event(
     event_type: str,
     ticket_id: int | None = None,
     worker_id: int,
-    district_id: int,
+    service_area_id: int,
     route_date,
     occurred_at,
     actor_id: int,
@@ -199,7 +199,7 @@ def append_worker_event(
         event_type=event_type,
         ticket_id=ticket_id,
         worker_id=worker_id,
-        district_id=district_id,
+        service_area_id=service_area_id,
         route_date=route_date,
         occurred_at=occurred_at,
         actor_id=actor_id,

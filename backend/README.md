@@ -275,12 +275,13 @@ backend/
 ├── tests/                     # проверки приложения, безопасности, токенов и БД
 ├── seed_demo.py               # заполнение демоданными (заявки, навыки, наблюдатели, исполнители, склад)
 ├── alembic.ini                # настройка миграций
-├── requirements.txt           # совместимые диапазоны backend-зависимостей
+├── requirements.txt           # прямые backend-зависимости
+├── requirements.lock          # зафиксированные версии и хеши Python 3.12.13
 ├── ruff.toml                  # настройки проверки и оформления Python-кода
 ├── .env.example               # пример переменных окружения
 ├── .gitignore                 # исключает окружение, секреты и временные файлы
 ├── .gitattributes             # единые переводы строк LF в Git
-├── bruno/                    # коллекция HTTP-запросов и проверок Bruno (01–21)
+├── bruno/                    # коллекция HTTP-запросов и проверок Bruno (01–23)
 └── README.md
 ```
 
@@ -336,7 +337,7 @@ session.execute(
 
 При сборке списка заявок выражение `" AND ".join(conditions)` соединяет только
 условия, заданные в коде: `t.status = :status`, `b.city_id = :city_id` и
-`b.district_id = :district_id`. Пользователь передаёт значения, но не SQL-фрагменты,
+`b.service_area_id = :service_area_id`. Пользователь передаёт значения, но не SQL-фрагменты,
 имена колонок или порядок сортировки. Значения, включая `limit` и `offset`, попадают
 в отдельный словарь `parameters`, передаваемый в `session.execute(text(query), parameters)`.
 Поэтому кавычки и SQL-подобный текст в значениях не изменяют структуру запроса.
@@ -377,7 +378,7 @@ erDiagram
 | `cities` | `id`, `name` | Город, например `Санкт-Петербург` |
 | `districts` | `id`, `city_id`, `name` | Административный район города, например `Невский район` |
 | `streets` | `id`, `city_id`, `name` | Улица внутри города, например `улица Ленина` |
-| `buildings` | `id`, `city_id`, `street_id`, `district_id`, `number`, `block` | Дом, его район и необязательный корпус / строение |
+| `buildings` | `id`, `city_id`, `street_id`, `service_area_id`, `number`, `block` | Дом, его район и необязательный корпус / строение |
 | `entrances` | `id`, `building_id`, `number` | Подъезд конкретного дома |
 | `locations` | `id`, `building_id`, `entrance_id`, `floor`, `apartment`, `latitude`, `longitude` | Место выезда, вплоть до квартиры / помещения |
 
@@ -388,26 +389,21 @@ erDiagram
 
 ### Как район связан с заявкой
 
-Район определяется через `tickets.location_id → locations.building_id →
-buildings.district_id → districts.id`. Его название хранится один раз в справочнике.
-Все квартиры дома и все заявки на эти квартиры получают район из одной записи дома.
-Район привязан именно к дому: одна улица может проходить через несколько районов.
-Название в справочнике полное, например `Невский район`; муниципальные округа
-и микрорайоны здесь отдельно не моделируются.
+Зона обслуживания определяется по цепочке `tickets.location_id → locations.building_id →
+buildings.service_area_id → service_areas.id`. Адресный район остаётся отдельной записью
+для отображения полного адреса, например `Невский район`; дом хранит именно ID зоны.
+Все квартиры одного дома используют его зону, при этом улица может пересекать несколько
+зон обслуживания.
 
-`buildings.district_id` обязателен: PostgreSQL запрещает вставку дома без района,
-явный `NULL` и удаление значения района через `UPDATE`. Значения по умолчанию нет:
-нужно передать ID существующего района того же города. В ответе API `district_id`
-имеет тип `int`, а `district` — `str`; `null` не допускается. Строка `address`
-всегда содержит район. `seed_demo.py` указывает его при вставке каждого дома.
+`buildings.service_area_id` обязателен: PostgreSQL запрещает вставку дома без зоны,
+явный `NULL` и удаление значения через `UPDATE`. Значения по умолчанию нет, поэтому
+нужно передать ID существующей зоны. В ответе API `service_area_id` имеет тип `int`,
+а `district` — `str`; `null` не допускается. `seed_demo.py` указывает зону при вставке дома.
 
-Дополнительное `buildings.city_id` позволяет PostgreSQL проверить, что район и улица
-относятся к одному городу. Два составных внешних ключа используют один `city_id`:
-`(street_id, city_id) → streets(id, city_id)` и
-`(district_id, city_id) → districts(id, city_id)`. Указание района другого города
-будет отклонено при `INSERT` или `UPDATE`, включая ручной SQL. Уникальные ограничения
-`(id, city_id)` у улиц и районов нужны PostgreSQL для этих связей.
-При вставке дома скрипт передаёт тот же `city_id`, который использован для улицы и района.
+`buildings.city_id` вместе с `street_id` проверяет, что улица принадлежит указанному
+городу: `(street_id, city_id) → streets(id, city_id)`. Зона обслуживания может включать
+адреса из нескольких городов, поэтому её внешний ключ ведёт напрямую к
+`service_areas.id`; город зоны с городом улицы не сравнивается.
 
 `locations.building_id` обязателен, а `entrance_id` необязателен: заявку можно
 привязать к дому, даже когда подъезд ещё не известен. Если подъезд указан,
@@ -685,7 +681,7 @@ Ruff и форматирование; для этой правки обраще�
 | --- | --- | --- |
 | `status` | `planned`, `in_progress`, `completed`, `wont_fix` | Без фильтра по статусу |
 | `city_id` | ID города, целое число от 1 до 2147483647 | Без фильтра по городу |
-| `district_id` | ID района, целое число от 1 до 2147483647 | Без фильтра по району |
+| `service_area_id` | ID района, целое число от 1 до 2147483647 | Без фильтра по району |
 | `limit` | Максимум заявок в ответе, от 1 до 100 | 20 |
 | `offset` | Сколько подходящих заявок пропустить, от 0 до 2147483647 | 0 |
 
@@ -694,8 +690,8 @@ Ruff и форматирование; для этой правки обраще�
 ```http
 GET /api/v1/tickets
 GET /api/v1/tickets?city_id=1
-GET /api/v1/tickets?district_id=2&status=planned
-GET /api/v1/tickets?city_id=1&district_id=2&status=in_progress&limit=20&offset=0
+GET /api/v1/tickets?service_area_id=2&status=planned
+GET /api/v1/tickets?city_id=1&service_area_id=2&status=in_progress&limit=20&offset=0
 ```
 
 Все переданные фильтры объединяются через `AND`. Район можно передать отдельно:
@@ -725,7 +721,7 @@ GET /api/v1/tickets?city_id=1&district_id=2&status=in_progress&limit=20&offset=0
 Например, при передаче всех трёх фильтров к общему `SELECT` добавляется:
 
 ```sql
-WHERE t.status = :status AND b.city_id = :city_id AND b.district_id = :district_id
+WHERE t.status = :status AND b.city_id = :city_id AND b.service_area_id = :service_area_id
 ORDER BY t.id ASC LIMIT :limit OFFSET :offset
 ```
 
@@ -749,7 +745,7 @@ ID и номер подъезда, этаж, квартиру/помещение
 ```json
 {
   "city": "Санкт-Петербург",
-  "district_id": 1,
+  "service_area_id": 1,
   "district": "Невский район",
   "street": "Искровский проспект",
   "building_number": "4",
@@ -798,7 +794,7 @@ HTTP-тесты находятся в `tests/test_tickets_api.py`; на кажд
 | `format` | `csv` или `xlsx` | `xlsx` |
 | `status` | `planned`, `in_progress`, `completed`, `wont_fix` | Без фильтра |
 | `city_id` | Положительный ID города | Без фильтра |
-| `district_id` | Положительный ID района | Без фильтра |
+| `service_area_id` | Положительный ID района | Без фильтра |
 | `brigade_id` | Положительный ID бригады назначенных исполнителей | Без фильтра |
 
 Примеры:
@@ -807,7 +803,7 @@ HTTP-тесты находятся в `tests/test_tickets_api.py`; на кажд
 GET /api/v1/reports/tickets/export?format=csv&status=completed&city_id=1
 Authorization: Bearer <observer access token>
 
-GET /api/v1/reports/tickets/export?format=xlsx&district_id=2&brigade_id=1
+GET /api/v1/reports/tickets/export?format=xlsx&service_area_id=2&brigade_id=1
 Authorization: Bearer <observer access token>
 ```
 
@@ -1022,9 +1018,9 @@ GeoapifyRoutingClient.build_route_matrix — синхронная граница
 | --- | --- | --- |
 | `base_url` | Адрес API без завершающего `/` | `http://127.0.0.1:8000` |
 | `city_id` | Город для фильтров | `1` |
-| `district_id` | Выбранный район для фильтров и страниц | `1` |
-| `primorsky_district_id` | Отдельный пример Приморского района | `2` |
-| `krasnogvardeysky_district_id` | Отдельный пример Красногвардейского района | `3` |
+| `service_area_id` | Выбранный район для фильтров и страниц | `1` |
+| `primorsky_service_area_id` | Отдельный пример Приморского района | `2` |
+| `krasnogvardeysky_service_area_id` | Отдельный пример Красногвардейского района | `3` |
 | `ticket_id` | Существующая заявка для чтения по ID | `1` |
 | `location_id` | Существующее место для создания заявки | `1` |
 | `office_id` | Офис для фильтра аналитики | `1` |
@@ -1034,7 +1030,7 @@ GeoapifyRoutingClient.build_route_matrix — синхронная граница
 
 ID — примеры для новой базы после `seed_demo.py`, а не постоянные идентификаторы
 городов и районов. В уже заполненной базе номера могут отличаться. В ответе «Все заявки»
-нужны `id`, `location_id`, `location.city_id`, `location.district_id`;
+нужны `id`, `location_id`, `location.city_id`, `location.service_area_id`;
 название района находится в `location.district`. Для просмотра более 20 заявок
 можно добавить `limit=100` и при необходимости увеличивать `offset`.
 Скрипт заполнения также печатает `ticket_id` и `location_id`.
@@ -1083,8 +1079,8 @@ ID — примеры для новой базы после `seed_demo.py`, а �
 ### Необязательный запуск из терминала
 
 Для работы в приложении Bruno эти команды не нужны. При установленном Node.js/npm
-коллекцию можно выполнить через Bruno CLI; Python-зависимости остаются
-в `requirements.txt`, Bruno туда не входит.
+коллекцию можно выполнить через Bruno CLI 4.1.0; Python-зависимости ставятся из
+`requirements.lock`, Bruno в Python-набор не входит.
 
 Из папки `backend`:
 
@@ -1143,15 +1139,17 @@ ORDER BY c.name, t.status;
 Количество заявок по районам города:
 
 ```sql
-SELECT c.name AS city, d.id AS district_id, d.name AS district, COUNT(*) AS ticket_count
+SELECT c.name AS city, sa.id AS service_area_id,
+       COALESCE(d.name, sa.name) AS district, COUNT(*) AS ticket_count
 FROM tickets AS t
 JOIN locations AS l ON l.id = t.location_id
 JOIN buildings AS b ON b.id = l.building_id
 JOIN cities AS c ON c.id = b.city_id
-JOIN districts AS d ON d.id = b.district_id
+JOIN service_areas AS sa ON sa.id = b.service_area_id
+LEFT JOIN districts AS d ON sa.code = 'district_' || d.id
 WHERE c.id = :city_id
-GROUP BY c.id, c.name, d.id, d.name
-ORDER BY d.name;
+GROUP BY c.id, c.name, sa.id, COALESCE(d.name, sa.name)
+ORDER BY COALESCE(d.name, sa.name);
 ```
 
 `:city_id` передаётся отдельно как параметр. В редакторе SQL его можно заменить
@@ -1489,15 +1487,15 @@ setup-node 7.0.0 и upload-artifact 4.6.2. Backend job использует Node
 
 | Шаг в Actions | Что проверяет |
 | --- | --- |
-| `Install dependencies` | Ставит зависимости из `backend/requirements.txt` и `planner/requirements.txt` с общими ограничениями, затем запускает `pip check` |
+| `Install dependencies` | Ставит точные версии из обоих lock-файлов с проверкой хешей, затем запускает `pip check` |
 | `Check code with Ruff` | `python -m ruff check .` — ошибки и правила оформления Python-кода |
 | `Check formatting` | `python -m ruff format --check .` — соответствие форматированию без изменения файлов |
 | `Run tests with PostgreSQL` | `python -m unittest discover -s tests -v` — все тесты из `backend/tests` |
 
-`requirements.txt` задают совместимые диапазоны прямых зависимостей, а
-`constraints.txt` согласует pandas и protobuf в общем окружении CI. Кэш pip
-ускоряет скачивание. Отдельный job устанавливает planner-зависимости и проверяет
-наличие нативного wheel OR-Tools.
+`requirements.lock` закрепляют версии и хеши Python-пакетов; `requirements.txt`
+содержат прямые зависимости. Отдельный job ставит planner-набор и проверяет
+нативный wheel OR-Tools. Артефакт backend job получает имя с SHA и сохраняет
+JUnit, журналы, версии среды и benchmark без значений секретов.
 Если шаг завершается с ошибкой, job становится красной и следующие шаги не выполняются.
 При новом запуске для той же ветки или PR предыдущая незавершённая проверка отменяется.
 
@@ -1565,10 +1563,11 @@ workflow на Ubuntu в GitHub ещё не запускался.
 
 ## Установка зависимостей и их обновление
 
-`requirements.txt` задают диапазоны backend- и planner-зависимостей. Firebase Admin
-и `icalendar` указаны в backend-файле; OR-Tools закреплён на 9.15.6755 и ставится
-только из готового бинарного wheel. `constraints.txt` согласует pandas и protobuf
-для общего тестового окружения.
+`requirements.txt` задают прямые backend- и planner-зависимости, а lock-файлы
+закрепляют их версии и хеши для Python 3.12. Firebase Admin и `icalendar` указаны
+в backend-файле; OR-Tools закреплён на 9.15.6755 и ставится только из готового
+бинарного wheel. `constraints.txt` согласует pandas и protobuf для общего тестового
+окружения.
 
 Команды локальной установки описаны в [руководстве runtime](../docs/RUNTIME.md).
 

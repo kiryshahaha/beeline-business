@@ -11,6 +11,7 @@ from app.modules.analytics.schemas import (
     ActivityItem,
     AnalyticsPeriod,
     BrigadeWorkloadItem,
+    FastStats,
     TicketsSummary,
 )
 from app.modules.auth.dependencies import require_roles
@@ -41,6 +42,23 @@ def tickets_summary(
     return service.get_tickets_summary(
         session,
         period=period,
+        office_id=office_id,
+        current_user=current_user,
+    )
+
+
+@router.get("/fast-stats", response_model=FastStats)
+def fast_stats(
+    session: DatabaseSession,
+    current_user: CurrentAnalyticsUser,
+    office_id: Annotated[
+        int | None,
+        Query(ge=1, le=2_147_483_647, description="ID офиса для отчёта наблюдателя."),
+    ] = None,
+) -> FastStats:
+    """Return fast operational stats for today."""
+    return service.get_fast_stats(
+        session,
         office_id=office_id,
         current_user=current_user,
     )

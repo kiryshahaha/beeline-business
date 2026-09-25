@@ -69,7 +69,12 @@ class ScheduleApiTests(DatabaseTestCase):
         district = self.save(District(city_id=city.id, name="Район"))
         street = self.save(Street(city_id=city.id, name="Улица"))
         building = self.save(
-            Building(city_id=city.id, district_id=district.id, street_id=street.id, number="1")
+            Building(
+                city_id=city.id,
+                service_area_id=self.service_area_for_district(district.id),
+                street_id=street.id,
+                number="1",
+            )
         )
         self.location_id = self.save(Location(building_id=building.id)).id
         self.north = self.save(Office(location_id=self.location_id, name="Офис Север")).id

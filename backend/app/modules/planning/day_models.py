@@ -1,9 +1,8 @@
 """Published revisions of a service area's route day.
 
 Identity is `(service_area_id, route_date)`: one area-day has exactly one current
-revision. The administrative district is kept only as the origin of a change, the
-preview UUID stays a separate concept, and `routes.route_number` still counts a
-worker's routes within a day — none of the three is a revision number.
+revision. The preview UUID stays a separate concept, and `routes.route_number`
+counts a worker's routes within a day.
 """
 
 from datetime import date, datetime
@@ -35,7 +34,6 @@ class DayPlanRevision(IntegerIdMixin, Base):
     service_area_id: Mapped[int] = mapped_column(
         ForeignKey("service_areas.id", ondelete="RESTRICT"), nullable=False
     )
-    district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id", ondelete="RESTRICT"))
     route_date: Mapped[date] = mapped_column(Date, nullable=False)
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     previous_revision: Mapped[int | None] = mapped_column(Integer)

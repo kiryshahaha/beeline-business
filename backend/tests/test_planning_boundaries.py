@@ -50,7 +50,9 @@ def prepared(unique=52):
 class PlanningBoundaryTests(unittest.IsolatedAsyncioTestCase):
     def settings(self):
         return Settings(
-            database_url="postgresql://unused/isolated_test", planner_service_token="internal"
+            database_url="postgresql://unused/isolated_test",
+            planner_service_token="internal",
+            planning_max_matrix_cells_total=20000,
         )
 
     async def test_matrix_blocks_cover_all_directed_pairs_for_each_profile(self):
@@ -73,6 +75,86 @@ class PlanningBoundaryTests(unittest.IsolatedAsyncioTestCase):
         for matrix in problem.matrices.values():
             self.assertTrue(all(value is not None for row in matrix.time_minutes for value in row))
         self.assertEqual(problem.vehicle_fixed_cost, 0)
+
+    async def test_profiles_keep_directed_times_and_unreachable_arcs(self):
+        import json
+
+        data = prepared(3)
+        seen = set()
+
+        def handler(request):
+            payload = json.loads(request.content)
+            mode = payload["mode"]
+            seen.add(mode)
+            rows = []
+            for i, source in enumerate(payload["sources"]):
+                row = []
+                for j, target in enumerate(payload["targets"]):
+                    source_lon = source["location"][0]
+                    target_lon = target["location"][0]
+                    same = source_lon == target_lon
+                    unreachable_drive_arc = (
+                        mode == "drive" and source_lon == 37.0 and target_lon == 37.0002
+                    )
+                    if unreachable_drive_arc:
+                        duration = distance = None
+                    elif same:
+                        duration = distance = 0
+                    else:
+                        duration = 120 if target_lon > source_lon else 540
+                        if mode == "walk":
+                            duration += 180
+                        distance = duration * 10
+                    row.append(
+                        {
+                            "source_index": i,
+                            "target_index": j,
+                            "time": duration,
+                            "distance": distance,
+                        }
+                    )
+                rows.append(row)
+            return httpx.Response(200, json={"sources_to_targets": rows})
+
+        async with AsyncGeoapifyRoutingClient(
+            "fixture", transport=httpx.MockTransport(handler)
+        ) as provider:
+            problem, _ = await build_problem(data, provider, self.settings())
+
+        self.assertEqual(seen, {"drive", "walk"})
+        self.assertIsNone(problem.matrices["drive"].time_minutes[0][2])
+        self.assertEqual(problem.matrices["drive"].time_minutes[2][0], 9)
+        self.assertEqual(problem.matrices["walk"].time_minutes[0][2], 5)
+        self.assertEqual(problem.matrices["walk"].time_minutes[2][0], 12)
+
+    async def test_matrix_cell_limit_accepts_exact_limit_and_rejects_next_location(self):
+        async def handler(request):
+            import json
+
+            payload = json.loads(request.content)
+            rows = [
+                [
+                    {
+                        "source_index": i,
+                        "target_index": j,
+                        "time": 0 if source == target else 60,
+                        "distance": 0 if source == target else 100,
+                    }
+                    for j, target in enumerate(payload["targets"])
+                ]
+                for i, source in enumerate(payload["sources"])
+            ]
+            return httpx.Response(200, json={"sources_to_targets": rows})
+
+        async with AsyncGeoapifyRoutingClient(
+            "fixture", transport=httpx.MockTransport(handler)
+        ) as provider:
+            problem, nodes = await build_problem(prepared(100), provider, self.settings())
+            self.assertEqual(len(nodes), 100)
+            self.assertEqual(len(problem.matrices), 2)
+            with self.assertRaises(PlanningError) as result:
+                await build_problem(prepared(101), provider, self.settings())
+        self.assertEqual(result.exception.code, "planning_limit_exceeded")
 
     async def test_duplicate_coordinates_stay_distinct_logical_visits(self):
         data = prepared(5)
@@ -97,13 +179,14 @@ class PlanningBoundaryTests(unittest.IsolatedAsyncioTestCase):
                     )
         async with AsyncGeoapifyRoutingClient(
             "secret",
+            max_retries=0,
             transport=httpx.MockTransport(
                 lambda _: httpx.Response(429, text="secret-provider-error")
             ),
         ) as provider:
             with self.assertRaises(PlanningError) as result:
                 await provider.build_route(origin=(37, 55), destination=(38, 55), mode="drive")
-            self.assertEqual(result.exception.code, "routing_unavailable")
+            self.assertEqual(result.exception.code, "routing_rate_limited")
             self.assertNotIn("secret", str(result.exception))
 
     async def test_planner_client_validates_schema_and_error_mapping(self):
@@ -158,7 +241,7 @@ class PlanningBoundaryTests(unittest.IsolatedAsyncioTestCase):
             response = client.post("/api/v1/planning/preview", content=b"a" * 65537)
         self.assertEqual(response.status_code, 413)
 
-    def test_disconnected_geoapify_lines_are_not_connected_artificially(self):
+    def test_disconnected_geoapify_lines_are_rejected_without_a_fake_connector(self):
         geo = {
             "type": "FeatureCollection",
             "properties": {"worker_id": 1, "route_date": "2030-01-15", "route_number": 1},
@@ -205,8 +288,8 @@ class PlanningBoundaryTests(unittest.IsolatedAsyncioTestCase):
                 },
             ],
         }
-        result = RouteGeoJSON.model_validate(geo)
-        self.assertEqual(len(result.features[-1].geometry.coordinates), 2)
+        with self.assertRaises(ValueError):
+            RouteGeoJSON.model_validate(geo)
         invalid = copy.deepcopy(geo)
         invalid["features"][-1]["geometry"]["coordinates"][0][0] = [30.0, 55.0]
         with self.assertRaises(ValueError):

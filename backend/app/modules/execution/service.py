@@ -163,7 +163,7 @@ def _worker_context(
     ticket_id: int,
     event_type: WorkEventType,
     worker_id: int | None,
-    district_id: int,
+    service_area_id: int,
     route_date,
 ):
     if event_type not in _WORKER_EVENT_TYPES:
@@ -191,7 +191,7 @@ def _worker_context(
     state = day_state.prepare_ticket_event_state(
         session,
         worker_id=worker_id,
-        district_id=district_id,
+        service_area_id=service_area_id,
         route_date=route_date,
     )
     return worker_id, state["revision"]
@@ -296,7 +296,7 @@ def apply_ticket_event(
             ticket_id,
             event_type,
             command.worker_id,
-            ticket["district_id"],
+            ticket["service_area_id"],
             _route_date(command.occurred_at),
         )
         if command.expected_revision is None:
@@ -344,7 +344,7 @@ def apply_ticket_event(
             event_type=event_type.value,
             ticket_id=ticket_id,
             worker_id=event_worker_id,
-            district_id=ticket["district_id"],
+            service_area_id=ticket["service_area_id"],
             route_date=_route_date(command.occurred_at),
             occurred_at=command.occurred_at,
             actor_id=actor_id,
@@ -376,7 +376,7 @@ def apply_ticket_event(
                 event_type=event_type.value,
                 worker_id=event_worker_id,
                 ticket_id=ticket_id,
-                district_id=ticket["district_id"],
+                service_area_id=ticket["service_area_id"],
                 route_date=_route_date(command.occurred_at),
                 occurred_at=command.occurred_at,
                 payload=payload,
@@ -472,7 +472,7 @@ def reopen_ticket(
             event_type=WorkEventType.REOPEN.value,
             ticket_id=ticket_id,
             worker_id=None,
-            district_id=ticket["district_id"],
+            service_area_id=ticket["service_area_id"],
             route_date=_route_date(command.occurred_at),
             occurred_at=command.occurred_at,
             actor_id=actor_id,
@@ -570,7 +570,7 @@ def change_window(
             event_type=WorkEventType.WINDOW_CHANGE.value,
             ticket_id=ticket_id,
             worker_id=None,
-            district_id=ticket["district_id"],
+            service_area_id=ticket["service_area_id"],
             route_date=_route_date(command.occurred_at),
             occurred_at=command.occurred_at,
             actor_id=actor_id,

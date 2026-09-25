@@ -41,7 +41,7 @@ class LocationRead(BaseModel):
     id: int
     city_id: int
     city: str
-    district_id: int
+    service_area_id: int
     district: str
     street_id: int
     street: str

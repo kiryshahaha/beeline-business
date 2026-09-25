@@ -47,7 +47,12 @@ class NotificationsDeliveryTests(DatabaseTestCase):
         district = self.save(District(city_id=city.id, name="Невский район"))
         street = self.save(Street(city_id=city.id, name="Тестовая улица"))
         building = self.save(
-            Building(city_id=city.id, street_id=street.id, district_id=district.id, number="13")
+            Building(
+                city_id=city.id,
+                street_id=street.id,
+                service_area_id=self.service_area_for_district(district.id),
+                number="13",
+            )
         )
         location = self.save(Location(building_id=building.id))
         self.ticket = self.save(

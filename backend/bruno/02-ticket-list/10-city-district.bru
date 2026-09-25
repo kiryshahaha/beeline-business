@@ -5,7 +5,7 @@ meta {
 }
 
 get {
-  url: {{base_url}}/api/v1/tickets?city_id={{city_id}}&district_id={{district_id}}
+  url: {{base_url}}/api/v1/tickets?city_id={{city_id}}&service_area_id={{service_area_id}}
   body: none
   auth: bearer
 }
@@ -16,7 +16,7 @@ auth:bearer {
 
 params:query {
   city_id: {{city_id}}
-  district_id: {{district_id}}
+  service_area_id: {{service_area_id}}
 }
 
 assert {
@@ -27,7 +27,7 @@ tests {
   test("Каждая заявка соответствует заданным фильтрам", function () {
     res.getBody().forEach(function (ticket) {
       expect(ticket.location.city_id).to.equal(Number(bru.getVar("city_id")));
-      expect(ticket.location.district_id).to.equal(Number(bru.getVar("district_id")));
+      expect(ticket.location.service_area_id).to.equal(Number(bru.getVar("service_area_id")));
     });
   });
 
