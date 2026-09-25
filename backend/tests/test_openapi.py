@@ -49,6 +49,7 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/analytics/brigades-workload",
             "/api/v1/analytics/recent-activity",
             "/api/v1/reports/tickets/export",
+            "/api/v1/reports/plans/{plan_id}/export",
             "/api/v1/planning/policy",
             "/api/v1/planning/days/{district_id}/{route_date}/redirect",
         ]
@@ -121,6 +122,16 @@ class OpenApiTests(unittest.TestCase):
         self.assertIn(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", report_content
         )
+        plan_report = paths["/api/v1/reports/plans/{plan_id}/export"]["get"]
+        self.assertIn({"BearerAuth": []}, plan_report["security"])
+        self.assertEqual(
+            set(plan_report["responses"]["200"]["content"]),
+            {
+                "application/zip",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            },
+        )
+        self.assertIn("404", plan_report["responses"])
         workload_operation = paths["/api/v1/analytics/brigades-workload"]["get"]
         self.assertIn({"BearerAuth": []}, workload_operation["security"])
         self.assertEqual(

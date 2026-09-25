@@ -200,11 +200,9 @@ def _ticket_worker_id(session: Session, ticket_id: int, worker_id: int | None) -
     return session.execute(
         text(
             """
-            SELECT worker_id
-            FROM ticket_assignments
-            WHERE ticket_id = :ticket_id
-            ORDER BY worker_id
-            LIMIT 1
+            SELECT assigned_worker_id AS worker_id
+            FROM tickets
+            WHERE id = :ticket_id
             """
         ),
         {"ticket_id": ticket_id},
@@ -361,14 +359,13 @@ def _read_state(
         session.execute(
             text(
                 """
-                SELECT assignment.ticket_id
-                FROM ticket_assignments AS assignment
-                JOIN tickets AS ticket ON ticket.id = assignment.ticket_id
+                SELECT ticket.id AS ticket_id
+                    FROM tickets AS ticket
                 JOIN locations AS location ON location.id = ticket.location_id
                 JOIN buildings AS building ON building.id = location.building_id
-                WHERE assignment.worker_id = :worker_id
+                WHERE ticket.assigned_worker_id = :worker_id
                   AND building.district_id = :district_id
-                  AND assignment.assigned_at <= :at
+                  AND ticket.updated_at <= :at
                   AND (ticket.visit_window_start AT TIME ZONE 'Europe/Moscow')::date = :route_date
                 """
             ),

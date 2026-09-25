@@ -525,6 +525,7 @@ class TicketsApiTests(DatabaseTestCase):
                 "/api/v1/tickets/{id}/appliances",
                 "/api/v1/tickets/{id}/appliances/{appliance_id}",
                 "/api/v1/tickets/{id}/assignees",
+                "/api/v1/tickets/{id}/assign/preview",
                 "/api/v1/tickets/{id}/comments",
                 "/api/v1/tickets/{id}/comments/{comment_id}",
                 "/api/v1/tickets/{id}/equipment/restore",

@@ -6,7 +6,7 @@
 | Файл | Что делает |
 | --- | --- |
 | `registry.py` | Явный allowlist 25 таблиц, исключение секретов, порядок зависимостей |
-| `formats.py` | UTF-8 CSV, ZIP и XLSX; типизация, лимиты, защита от формул, сериализация |
+| `formats.py` | UTF-8 CSV, ZIP и XLSX; типизация, лимиты, защита от формул (общее правило `core/spreadsheet.py`, как в отчётах), сериализация |
 | `service.py` | Транзакция, перенос ID/связей, проверка ролей/склада/GeoJSON, квитанции |
 | `models.py` | Служебная таблица `data_imports`: fingerprint, результат, время |
 | `router.py` | `/api/v1/data/schema`, `/export`, `/import`; доступ observer |

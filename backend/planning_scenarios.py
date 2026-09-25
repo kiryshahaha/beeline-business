@@ -25,7 +25,7 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
         brigade["division_id"] = 1
     for skill in data["worker_skills"]:
         skill["skill"] += f" [planning {seed}]"
-    for name in ("ticket_assignments", "ticket_comments", "notification_events", "routes"):
+    for name in ("ticket_comments", "notification_events", "routes"):
         data[name] = []
     night = scenario == "night"
     for worker in data["workers"]:
@@ -60,6 +60,7 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
             actual_completed_at=None,
             cancel_reason=None,
             last_event_id=None,
+            assigned_worker_id=None,
             work_type=work_type["name"],
             work_type_id=work_type["id"],
             category=work_type.get("category", "repair"),

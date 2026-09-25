@@ -184,6 +184,23 @@ def plan_workers(session: Session, snapshot: dict) -> list[dict]:
                 "archived_at": user.archived_at if user else None,
             }
         )
+def plan_state(session: Session, plan: PlanningPlan, clock=utc_now) -> dict:
+    """Public stored plan and its live state; the caller owns one read-only snapshot."""
+    result = {**legacy_public(plan.result_snapshot["public"]), "state": plan.state}
+    result["planning_policy"] = plan.input_snapshot.get("planning_policy")
+    if plan.state == "ready" and plan.expires_at <= clock():
+        result["state"] = "expired"
+    if plan.state == "applied":
+        request = PreviewRequest.model_validate(plan.input_snapshot["request"])
+        result["is_current"] = (
+            fingerprint(
+                load_snapshot(
+                    session, request, policy_snapshot=recorded_policy(plan.input_snapshot)
+                )
+            )
+            == plan.applied_fingerprint
+        )
+        result["apply_result"] = plan.apply_result
     return result
 
 
@@ -271,10 +288,11 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                 for stop in route.stops:
                     if stop.ticket_id is None:
                         continue
-                    replace_assignees_in_transaction(
+                    update_assignment_in_transaction(
                         session,
                         stop.ticket_id,
-                        [route.worker_id],
+                        route.worker_id,
+                        is_pinned=False,
                         actor_id=plan.created_by,
                     )
                     ticket = session.get(Ticket, stop.ticket_id)

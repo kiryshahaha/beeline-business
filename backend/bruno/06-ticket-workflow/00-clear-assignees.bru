@@ -15,7 +15,7 @@ auth:bearer {
 }
 
 body:json {
-  {"worker_ids":[]}
+  {"worker_id": null}
 }
 
 assert {
@@ -24,6 +24,6 @@ assert {
 
 tests {
   test("Список назначений очищен", function () {
-    expect(res.getBody().assignee_ids).to.deep.equal([]);
+    expect(res.getBody().assigned_worker_id).to.be.null;
   });
 }

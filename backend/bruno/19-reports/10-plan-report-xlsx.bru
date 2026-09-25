@@ -1,0 +1,34 @@
+meta {
+  name: Отчёт по применённому плану в XLSX
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{base_url}}/api/v1/reports/plans/{{planning_plan_id}}/export
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Отдельный файл плана, не выгрузка заявок", function () {
+    expect(res.getHeader("content-type")).to.include("spreadsheetml.sheet");
+    expect(res.getHeader("content-disposition")).to.include(
+      "plan-" + bru.getVar("planning_plan_id") + ".xlsx"
+    );
+    expect(Number(res.getHeader("content-length"))).to.be.above(0);
+  });
+}
+
+docs {
+  План применён в папке 16-planning. Листы summary, routes, visits, unassigned и
+  excluded_workers проверяются по содержимому в Python-тестах test_plan_reports_api.
+}

@@ -25,7 +25,6 @@ TABLE_NAMES = frozenset(
         "brigades",
         "brigade_members",
         "tickets",
-        "ticket_assignments",
         "ticket_comments",
         "appliances",
         "appliance_stocks",

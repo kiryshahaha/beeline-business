@@ -91,7 +91,7 @@ class AppliancesApiTests(DatabaseTestCase):
 
         # Assign worker to ticket
         self.connection.execute(
-            text("INSERT INTO ticket_assignments (ticket_id, worker_id) VALUES (:t_id, :w_id)"),
+            text("UPDATE tickets SET assigned_worker_id = :w_id WHERE id = :t_id"),
             {"t_id": self.ticket_id, "w_id": self.worker.id},
         )
 

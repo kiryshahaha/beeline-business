@@ -109,11 +109,11 @@ class TicketWorkflowApiTests(DatabaseTestCase):
         url = f"/api/v1/tickets/{self.ticket_id}/assignees"
         response = self.client.put(
             url,
-            json={"worker_ids": [self.worker.id, self.worker.id]},
+            json={"worker_id": self.worker.id},
             headers=self.auth(self.observer),
         )
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json()["assignee_ids"], [self.worker.id])
+        self.assertEqual(response.json()["assigned_worker_id"], self.worker.id)
         self.assertEqual(
             [(event["recipient_id"], event["kind"]) for event in self.events()],
             [(self.worker.id, "ticket_assigned")],
@@ -121,7 +121,7 @@ class TicketWorkflowApiTests(DatabaseTestCase):
 
         repeated = self.client.put(
             url,
-            json={"worker_ids": [self.worker.id]},
+            json={"worker_id": self.worker.id},
             headers=self.auth(self.observer),
         )
         self.assertEqual(repeated.status_code, 200, repeated.text)
@@ -129,11 +129,11 @@ class TicketWorkflowApiTests(DatabaseTestCase):
 
         expanded = self.client.put(
             url,
-            json={"worker_ids": [self.worker.id, self.other_worker.id]},
+            json={"worker_id": self.other_worker.id},
             headers=self.auth(self.observer),
         )
         self.assertEqual(expanded.status_code, 200, expanded.text)
-        self.assertEqual(expanded.json()["assignee_ids"], [self.worker.id, self.other_worker.id])
+        self.assertEqual(expanded.json()["assigned_worker_id"], self.other_worker.id)
         self.assertEqual(
             [event["recipient_id"] for event in self.events()],
             [self.worker.id, self.other_worker.id],
@@ -141,16 +141,16 @@ class TicketWorkflowApiTests(DatabaseTestCase):
 
     def test_assignee_replacement_requires_observer_and_valid_workers(self):
         url = f"/api/v1/tickets/{self.ticket_id}/assignees"
-        self.assertEqual(self.client.put(url, json={"worker_ids": []}).status_code, 401)
+        self.assertEqual(self.client.put(url, json={"worker_id": None}).status_code, 401)
         forbidden = self.client.put(
             url,
-            json={"worker_ids": [self.worker.id]},
+            json={"worker_id": self.worker.id},
             headers=self.auth(self.worker),
         )
         self.assertEqual(forbidden.status_code, 403)
         invalid = self.client.put(
             url,
-            json={"worker_ids": [2_147_483_647]},
+            json={"worker_id": 2_147_483_647},
             headers=self.auth(self.observer),
         )
         self.assertEqual(invalid.status_code, 422)
@@ -159,7 +159,7 @@ class TicketWorkflowApiTests(DatabaseTestCase):
         )
         missing = self.client.put(
             "/api/v1/tickets/2147483647/assignees",
-            json={"worker_ids": []},
+            json={"worker_id": None},
             headers=self.auth(self.observer),
         )
         self.assertEqual(missing.status_code, 404)
@@ -196,7 +196,7 @@ class TicketWorkflowApiTests(DatabaseTestCase):
         assign_url = f"/api/v1/tickets/{self.ticket_id}/assignees"
         assigned = self.client.put(
             assign_url,
-            json={"worker_ids": [self.worker.id]},
+            json={"worker_id": self.worker.id},
             headers=self.auth(self.observer),
         )
         self.assertEqual(assigned.status_code, 200, assigned.text)
