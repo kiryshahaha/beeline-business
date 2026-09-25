@@ -3,11 +3,17 @@
 // обновить React state после успешного рефреша без прямой зависимости от контекста.
 
 let _setToken = null;
+let _currentToken = null;
 
 export function registerTokenSetter(setter) {
   _setToken = setter;
 }
 
 export function updateToken(newToken) {
+  _currentToken = newToken;
   if (_setToken) _setToken(newToken);
+}
+
+export function getToken() {
+  return _currentToken;
 }

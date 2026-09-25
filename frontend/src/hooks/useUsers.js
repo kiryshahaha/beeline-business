@@ -6,14 +6,15 @@ export function useUsers({ role, brigade_id } = {}) {
   const { token } = useAuth();
 
   const { data: users = [], ...usersData } = useQuery({
-    queryKey: ["usersList", token, role, brigade_id],
+    queryKey: ["usersList", role, brigade_id],
+    enabled: !!token,
     queryFn: async () => {
       const urlParams = new URLSearchParams({
         ...(role && { role }),
         ...(brigade_id && { brigade_id }),
       });
 
-      const res = await apiFetch(`/users?${urlParams}`, token);
+      const res = await apiFetch(`/users?${urlParams}`);
       if (!res.ok) throw new Error("Ошибка в получении пользователей");
       return res.json();
     },
@@ -21,3 +22,5 @@ export function useUsers({ role, brigade_id } = {}) {
 
   return { users, usersData };
 }
+
+

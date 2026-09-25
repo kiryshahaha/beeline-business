@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
-import { registerTokenSetter } from "@/lib/tokenBus";
+import { registerTokenSetter, updateToken } from "@/lib/tokenBus";
 import { refreshSession } from "@/lib/apiFetch";
 
 const AuthContext = createContext(null);
@@ -39,7 +39,7 @@ export function AuthProvider({ children }) {
 
   const login = useCallback((accessToken) => {
     // refresh_token сервер поставил в httpOnly cookie — нам не нужно его трогать
-    setToken(accessToken);
+    updateToken(accessToken);
   }, []);
 
   const logout = useCallback(async () => {
@@ -51,7 +51,7 @@ export function AuthProvider({ children }) {
     } catch {
       // Игнорируем ошибки сети при логауте
     }
-    setToken(null);
+    updateToken(null);
   }, []);
 
   return (

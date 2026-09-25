@@ -14,6 +14,8 @@ export function useNotificationsWS() {
     // Если токена нет, не пытаемся подключиться
     if (!token) return;
 
+    let cancelled = false;
+
     // Формируем URL для вебсокета (меняем http/https на ws/wss)
     const baseUrl = process.env.NEXT_PUBLIC_ENDPOINT || "http://localhost:8000/api/v1";
     // Меняем localhost на 127.0.0.1, чтобы избежать проблем с IPv6 в браузере (когда uvicorn слушает только IPv4)
@@ -22,10 +24,13 @@ export function useNotificationsWS() {
     let reconnectTimer;
 
     const connect = () => {
+      if (cancelled) return;
+
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
+        if (cancelled) { ws.close(); return; }
         // Сразу при открытии отправляем токен
         ws.send(JSON.stringify({ type: "authenticate", token }));
         setIsConnected(true);
@@ -65,6 +70,9 @@ export function useNotificationsWS() {
         setIsConnected(false);
         if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
         
+        // Если компонент размонтирован — не реконнектимся
+        if (cancelled) return;
+
         // 1008 - токен недействителен (возможно протух), не делаем автореконнект
         if (event.code === 1008) {
           console.error("WS закрыт бэкендом (Недействительный токен)");
@@ -77,8 +85,9 @@ export function useNotificationsWS() {
         }, 3000);
       };
 
-      ws.onerror = (err) => {
-        console.error("WebSocket ошибка:", err);
+      ws.onerror = () => {
+        // Подавляем ошибку если это cleanup от Strict Mode
+        if (!cancelled) console.error("WebSocket ошибка");
         ws.close();
       };
     };
@@ -86,6 +95,7 @@ export function useNotificationsWS() {
     connect();
 
     return () => {
+      cancelled = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       if (wsRef.current) wsRef.current.close();

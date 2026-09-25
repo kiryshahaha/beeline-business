@@ -12,7 +12,8 @@ export function useTickets({
   const { token } = useAuth();
 
   const { data: tickets = [], ...ticketsData } = useQuery({
-    queryKey: ["ticketsList", token, status, city_id, district_id, limit, offset],
+    queryKey: ["ticketsList", status, city_id, district_id, limit, offset],
+    enabled: !!token,
 
     queryFn: async () => {
       const urlParams = new URLSearchParams({
@@ -23,7 +24,7 @@ export function useTickets({
         offset: String(offset),
       });
 
-      const res = await apiFetch(`/tickets?${urlParams}`, token);
+      const res = await apiFetch(`/tickets?${urlParams}`);
       if (!res.ok) throw new Error("Ошибка в получении заявок");
       return res.json();
     },
@@ -31,3 +32,5 @@ export function useTickets({
 
   return { tickets, ticketsData };
 }
+
+
