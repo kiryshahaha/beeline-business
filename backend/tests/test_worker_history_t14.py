@@ -248,7 +248,7 @@ class AppliedPlanHistoryTests(CommittedDatabaseTestCase):
         self.assertEqual(detail["code"], "user_has_history")
         self.assertEqual(detail["links"]["routes"], 1)
         self.assertEqual(detail["links"]["planning_plan_routes"], 1)
-        self.assertEqual(detail["links"]["ticket_assignments"], len(self.worker_tickets))
+        self.assertEqual(detail["links"]["tickets"], len(self.worker_tickets))
         self.assertIn("маршруты", detail["message"])
         self.assertIn(f"/api/v1/users/{self.worker_id}/archive", detail["message"])
         self.assertEqual(self.history(), before)

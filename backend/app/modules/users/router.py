@@ -38,7 +38,7 @@ HISTORY_LABELS = {
     "planning_plan_routes": "маршруты применённых планов",
     "planning_plans": "рассчитанные планы",
     "day_plan_revisions": "ревизии плана дня",
-    "ticket_assignments": "назначения заявок",
+    "tickets": "назначения заявок",
     "worker_day_states": "состояния рабочего дня",
     "work_events": "события выполнения",
     "ticket_comments": "комментарии",

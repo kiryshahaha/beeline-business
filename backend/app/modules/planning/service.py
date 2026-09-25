@@ -184,6 +184,7 @@ def plan_workers(session: Session, snapshot: dict) -> list[dict]:
                 "archived_at": user.archived_at if user else None,
             }
         )
+    return result
 
 
 def plan_state(session: Session, plan: PlanningPlan, clock=utc_now) -> dict:

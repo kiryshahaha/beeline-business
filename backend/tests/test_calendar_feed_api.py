@@ -328,7 +328,7 @@ class CalendarFeedApiTests(DatabaseTestCase):
         self.assertEqual(self.feed(url).status_code, 404)
         self.assertEqual(
             self.connection.execute(
-                text("SELECT count(*) FROM ticket_assignments WHERE worker_id = :id"),
+                text("SELECT count(*) FROM tickets WHERE assigned_worker_id = :id"),
                 {"id": self.worker.id},
             ).scalar_one(),
             5,
