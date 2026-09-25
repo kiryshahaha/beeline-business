@@ -28,7 +28,7 @@
   "state": "ready",
   "outcome": "empty",
   "route_date": "2030-01-15",
-  "district_id": 1,
+  "service_area_id": 1,
   "day_revision": 1,
   "timezone": "Europe/Moscow",
   "expires_at": "2030-01-14T00:05:00Z",

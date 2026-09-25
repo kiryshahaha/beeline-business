@@ -20,7 +20,7 @@ def find_location(session: Session, location_id: int) -> RowMapping | None:
             SELECT
                 l.id,
                 c.id AS city_id, c.name AS city,
-                d.id AS district_id, d.name AS district,
+                sa.id AS service_area_id, COALESCE(d.name, sa.name) AS district,
                 s.id AS street_id, s.name AS street,
                 b.id AS building_id, b.number AS building_number, b.block,
                 l.entrance_id, e.number AS entrance_number,
@@ -28,7 +28,8 @@ def find_location(session: Session, location_id: int) -> RowMapping | None:
             FROM locations AS l
             JOIN buildings AS b ON b.id = l.building_id
             JOIN streets AS s ON s.id = b.street_id
-            JOIN districts AS d ON d.id = b.district_id
+            JOIN service_areas AS sa ON sa.id = b.service_area_id
+            LEFT JOIN districts AS d ON sa.code = 'district_' || d.id
             JOIN cities AS c ON c.id = s.city_id
             LEFT JOIN entrances AS e ON e.id = l.entrance_id
             WHERE l.id = :location_id

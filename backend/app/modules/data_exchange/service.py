@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import re
 import secrets
 from datetime import UTC, datetime
 
@@ -12,10 +13,13 @@ from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
 from app.core.security import hash_password
-from app.modules.data_exchange.formats import ExchangeError, json_default
+from app.modules.data_exchange.formats import (
+    LEGACY_DISTRICT_ID_TABLES,
+    ExchangeError,
+    json_default,
+)
 from app.modules.data_exchange.models import DataImport
 from app.modules.data_exchange.registry import TABLES, columns_for
-from app.modules.planning.day_plans import service_area_for_district
 from app.modules.routing.schemas import RouteGeoJSON, StopFeature
 
 
@@ -40,6 +44,22 @@ def _remap(name: str, value, tables: dict, ids: dict):
     if value not in ids.get(name, {}):
         raise ValueError(f"Ссылка {name}:{value} отсутствует в пакете")
     return ids[name][value]
+
+
+def _service_area_id_for_legacy_district(session, district_row_id, tables, ids):
+    target_district_id = (
+        _remap("districts", district_row_id, tables, ids)
+        if "districts" in tables
+        else district_row_id
+    )
+    service_area_id = session.execute(
+        select(TABLES["service_areas"].c.id).where(
+            TABLES["service_areas"].c.code == f"district_{target_district_id}"
+        )
+    ).scalar_one_or_none()
+    if service_area_id is None:
+        raise ValueError("Для района из архива не найдена зона обслуживания")
+    return service_area_id
 
 
 def _remap_operation_request(request, tables: dict, ids: dict):
@@ -205,7 +225,13 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
             with session.begin_nested() as transaction:
                 ids = {}
                 inserted = {}
-                for name, table in TABLES.items():
+                table_order = list(TABLES)
+                district_index = table_order.index("districts")
+                service_area_index = table_order.index("service_areas")
+                if district_index > service_area_index:
+                    table_order.insert(service_area_index, table_order.pop(district_index))
+                for name in table_order:
+                    table = TABLES[name]
                     if name not in tables:
                         continue
                     ids[name], inserted[name] = {}, []
@@ -255,6 +281,12 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                                             tables,
                                             ids,
                                         )
+                        if name in LEGACY_DISTRICT_ID_TABLES - {"day_plan_revisions"}:
+                            legacy_district_row_id = values.pop("_legacy_district_id", None)
+                            if legacy_district_row_id is not None:
+                                values["service_area_id"] = _service_area_id_for_legacy_district(
+                                    session, legacy_district_row_id, tables, ids
+                                )
                         source_id = values.pop("id", None)
                         if name == "work_types":
                             norm = values.pop("norm_minutes", None)
@@ -310,7 +342,7 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                             existing = (
                                 session.execute(
                                     select(table).where(
-                                        table.c.district_id == values["district_id"]
+                                        table.c.service_area_id == values["service_area_id"]
                                     )
                                 )
                                 .mappings()
@@ -322,21 +354,23 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                                 continue
                         if name == "day_plan_revisions":
                             if values.get("service_area_id") is None:
-                                district_id = values.get("district_id")
-                                if district_id is None:
-                                    raise ValueError(
-                                        "Для ревизии без service_area_id требуется district_id"
-                                    )
-                                values["service_area_id"] = service_area_for_district(
-                                    session, district_id
+                                legacy_district_id = values.pop("_legacy_district_id", None)
+                                if legacy_district_id is None:
+                                    raise ValueError("Для старой ревизии нужен ID района")
+                                values["service_area_id"] = _service_area_id_for_legacy_district(
+                                    session, legacy_district_id, tables, ids
                                 )
-                                if values["service_area_id"] is None:
-                                    raise ValueError(
-                                        "Для района из ревизии не найдена зона обслуживания"
-                                    )
                             _continue_day_plan_chain(session, values)
                         if name == "service_areas":
                             code = values.get("code")
+                            legacy_district = re.fullmatch(r"district_(\d+)", code or "")
+                            if legacy_district and "districts" in tables:
+                                source_district_row_id = int(legacy_district.group(1))
+                                target_district_row_id = _remap(
+                                    "districts", source_district_row_id, tables, ids
+                                )
+                                values["code"] = f"district_{target_district_row_id}"
+                                code = values["code"]
                             if code:
                                 existing = (
                                     session.execute(

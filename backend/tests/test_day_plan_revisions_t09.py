@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.security import create_access_token
-from app.db.models import DayPlanRevision, Route, Ticket
+from app.db.models import DayPlanRevision, Route, ServiceArea, Ticket
 from app.db.session import get_session
 from app.main import app
 from app.modules.data_exchange.formats import parse_file, serialize
@@ -103,7 +103,7 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         self.payload = preview_request(self.receipt, self.data)
         self.now = NOW
         self.settings = Settings(planning_enabled=True)
-        self.area_id = self.receipt["id_map"]["service_areas"]["1"]
+        self.area_id = self.receipt["id_map"]["service_areas"]["101"]
 
         def session_dependency():
             with Session(self.engine) as session:
@@ -172,19 +172,29 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         source = copy.deepcopy(self.data["day_plan_revisions"][0])
         source["id"] = 900_000
         source.pop("plan_id", None)
-        source["service_area_id"] = None
-        source["district_id"] = self.receipt["id_map"]["districts"][str(source["district_id"])]
+        source.pop("service_area_id")
+        source["_legacy_district_id"] = 1
         source["actor_id"] = self.receipt["id_map"]["users"][str(source["actor_id"])]
         source["event_id"] = None
 
+        legacy_district = copy.deepcopy(self.data["districts"][0])
+        legacy_district["city_id"] = self.receipt["id_map"]["cities"][
+            str(legacy_district["city_id"])
+        ]
+        legacy_district["name"] = "Район из старого архива"
+        legacy_package = {"districts": [legacy_district]}
+        legacy_package["day_plan_revisions"] = [source]
         with Session(self.engine) as session:
-            receipt = import_data(session, {"day_plan_revisions": [source]})
+            receipt = import_data(session, legacy_package)
 
         imported_id = receipt["id_map"]["day_plan_revisions"]["900000"]
         with Session(self.engine) as session:
             imported = session.get(DayPlanRevision, imported_id)
-        self.assertEqual(imported.service_area_id, self.area_id)
-        self.assertEqual(imported.district_id, source["district_id"])
+            district_row_id = receipt["id_map"]["districts"]["1"]
+            expected_area_id = session.scalar(
+                select(ServiceArea.id).where(ServiceArea.code == f"district_{district_row_id}")
+            )
+        self.assertEqual(imported.service_area_id, expected_area_id)
 
     def test_apply_publishes_one_current_revision_and_never_rewrites_history(self):
         applied = self.apply(self.preview(allow_partial=False))

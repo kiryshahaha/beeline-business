@@ -51,7 +51,7 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/reports/tickets/export",
             "/api/v1/reports/plans/{plan_id}/export",
             "/api/v1/planning/policy",
-            "/api/v1/planning/days/{district_id}/{route_date}/redirect",
+            "/api/v1/planning/days/{service_area_id}/{route_date}/redirect",
         ]
         for path in expected_paths:
             self.assertIn(path, paths, f"Path {path} missing in OpenAPI schema")
@@ -102,7 +102,7 @@ class OpenApiTests(unittest.TestCase):
             paths["/api/v1/tickets/{id}/delay"]["post"],
             paths["/api/v1/tickets/{id}/reopen"]["post"],
             paths["/api/v1/tickets/{id}/window-change"]["post"],
-            paths["/api/v1/planning/days/{district_id}/{route_date}/redirect"]["post"],
+            paths["/api/v1/planning/days/{service_area_id}/{route_date}/redirect"]["post"],
         )
         self.assertTrue(all(operation.get("security") for operation in execution_operations))
         activity_operation = paths["/api/v1/analytics/recent-activity"]["get"]
@@ -148,6 +148,22 @@ class OpenApiTests(unittest.TestCase):
         self.assertIn("brigade_id", {parameter["name"] for parameter in user_parameters})
         examples = schema["components"]["schemas"]["UserRead"]["examples"]
         self.assertTrue(any(example["role"] == "foreman" for example in examples))
+
+    def test_area_filters_replace_district_query_parameters(self):
+        schema = app.openapi()
+        ticket_parameters = {
+            parameter["name"]
+            for parameter in schema["paths"]["/api/v1/tickets"]["get"]["parameters"]
+        }
+        report_parameters = {
+            parameter["name"]
+            for parameter in schema["paths"]["/api/v1/reports/tickets/export"]["get"]["parameters"]
+        }
+
+        self.assertIn("service_area_id", ticket_parameters)
+        self.assertNotIn("district_id", ticket_parameters)
+        self.assertIn("service_area_id", report_parameters)
+        self.assertNotIn("district_id", report_parameters)
 
     def test_openapi_uses_http_bearer_for_access_tokens(self):
         schema = app.openapi()

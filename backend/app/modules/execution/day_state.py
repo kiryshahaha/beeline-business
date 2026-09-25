@@ -19,7 +19,7 @@ from app.modules.execution.schemas import (
     WorkerUnavailableCommand,
 )
 from app.modules.execution.service import ExecutionConflict, IdempotencyConflict
-from app.modules.planning.day_plans import publish_revision, service_area_for_district
+from app.modules.planning.day_plans import publish_revision
 
 MOSCOW = ZoneInfo("Europe/Moscow")
 
@@ -115,7 +115,7 @@ class WorkerNotFound(Exception):
     pass
 
 
-class DistrictNotFound(Exception):
+class ServiceAreaNotFound(Exception):
     pass
 
 
@@ -136,7 +136,7 @@ def _transaction(session: Session) -> Iterator[None]:
             yield
 
 
-def _event_rows(session: Session, worker_id: int, district_id: int, route_date: date, at):
+def _event_rows(session: Session, worker_id: int, service_area_id: int, route_date: date, at):
     return list(
         session.execute(
             text(
@@ -145,7 +145,7 @@ def _event_rows(session: Session, worker_id: int, district_id: int, route_date: 
                        previous_state, new_state, payload, after_revision
                 FROM work_events
                 WHERE worker_id = :worker_id
-                  AND district_id = :district_id
+                  AND service_area_id = :service_area_id
                   AND route_date = :route_date
                   AND occurred_at <= :at
                 ORDER BY occurred_at, id
@@ -153,7 +153,7 @@ def _event_rows(session: Session, worker_id: int, district_id: int, route_date: 
             ),
             {
                 "worker_id": worker_id,
-                "district_id": district_id,
+                "service_area_id": service_area_id,
                 "route_date": route_date,
                 "at": at,
             },
@@ -163,26 +163,28 @@ def _event_rows(session: Session, worker_id: int, district_id: int, route_date: 
     )
 
 
-def _state_row(session: Session, worker_id: int, district_id: int, route_date: date, *, lock=False):
+def _state_row(
+    session: Session, worker_id: int, service_area_id: int, route_date: date, *, lock=False
+):
     suffix = " FOR UPDATE" if lock else ""
     return (
         session.execute(
             text(
                 """
-                SELECT worker_id, district_id, route_date, revision, available,
+                SELECT worker_id, service_area_id, route_date, revision, available,
                        unavailable_at, unavailable_until, last_location_id,
                        current_ticket_id, current_destination_id,
                        en_route_started_at, expected_available_at, reason
                 FROM worker_day_states
                 WHERE worker_id = :worker_id
-                  AND district_id = :district_id
+                  AND service_area_id = :service_area_id
                   AND route_date = :route_date
                 """
                 + suffix
             ),
             {
                 "worker_id": worker_id,
-                "district_id": district_id,
+                "service_area_id": service_area_id,
                 "route_date": route_date,
             },
         )
@@ -192,26 +194,26 @@ def _state_row(session: Session, worker_id: int, district_id: int, route_date: d
 
 
 def _ensure_state_row(
-    session: Session, worker_id: int, district_id: int, route_date: date, *, lock: bool
+    session: Session, worker_id: int, service_area_id: int, route_date: date, *, lock: bool
 ):
-    state = _state_row(session, worker_id, district_id, route_date, lock=lock)
+    state = _state_row(session, worker_id, service_area_id, route_date, lock=lock)
     if state is not None:
         return state
     session.execute(
         text(
             """
-            INSERT INTO worker_day_states (worker_id, district_id, route_date)
-            VALUES (:worker_id, :district_id, :route_date)
-            ON CONFLICT (worker_id, district_id, route_date) DO NOTHING
+            INSERT INTO worker_day_states (worker_id, service_area_id, route_date)
+            VALUES (:worker_id, :service_area_id, :route_date)
+            ON CONFLICT (worker_id, service_area_id, route_date) DO NOTHING
             """
         ),
         {
             "worker_id": worker_id,
-            "district_id": district_id,
+            "service_area_id": service_area_id,
             "route_date": route_date,
         },
     )
-    return _state_row(session, worker_id, district_id, route_date, lock=lock)
+    return _state_row(session, worker_id, service_area_id, route_date, lock=lock)
 
 
 def _ticket_worker_id(session: Session, ticket_id: int, worker_id: int | None) -> int | None:
@@ -233,10 +235,10 @@ def prepare_ticket_event_state(
     session: Session,
     *,
     worker_id: int,
-    district_id: int,
+    service_area_id: int,
     route_date: date,
 ):
-    return _ensure_state_row(session, worker_id, district_id, route_date, lock=True)
+    return _ensure_state_row(session, worker_id, service_area_id, route_date, lock=True)
 
 
 def materialize_ticket_event(
@@ -245,14 +247,14 @@ def materialize_ticket_event(
     event_type: str,
     worker_id: int,
     ticket_id: int,
-    district_id: int,
+    service_area_id: int,
     route_date: date,
     occurred_at: datetime,
     payload: dict,
     expected_revision: int,
     fallback_location_id: int | None = None,
 ) -> int:
-    state = _state_row(session, worker_id, district_id, route_date, lock=True)
+    state = _state_row(session, worker_id, service_area_id, route_date, lock=True)
     if state is None:
         raise WorkerNotFound
     fields = {
@@ -326,7 +328,7 @@ def materialize_ticket_event(
                 reason = :reason,
                 updated_at = now()
             WHERE worker_id = :worker_id
-              AND district_id = :district_id
+              AND service_area_id = :service_area_id
               AND route_date = :route_date
               AND revision = :expected_revision
             RETURNING revision
@@ -336,7 +338,7 @@ def materialize_ticket_event(
             **fields,
             "revision": after_revision,
             "worker_id": worker_id,
-            "district_id": district_id,
+            "service_area_id": service_area_id,
             "route_date": route_date,
             "expected_revision": expected_revision,
         },
@@ -349,13 +351,13 @@ def materialize_ticket_event(
 def _read_state(
     session: Session,
     worker_id: int,
-    district_id: int,
+    service_area_id: int,
     route_date: date,
     at,
     *,
     revision: int | None = None,
 ) -> WorkerDayStateRead:
-    events = _event_rows(session, worker_id, district_id, route_date, at)
+    events = _event_rows(session, worker_id, service_area_id, route_date, at)
     state = reduce_worker_day_events(events)
     worker_revisions = [
         (event["payload"] or {}).get("worker_day_revision")
@@ -384,14 +386,14 @@ def _read_state(
                 JOIN locations AS location ON location.id = ticket.location_id
                 JOIN buildings AS building ON building.id = location.building_id
                 WHERE ticket.assigned_worker_id = :worker_id
-                  AND building.district_id = :district_id
+                  AND building.service_area_id = :service_area_id
                   AND ticket.updated_at <= :at
                   AND (ticket.visit_window_start AT TIME ZONE 'Europe/Moscow')::date = :route_date
                 """
             ),
             {
                 "worker_id": worker_id,
-                "district_id": district_id,
+                "service_area_id": service_area_id,
                 "route_date": route_date,
                 "at": at,
             },
@@ -409,7 +411,6 @@ def _read_state(
     in_progress_ticket_id = state["current_ticket_id"]
     if in_progress_ticket_id is not None:
         remaining_ticket_ids.discard(in_progress_ticket_id)
-    service_area_id = service_area_for_district(session, district_id, worker_id=worker_id)
     current_plan_revision = session.execute(
         text(
             """
@@ -424,7 +425,7 @@ def _read_state(
     ).scalar_one_or_none()
     return WorkerDayStateRead(
         worker_id=worker_id,
-        district_id=district_id,
+        service_area_id=service_area_id,
         route_date=route_date,
         available=state["available"],
         unavailable_at=state["unavailable_at"],
@@ -445,20 +446,20 @@ def _read_state(
 
 
 def day_state_at(
-    session: Session, worker_id: int, district_id: int, route_date: date, at: datetime
+    session: Session, worker_id: int, service_area_id: int, route_date: date, at: datetime
 ) -> WorkerDayStateRead:
     worker_exists = session.execute(
         text("SELECT 1 FROM workers WHERE user_id = :worker_id"), {"worker_id": worker_id}
     ).scalar_one_or_none()
     if worker_exists is None:
         raise WorkerNotFound
-    district_exists = session.execute(
-        text("SELECT 1 FROM districts WHERE id = :district_id"),
-        {"district_id": district_id},
+    service_area_exists = session.execute(
+        text("SELECT 1 FROM service_areas WHERE id = :service_area_id"),
+        {"service_area_id": service_area_id},
     ).scalar_one_or_none()
-    if district_exists is None:
-        raise DistrictNotFound
-    return _read_state(session, worker_id, district_id, route_date, at)
+    if service_area_exists is None:
+        raise ServiceAreaNotFound
+    return _read_state(session, worker_id, service_area_id, route_date, at)
 
 
 def _shift_end(route_date: date, shift_end) -> datetime:
@@ -469,7 +470,7 @@ def _same_worker_event(existing, command) -> bool:
     payload = existing["payload"] or {}
     if existing["reason"] != command.reason:
         return False
-    if payload.get("district_id") != command.district_id:
+    if payload.get("service_area_id") != command.service_area_id:
         return False
     if payload.get("route_date") != command.route_date.isoformat():
         return False
@@ -504,12 +505,12 @@ def mark_worker_unavailable(
             raise ValueError("worker_id не совпадает с адресом операции")
         if command.reason is None:
             raise ValueError("Для недоступности нужна причина")
-        district_exists = session.execute(
-            text("SELECT 1 FROM districts WHERE id = :district_id"),
-            {"district_id": command.district_id},
+        service_area_exists = session.execute(
+            text("SELECT 1 FROM service_areas WHERE id = :service_area_id"),
+            {"service_area_id": command.service_area_id},
         ).scalar_one_or_none()
-        if district_exists is None:
-            raise DistrictNotFound
+        if service_area_exists is None:
+            raise ServiceAreaNotFound
         existing = repository.find_event_by_key(session, idempotency_key)
         if existing is not None:
             if (
@@ -523,7 +524,7 @@ def mark_worker_unavailable(
                 _read_state(
                     session,
                     worker_id,
-                    command.district_id,
+                    command.service_area_id,
                     command.route_date,
                     command.occurred_at,
                     revision=existing["after_revision"],
@@ -546,7 +547,7 @@ def mark_worker_unavailable(
         if worker is None:
             raise WorkerNotFound
         snapshot = _ensure_state_row(
-            session, worker_id, command.district_id, command.route_date, lock=True
+            session, worker_id, command.service_area_id, command.route_date, lock=True
         )
         if command.expected_revision != snapshot["revision"]:
             raise DayStateRevisionConflict(
@@ -572,7 +573,7 @@ def mark_worker_unavailable(
         event_payload = {
             "expected_available_at": expected_available_at.isoformat(),
             "worker_id": worker_id,
-            "district_id": command.district_id,
+            "service_area_id": command.service_area_id,
             "route_date": command.route_date.isoformat(),
             "worker_day_revision": snapshot["revision"] + 1,
         }
@@ -584,7 +585,7 @@ def mark_worker_unavailable(
             session,
             event_type=WorkEventType.WORKER_UNAVAILABLE.value,
             worker_id=worker_id,
-            district_id=command.district_id,
+            service_area_id=command.service_area_id,
             route_date=command.route_date,
             occurred_at=command.occurred_at,
             actor_id=actor_id,
@@ -609,7 +610,7 @@ def mark_worker_unavailable(
                     reason = :reason,
                     updated_at = now()
                 WHERE worker_id = :worker_id
-                  AND district_id = :district_id
+                  AND service_area_id = :service_area_id
                   AND route_date = :route_date
                 """
             ),
@@ -620,7 +621,7 @@ def mark_worker_unavailable(
                 "expected_available_at": expected_available_at,
                 "reason": command.reason,
                 "worker_id": worker_id,
-                "district_id": command.district_id,
+                "service_area_id": command.service_area_id,
                 "route_date": command.route_date,
             },
         )
@@ -628,7 +629,7 @@ def mark_worker_unavailable(
             _read_state(
                 session,
                 worker_id,
-                command.district_id,
+                command.service_area_id,
                 command.route_date,
                 command.occurred_at,
                 revision=after_revision,
@@ -639,7 +640,7 @@ def mark_worker_unavailable(
 
 def redirect_worker(
     session: Session,
-    district_id: int,
+    service_area_id: int,
     route_date: date,
     command: RedirectCommand,
     *,
@@ -653,7 +654,7 @@ def redirect_worker(
             if (
                 existing["worker_id"] != command.worker_id
                 or existing["event_type"] != WorkEventType.REDIRECT.value
-                or existing["district_id"] != district_id
+                or existing["service_area_id"] != service_area_id
                 or existing["route_date"] != route_date
                 or not _same_redirect_event(existing, command)
             ):
@@ -661,22 +662,17 @@ def redirect_worker(
             return _read_state(
                 session,
                 command.worker_id,
-                district_id,
+                service_area_id,
                 route_date,
                 command.occurred_at,
                 revision=(existing["payload"] or {}).get("worker_day_revision"),
             )
-        district_exists = session.execute(
-            text("SELECT 1 FROM districts WHERE id = :district_id"),
-            {"district_id": district_id},
+        service_area_exists = session.execute(
+            text("SELECT 1 FROM service_areas WHERE id = :service_area_id"),
+            {"service_area_id": service_area_id},
         ).scalar_one_or_none()
-        if district_exists is None:
-            raise DistrictNotFound
-        service_area_id = service_area_for_district(
-            session, district_id, worker_id=command.worker_id
-        )
-        if service_area_id is None:
-            raise UnsafeRedirect("Участок обслуживания для этого района не определён")
+        if service_area_exists is None:
+            raise ServiceAreaNotFound
         current_plan_revision = session.execute(
             text(
                 """
@@ -694,17 +690,17 @@ def redirect_worker(
             raise DayStateRevisionConflict(
                 "stale_day_revision", current_revision=current_plan_revision
             )
-        state = _state_row(session, command.worker_id, district_id, route_date, lock=True)
+        state = _state_row(session, command.worker_id, service_area_id, route_date, lock=True)
         if state is None:
             raise UnsafeRedirect("Снимок рабочего дня не найден")
         if state["current_ticket_id"] != command.current_ticket_id:
             raise UnsafeRedirect("Текущая заявка инженера не совпадает")
         if state["current_destination_id"] is None:
             raise UnsafeRedirect("Перенаправить можно только начатый переезд")
-        destination_district = session.execute(
+        destination_service_area = session.execute(
             text(
                 """
-                SELECT building.district_id
+                SELECT building.service_area_id
                 FROM locations AS location
                 JOIN buildings AS building ON building.id = location.building_id
                 WHERE location.id = :location_id
@@ -712,10 +708,10 @@ def redirect_worker(
             ),
             {"location_id": command.new_destination_id},
         ).scalar_one_or_none()
-        if destination_district is None:
+        if destination_service_area is None:
             raise UnsafeRedirect("Новое место назначения не найдено")
-        if destination_district != district_id:
-            raise UnsafeRedirect("Новое место назначения относится к другому району")
+        if destination_service_area != service_area_id:
+            raise UnsafeRedirect("Новое место назначения относится к другой зоне обслуживания")
         payload = {
             "ticket_id": command.current_ticket_id,
             "destination_id": command.new_destination_id,
@@ -728,7 +724,7 @@ def redirect_worker(
             event_type=WorkEventType.REDIRECT.value,
             ticket_id=command.current_ticket_id,
             worker_id=command.worker_id,
-            district_id=district_id,
+            service_area_id=service_area_id,
             route_date=route_date,
             occurred_at=command.occurred_at,
             actor_id=actor_id,
@@ -749,7 +745,7 @@ def redirect_worker(
                     reason = :reason,
                     updated_at = now()
                 WHERE worker_id = :worker_id
-                  AND district_id = :district_id
+                  AND service_area_id = :service_area_id
                   AND route_date = :route_date
                 """
             ),
@@ -757,7 +753,7 @@ def redirect_worker(
                 "destination_id": command.new_destination_id,
                 "reason": command.reason,
                 "worker_id": command.worker_id,
-                "district_id": district_id,
+                "service_area_id": service_area_id,
                 "route_date": route_date,
             },
         )
@@ -768,7 +764,6 @@ def redirect_worker(
         publish_revision(
             session,
             service_area_id=service_area_id,
-            district_id=district_id,
             route_date=route_date,
             actor_id=actor_id,
             reason="worker_redirected",
@@ -781,7 +776,7 @@ def redirect_worker(
         return _read_state(
             session,
             command.worker_id,
-            district_id,
+            service_area_id,
             route_date,
             command.occurred_at,
             revision=state["revision"] + 1,

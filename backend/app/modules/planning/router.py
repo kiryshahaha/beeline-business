@@ -117,11 +117,11 @@ async def preview(
 
 
 @router.post(
-    "/days/{district_id}/{route_date}/redirect",
+    "/days/{service_area_id}/{route_date}/redirect",
     response_model=WorkerDayStateRead,
 )
 def redirect_worker(
-    district_id: int,
+    service_area_id: int,
     route_date: date,
     data: RedirectCommand,
     actor: Observer,
@@ -133,7 +133,7 @@ def redirect_worker(
     try:
         return day_state.redirect_worker(
             session,
-            district_id,
+            service_area_id,
             route_date,
             data,
             actor_id=actor.id,
@@ -149,8 +149,8 @@ def redirect_worker(
             409,
             detail={"code": "idempotency_conflict", "event_id": error.event_id},
         ) from error
-    except day_state.DistrictNotFound as error:
-        raise HTTPException(404, detail="Район не найден") from error
+    except day_state.ServiceAreaNotFound as error:
+        raise HTTPException(404, detail="Зона обслуживания не найдена") from error
     except day_state.UnsafeRedirect as error:
         raise HTTPException(422, detail=str(error)) from error
 

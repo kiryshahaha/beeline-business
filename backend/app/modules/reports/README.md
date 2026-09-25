@@ -5,7 +5,7 @@
 
 ## Выгрузка заявок
 
-`GET /api/v1/reports/tickets/export` принимает фильтры `status`, `city_id`, `district_id`,
+`GET /api/v1/reports/tickets/export` принимает фильтры `status`, `city_id`, `service_area_id`,
 `brigade_id`. Параметр `format` выбирает `csv` или `xlsx`; по умолчанию — `xlsx`.
 Строки упорядочены по ID заявки, без пагинации, с `Content-Disposition: attachment`
 (`tickets.csv` / `tickets.xlsx`), `Content-Length`, `Cache-Control: no-store` и

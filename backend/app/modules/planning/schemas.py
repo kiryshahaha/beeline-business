@@ -16,7 +16,6 @@ class PreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     route_date: date
-    district_id: PositiveInt32 | None = None
     service_area_id: PositiveInt32 | None = None
     base_day_revision: PositiveInt32 | None = None
     route_end: Literal["open", "return_to_start", "specific_finish"] | None = None
@@ -181,7 +180,6 @@ class PlanRead(BaseModel):
     state: Literal["ready", "applied", "expired", "stale"]
     outcome: Literal["complete", "partial", "empty"]
     route_date: date
-    district_id: int | None = None
     service_area_id: int | None = None
     day_revision: int | None = None
     timezone: Literal["Europe/Moscow"]
@@ -256,7 +254,6 @@ class DayPlanRevisionRead(BaseModel):
     """A published revision: who changed the day, why, and whether it still holds."""
 
     service_area_id: int
-    district_id: int | None
     route_date: date
     revision: int
     previous_revision: int | None

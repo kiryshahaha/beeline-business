@@ -59,7 +59,7 @@ TICKET_READ_EXAMPLE = {
         "id": 1,
         "city_id": 1,
         "city": "Санкт-Петербург",
-        "district_id": 1,
+        "service_area_id": 1,
         "district": "Невский район",
         "street_id": 1,
         "street": "Искровский проспект",

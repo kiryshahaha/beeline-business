@@ -107,7 +107,8 @@ class SourceImportApiTests(DatabaseTestCase):
                 JOIN buildings b ON b.id = l.building_id
                 JOIN streets s ON s.id = b.street_id
                 JOIN cities c ON c.id = b.city_id
-                JOIN districts d ON d.id = b.district_id
+                JOIN service_areas sa ON sa.id = b.service_area_id
+                LEFT JOIN districts d ON sa.code = 'district_' || d.id
                 WHERE r.kind = 'demand' ORDER BY r.row_number
             """)
             )

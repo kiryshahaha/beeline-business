@@ -216,14 +216,14 @@ def update_worker_line_status(
                             SELECT revision
                             FROM worker_day_states
                             WHERE worker_id = :worker_id
-                              AND district_id = :district_id
+                              AND service_area_id = :service_area_id
                               AND route_date = :route_date
                             FOR UPDATE
                             """
                         ),
                         {
                             "worker_id": worker_id,
-                            "district_id": context["district_id"],
+                            "service_area_id": context["service_area_id"],
                             "route_date": context["route_date"],
                         },
                     ).scalar_one_or_none()
@@ -233,13 +233,13 @@ def update_worker_line_status(
                         reason="line_status",
                         expected_available_at=None,
                         worker_id=worker_id,
-                        district_id=context["district_id"],
+                        service_area_id=context["service_area_id"],
                         route_date=context["route_date"],
                         payload={"source": "line_status"},
                     )
                     context_key = (
                         f"{idempotency_key or f'line-status:{worker_id}'}:"
-                        f"{context['district_id']}:{context['route_date']}"
+                        f"{context['service_area_id']}:{context['route_date']}"
                     )
                     if len(context_key) > 128:
                         context_key = sha256(context_key.encode()).hexdigest()

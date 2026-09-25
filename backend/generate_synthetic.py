@@ -63,8 +63,8 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
     for i in range(1, 13):
         add("districts", id=i, city_id=(i - 1) // 4 + 1, name=f"Тестовый район {i}")
         add("streets", id=i, city_id=(i - 1) // 4 + 1, name=f"Вымышленная улица {i}")
-        add("divisions", id=i, district_id=i)
-        add("service_areas", id=i, code=f"district_{i}", name=f"Тестовый участок {i}")
+        add("divisions", id=i, service_area_id=i + 100)
+        add("service_areas", id=i + 100, code=f"district_{i}", name=f"Тестовый участок {i}")
     location_count = max(24, (tickets + 2) // 3)
     for i in range(1, location_count + 1):
         district = (i - 1) % 12 + 1
@@ -72,7 +72,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             "buildings",
             id=i,
             city_id=(district - 1) // 4 + 1,
-            district_id=district,
+            service_area_id=district + 100,
             street_id=district,
             number=str(i),
         )
@@ -113,7 +113,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             workshift_end=time(6 if night else 18),
             transport_type=TRANSPORT[w % 4],
             is_on_line=True,
-            service_area_id=(w % 12) + 1,
+            service_area_id=(w % 12) + 101,
         )
         for skill in range(1, w % 3 + 2):
             add("worker_skill_assignments", worker_id=i, skill_id=skill)
@@ -191,7 +191,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             "tickets",
             id=i,
             location_id=location,
-            service_area_id=((i - 1) % 12) + 1,
+            service_area_id=((i - 1) % 12) + 101,
             title=f"[Синтетика:{scenario}] Заявка {i}",
             description=(
                 f"Сценарий {scenario}; seed={seed}. Вымышленные данные.\n"
@@ -268,7 +268,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
         event_type="new_ticket",
         ticket_id=1,
         worker_id=9,
-        district_id=1,
+        service_area_id=101,
         route_date=start_date,
         occurred_at=stamp,
         recorded_at=stamp,
@@ -284,7 +284,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
         "worker_day_states",
         id=1,
         worker_id=9,
-        district_id=1,
+        service_area_id=101,
         route_date=start_date,
         revision=1,
         available=True,
@@ -307,8 +307,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
     add(
         "day_plan_revisions",
         id=1,
-        service_area_id=1,
-        district_id=1,
+        service_area_id=101,
         route_date=start_date,
         revision=1,
         previous_revision=None,
@@ -374,7 +373,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
     add(
         "source_imports",
         id=1,
-        service_area_id=1,
+        service_area_id=101,
         kind="demand",
         filename="synthetic-source.csv",
         file_sha256=hashlib.sha256(f"source-{seed}".encode()).hexdigest(),
@@ -388,7 +387,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
     add(
         "source_addresses",
         id=1,
-        service_area_id=1,
+        service_area_id=101,
         raw_address=f"Синтетический город {seed}-1, Вымышленная улица 1, д. 1",
         location_id=1,
         status="manual",
@@ -404,7 +403,7 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             "source_records",
             id=record_id,
             import_id=1,
-            service_area_id=1,
+            service_area_id=101,
             kind=kind,
             external_id=external_id,
             row_number=2,

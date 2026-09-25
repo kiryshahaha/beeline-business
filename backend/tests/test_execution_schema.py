@@ -71,19 +71,37 @@ class ExecutionSchemaTests(unittest.TestCase):
         ):
             self.assertIn(column, Ticket.__table__.c)
 
-    def test_division_is_unique_per_district_and_brigade_references_it(self):
-        self.assertIn("district_id", Division.__table__.c)
+    def test_division_is_unique_per_service_area_and_brigade_references_it(self):
+        self.assertIn("service_area_id", Division.__table__.c)
+        self.assertNotIn("district_id", Division.__table__.c)
         self.assertIn("division_id", Brigade.__table__.c)
         self.assertTrue(
             any(
-                index.unique and "district_id" in index.columns
+                index.unique and "service_area_id" in index.columns
                 for index in Division.__table__.indexes
             )
         )
+        area_fk = next(iter(Division.__table__.c.service_area_id.foreign_keys))
+        self.assertEqual(area_fk.target_fullname, "service_areas.id")
+
+    def test_worker_unavailable_request_uses_service_area_id(self):
+        payload = {"service_area_id": 5, "route_date": "2026-09-25", "expected_revision": 1}
+        try:
+            command = WorkerUnavailableCommand.model_validate(payload)
+        except ValidationError as error:
+            self.fail(f"service_area_id was rejected: {error}")
+        self.assertEqual(command.service_area_id, 5)
+
+    def test_worker_unavailable_request_rejects_district_id(self):
+        with self.assertRaises(ValidationError):
+            WorkerUnavailableCommand.model_validate(
+                {"district_id": 5, "route_date": "2026-09-25", "expected_revision": 1}
+            )
 
     def test_work_event_has_revision_and_idempotency_columns(self):
         for column in (
             "event_type",
+            "service_area_id",
             "occurred_at",
             "recorded_at",
             "before_revision",
@@ -135,10 +153,11 @@ class ExecutionSchemaTests(unittest.TestCase):
                 reason=" ",
             )
 
-    def test_worker_unavailable_command_keeps_district_and_route_date_typed(self):
+    def test_worker_unavailable_command_keeps_service_area_and_route_date_typed(self):
         command = WorkerUnavailableCommand(
             expected_revision=1,
-            district_id=2,
+            service_area_id=2,
             route_date="2030-01-15",
         )
+        self.assertEqual(command.service_area_id, 2)
         self.assertEqual(command.route_date.isoformat(), "2030-01-15")
