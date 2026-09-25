@@ -25,7 +25,7 @@ def find_active_refresh_token(session: Session, token_hash: str) -> RowMapping |
                 SELECT id, user_id, token_hash, expires_at, created_at, revoked_at
                 FROM refresh_tokens
                 WHERE token_hash = :token_hash
-                  AND (revoked_at IS NULL OR revoked_at > now() - interval '15 seconds')
+                  AND revoked_at IS NULL
                   AND expires_at > now()
             """),
             {"token_hash": token_hash},
