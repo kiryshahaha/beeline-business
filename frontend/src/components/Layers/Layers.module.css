@@ -34,6 +34,7 @@
   padding-top: 8px;
 }
 
+.quickActions,
 .zoom,
 .styles {
   display: flex;
@@ -41,10 +42,15 @@
   gap: 8px;
 }
 
+.quickActions {
+  flex-direction: row;
+}
+
 .zoom {
   flex-direction: row;
 }
 
+.quickAction,
 .zoom button,
 .styles button {
   border: 0;
@@ -53,12 +59,17 @@
   cursor: pointer;
 }
 
+.quickAction,
 .zoom button {
   flex: 1;
   height: 36px;
   background: rgba(255, 255, 255, 0.08);
-  font-size: 24px;
+  font-size: 13px;
   line-height: 1;
+}
+
+.zoom button {
+  font-size: 24px;
 }
 
 .styles button {
@@ -72,6 +83,7 @@
   text-align: left;
 }
 
+.quickAction:hover,
 .zoom button:hover,
 .styles button:hover {
   background: rgba(255, 255, 255, 0.14);

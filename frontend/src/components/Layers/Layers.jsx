@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ExpandableMenu from "@/components/ui/ExpandableMenu/ExpandableMenu";
 import styles from "./Layers.module.css";
 
@@ -22,13 +22,65 @@ const MAP_STYLES = {
 
 export default function Layers({ mapRef }) {
   const [activeStyle, setActiveStyle] = useState("standard");
+  const [isGlobe, setIsGlobe] = useState(false);
+  const [defaultView, setDefaultView] = useState(null);
+
   const getMap = () => mapRef?.current?.getMap?.() || mapRef?.current;
+
+  useEffect(() => {
+    const map = mapRef?.current?.getMap?.() || mapRef?.current;
+    if (!map) return;
+
+    const syncMapState = () => {
+      const projectionType = map.getProjection?.()?.type || "mercator";
+      setIsGlobe(projectionType === "globe");
+
+      if (!defaultView) {
+        setDefaultView({
+          center: map.getCenter?.() || { lng: 0, lat: 0 },
+          zoom: map.getZoom?.() || 2,
+          bearing: map.getBearing?.() || 0,
+          pitch: map.getPitch?.() || 0,
+        });
+      }
+    };
+
+    syncMapState();
+    if (!map.isStyleLoaded?.()) {
+      map.once("load", syncMapState);
+    }
+  }, [mapRef, defaultView]);
 
   const setStyle = (id) => {
     const map = getMap();
     if (id === activeStyle || !map) return;
     map.setStyle(MAP_STYLES[id].url, { diff: true });
     setActiveStyle(id);
+  };
+
+  const toggleProjection = () => {
+    const map = getMap();
+    if (!map) return;
+
+    const nextProjection = isGlobe ? { type: "mercator" } : { type: "globe" };
+    map.setProjection(nextProjection);
+    setIsGlobe(!isGlobe);
+  };
+
+  const resetCamera = () => {
+    const map = getMap();
+    if (!map || !defaultView) return;
+
+    map.setProjection({ type: "mercator" });
+    setIsGlobe(false);
+    map.flyTo({
+      center: defaultView.center,
+      zoom: defaultView.zoom,
+      bearing: defaultView.bearing,
+      pitch: defaultView.pitch,
+      duration: 800,
+      essential: true,
+    });
   };
 
   return (
@@ -72,6 +124,24 @@ export default function Layers({ mapRef }) {
               {activeStyle === id && <span>✓</span>}
             </button>
           ))}
+        </div>
+        <div className={styles.quickActions}>
+          <button
+            type="button"
+            className={styles.quickAction}
+            onClick={toggleProjection}
+            aria-label={isGlobe ? "Обычная проекция" : "Глобус"}
+          >
+            {isGlobe ? "Меркатор" : "Глобус"}
+          </button>
+          <button
+            type="button"
+            className={styles.quickAction}
+            onClick={resetCamera}
+            aria-label="Сбросить приближение и угол обзора"
+          >
+            Сброс
+          </button>
         </div>
       </div>
     </ExpandableMenu>
