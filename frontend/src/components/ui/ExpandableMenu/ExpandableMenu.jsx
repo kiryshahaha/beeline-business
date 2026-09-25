@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import React, { useState, useEffect, useRef } from "react";
 import styles from "./ExpandableMenu.module.css";
@@ -8,7 +8,7 @@ export default function ExpandableMenu({
   header,
   children,
   baseSize = 36,
-  className = ""
+  className = "",
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
@@ -36,17 +36,12 @@ export default function ExpandableMenu({
         "--base-size": `${baseSize}px`,
       }}
     >
-      <div 
-        className={styles.header} 
-        onClick={() => setIsOpen(!isOpen)}
-      >
+      <div className={styles.header} onClick={() => setIsOpen(!isOpen)}>
         {renderHeader ? renderHeader({ isOpen }) : header}
       </div>
       <div className={styles.bodyWrapper}>
         <div className={styles.body}>
-          <div className={styles.bodyContent}>
-            {children}
-          </div>
+          <div className={styles.bodyContent}>{children}</div>
         </div>
       </div>
     </div>

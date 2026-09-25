@@ -1,0 +1,100 @@
+.menu {
+  width: max-content;
+  max-width: 36px;
+  flex-direction: column-reverse;
+  transform-origin: bottom left;
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.menu.open .header {
+  padding-right: 0;
+}
+
+.trigger :global(img) {
+  display: block;
+}
+
+.menu.open .trigger {
+  background: var(--beeline);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 236px;
+  padding-top: 8px;
+}
+
+.quickActions,
+.zoom,
+.styles {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quickActions {
+  flex-direction: row;
+}
+
+.zoom {
+  flex-direction: row;
+}
+
+.quickAction,
+.zoom button,
+.styles button {
+  border: 0;
+  border-radius: 8px;
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.quickAction,
+.zoom button {
+  flex: 1;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.zoom button {
+  font-size: 24px;
+}
+
+.styles button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 13px;
+  text-align: left;
+}
+
+.quickAction:hover,
+.zoom button:hover,
+.styles button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.styles button.active {
+  background: rgba(255, 200, 0, 0.14);
+  outline: 1px solid var(--beeline);
+}
+
+.styles button span {
+  color: var(--beeline);
+  font-weight: 700;
+}

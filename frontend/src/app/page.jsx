@@ -4,6 +4,7 @@ import MapComponent from "@/components/MapComponent";
 import Search from "@/components/Search/Search";
 import TicketsStatuses from "@/components/TicketsStatuses/TicketsStatuses";
 import Notifications from "@/components/Notifications/Notifications";
+import Layers from "@/components/Layers/Layers";
 import { useTickets } from "@/hooks/useTickets";
 import { useRef } from "react";
 
@@ -25,6 +26,9 @@ export default function Home() {
       </div>
       <div style={{ position: "absolute", bottom: 22, right: 22, zIndex: 10 }}>
         <TicketsStatuses />
+      </div>
+      <div style={{ position: "absolute", bottom: 22, left: 88, zIndex: 10 }}>
+        <Layers mapRef={mapRef} />
       </div>
       <MapComponent mapRef={mapRef} tickets={tickets} />
     </main>
