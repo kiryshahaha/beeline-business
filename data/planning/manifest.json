@@ -3,7 +3,7 @@
   "route_date": "2030-01-15",
   "files": {
     "mixed.zip": {
-      "sha256": "9473ae1e615528d540e919af995dc4b9adb0581999e4c1ea1a03a3b02be39e5c",
+      "sha256": "bd207a1a592f1b1379e6ee0eea98c403cd865a00079c37f1c8ec16190600c063",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -27,7 +27,6 @@
         "brigades": 6,
         "notification_events": 0,
         "ticket_appliances": 24,
-        "ticket_assignments": 0,
         "ticket_comments": 0,
         "work_events": 1,
         "worker_day_states": 1,
@@ -38,7 +37,7 @@
       }
     },
     "mixed.xlsx": {
-      "sha256": "8d93b697ddc273ba04535e7e22eb1e7daf9aa89a00b87ff1350635f32609962d",
+      "sha256": "0df048fd8bf1028f9aa10f3ae71dc347cb1763e96f020fe8e7b4fd47a9a5cd33",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -62,7 +61,6 @@
         "brigades": 6,
         "notification_events": 0,
         "ticket_appliances": 24,
-        "ticket_assignments": 0,
         "ticket_comments": 0,
         "work_events": 1,
         "worker_day_states": 1,
@@ -73,7 +71,7 @@
       }
     },
     "duplicate_coordinates.zip": {
-      "sha256": "e4a178aba7dc578c9c0fdce022c15bbdb3ff4a2c50f409d5694d507f67977e21",
+      "sha256": "c6e4a3af0ee285779a73ce84cac8067fa9fd03c2ad014d27fdeb7c7448acba9e",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -97,7 +95,6 @@
         "brigades": 6,
         "notification_events": 0,
         "ticket_appliances": 24,
-        "ticket_assignments": 0,
         "ticket_comments": 0,
         "work_events": 1,
         "worker_day_states": 1,
@@ -108,7 +105,7 @@
       }
     },
     "duplicate_coordinates.xlsx": {
-      "sha256": "82a72d719a35ddf038a3a3c7512e23aab5ebe2dc82e46be6219bb65f16fe9603",
+      "sha256": "eb19e81fab8f69b68a73fd6508cd32a295eef74fb0bd84a5ec9f2eba82c73509",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -132,7 +129,6 @@
         "brigades": 6,
         "notification_events": 0,
         "ticket_appliances": 24,
-        "ticket_assignments": 0,
         "ticket_comments": 0,
         "work_events": 1,
         "worker_day_states": 1,
@@ -143,7 +139,7 @@
       }
     },
     "night.zip": {
-      "sha256": "628336c17dbd65d78992680d4f725beea1130ab1332dc477f3ea8b9c99030dd7",
+      "sha256": "595054e9e419408b41060653c2f7067dfa934773fb633fa3311d56fd00a844e8",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -167,7 +163,6 @@
         "brigades": 6,
         "notification_events": 0,
         "ticket_appliances": 24,
-        "ticket_assignments": 0,
         "ticket_comments": 0,
         "work_events": 1,
         "worker_day_states": 1,
@@ -178,7 +173,7 @@
       }
     },
     "night.xlsx": {
-      "sha256": "80e78f4344219243e782766abdd58f4a567d37399052e131091e78b4290dabdd",
+      "sha256": "3b52a4ec0a4ad395ee38ce6f4ccaea2da468b5897c453756e4c230f894a24a5c",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -202,7 +197,6 @@
         "brigades": 6,
         "notification_events": 0,
         "ticket_appliances": 24,
-        "ticket_assignments": 0,
         "ticket_comments": 0,
         "work_events": 1,
         "worker_day_states": 1,
@@ -213,7 +207,7 @@
       }
     },
     "rejections.zip": {
-      "sha256": "2fedd0b3076e26c09732a90de5a3f5260701ad2a62caa03fbc4d4a5e181e4511",
+      "sha256": "880b96c84d0393c2219807e9cc6b7f4d7d5014bd325ee6072436adfd712089a0",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -237,7 +231,6 @@
         "brigades": 6,
         "notification_events": 0,
         "ticket_appliances": 23,
-        "ticket_assignments": 0,
         "ticket_comments": 0,
         "work_events": 1,
         "worker_day_states": 1,
@@ -248,7 +241,7 @@
       }
     },
     "rejections.xlsx": {
-      "sha256": "e620e6f6698524159ee0bd5384826b3e7247d41a9145909b95eba835e852c848",
+      "sha256": "f36ee431cebabe1a378cd4e8795c427f7bc2a5a9004dc82a64f25690e40303fb",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -272,7 +265,6 @@
         "brigades": 6,
         "notification_events": 0,
         "ticket_appliances": 23,
-        "ticket_assignments": 0,
         "ticket_comments": 0,
         "work_events": 1,
         "worker_day_states": 1,
@@ -283,7 +275,7 @@
       }
     },
     "overload.zip": {
-      "sha256": "7261ba128c0e5e0c9efea9e16c4da65164eb2c078923131dccbd9e45879c962b",
+      "sha256": "8ddd59a6fce9b081c01a38175604f0fc3e4f9dfb4f7077dcbf775934f1c46870",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -307,7 +299,6 @@
         "brigades": 6,
         "notification_events": 0,
         "ticket_appliances": 50,
-        "ticket_assignments": 0,
         "ticket_comments": 0,
         "work_events": 1,
         "worker_day_states": 1,
@@ -318,7 +309,7 @@
       }
     },
     "overload.xlsx": {
-      "sha256": "5a7ac7826070934c5a46fdfbfb7b5f121ea96bfc2ab7485fcd069b35683e8f78",
+      "sha256": "4c7fdaa75ccab79d04abea6d00d2d70c09ab3098e99e53fa475ccc522b1a7676",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -342,7 +333,6 @@
         "brigades": 6,
         "notification_events": 0,
         "ticket_appliances": 50,
-        "ticket_assignments": 0,
         "ticket_comments": 0,
         "work_events": 1,
         "worker_day_states": 1,
@@ -353,7 +343,7 @@
       }
     },
     "volume.zip": {
-      "sha256": "60ed24fba67825f9aef0896682f8ddd43f5dff416c018fd31680cdea0103480d",
+      "sha256": "5e158d8ad7ce8ded9eb2e22d751dff9f01035b6bbb82f56f09ede0d207e4c39b",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -377,7 +367,6 @@
         "brigades": 6,
         "notification_events": 0,
         "ticket_appliances": 50,
-        "ticket_assignments": 0,
         "ticket_comments": 0,
         "work_events": 1,
         "worker_day_states": 1,
@@ -388,7 +377,7 @@
       }
     },
     "volume.xlsx": {
-      "sha256": "35c724c579cf99132d2e6d222518f73ca1dc6e8b6ae119bfe9e1aabc9ca13710",
+      "sha256": "7086b7dc95f65bc852fde41521d0103c2072727993a5765a463efe29f1484d77",
       "rows": {
         "appliances": 27,
         "cities": 3,
@@ -412,7 +401,6 @@
         "brigades": 6,
         "notification_events": 0,
         "ticket_appliances": 50,
-        "ticket_assignments": 0,
         "ticket_comments": 0,
         "work_events": 1,
         "worker_day_states": 1,

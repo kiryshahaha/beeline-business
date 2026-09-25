@@ -31,10 +31,8 @@ def find_tickets(
         conditions.append("""
             EXISTS (
                 SELECT 1
-                FROM ticket_assignments AS brigade_assignment
-                JOIN brigade_members AS brigade_member
-                    ON brigade_member.worker_id = brigade_assignment.worker_id
-                WHERE brigade_assignment.ticket_id = t.id
+                FROM brigade_members AS brigade_member
+                    WHERE brigade_member.worker_id = t.assigned_worker_id
                   AND brigade_member.brigade_id = :brigade_id
             )
         """)

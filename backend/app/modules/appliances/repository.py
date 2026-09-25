@@ -242,10 +242,10 @@ def delete_ticket_appliance(session: Session, ticket_appliance: TicketAppliance)
 def find_ticket_default_office_id(session: Session, ticket_id: int) -> int | None:
     query = """
         SELECT b.office_id
-        FROM ticket_assignments ta
-        JOIN brigade_members bm ON bm.worker_id = ta.worker_id
-        JOIN brigades b ON b.id = bm.brigade_id
-        WHERE ta.ticket_id = :ticket_id
+        FROM tickets t
+            JOIN brigade_members bm ON bm.worker_id = t.assigned_worker_id
+            JOIN brigades b ON b.id = bm.brigade_id
+            WHERE t.id = :ticket_id
         LIMIT 1
     """
     row = session.execute(text(query), {"ticket_id": ticket_id}).scalar_one_or_none()

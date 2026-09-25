@@ -31,7 +31,7 @@ from app.modules.routing.client import GeoapifyRoutingError
 from app.modules.routing.schemas import RouteCreate
 from app.modules.routing.service import save_routes_in_transaction
 from app.modules.tickets.models import Ticket
-from app.modules.tickets.service import replace_assignees_in_transaction
+from app.modules.tickets.service import update_assignment_in_transaction
 
 
 def utc_now():
@@ -232,10 +232,11 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                 for stop in route.stops:
                     if stop.ticket_id is None:
                         continue
-                    replace_assignees_in_transaction(
+                    update_assignment_in_transaction(
                         session,
                         stop.ticket_id,
-                        [route.worker_id],
+                        route.worker_id,
+                        is_pinned=False,
                         actor_id=plan.created_by,
                     )
                     ticket = session.get(Ticket, stop.ticket_id)

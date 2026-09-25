@@ -96,11 +96,10 @@ def find_planned_tickets(
         session.execute(
             text("""
                 SELECT
-                    ta.worker_id, t.id, t.title, t.work_type, t.status,
+                    t.assigned_worker_id AS worker_id, t.id, t.title, t.work_type, t.status,
                     t.planned_start_at, t.planned_end_at
-                FROM ticket_assignments AS ta
-                JOIN tickets AS t ON t.id = ta.ticket_id
-                WHERE ta.worker_id = ANY(:worker_ids)
+                FROM tickets AS t
+                    WHERE t.assigned_worker_id = ANY(:worker_ids)
                   AND t.planned_start_at < :day_end
                   AND t.planned_end_at > :day_start
                 ORDER BY t.planned_start_at, t.id

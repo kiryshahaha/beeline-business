@@ -341,13 +341,12 @@ def release_planned_assignments(session: Session, worker_id: int) -> list[int]:
     return sorted(
         session.execute(
             text("""
-                DELETE FROM ticket_assignments AS assignment
-                USING tickets AS ticket
-                WHERE assignment.ticket_id = ticket.id
-                  AND assignment.worker_id = :worker_id
-                  AND ticket.status = 'planned'
-                  AND ticket.lifecycle_state IN ('waiting_assignment', 'assigned')
-                RETURNING assignment.ticket_id
+                UPDATE tickets
+                SET assigned_worker_id = NULL
+                WHERE assigned_worker_id = :worker_id
+                  AND status = 'planned'
+                  AND lifecycle_state IN ('waiting_assignment', 'assigned')
+                RETURNING id
             """),
             {"worker_id": worker_id},
         )
@@ -369,8 +368,7 @@ def clear_planned_times_without_assignees(session: Session, ticket_ids: list[int
               AND ticket.status = 'planned'
               AND NOT EXISTS (
                   SELECT 1
-                  FROM ticket_assignments AS assignment
-                  WHERE assignment.ticket_id = ticket.id
+                  WHERE ticket.assigned_worker_id IS NOT NULL
               )
         """),
         {"ticket_ids": ticket_ids},
@@ -388,15 +386,14 @@ def list_worker_day_contexts(session: Session, worker_id: int) -> list[RowMappin
                         (ticket.visit_window_start AT TIME ZONE 'Europe/Moscow')::date
                     )
                     AS route_date
-                FROM ticket_assignments AS assignment
-                JOIN tickets AS ticket ON ticket.id = assignment.ticket_id
+                FROM tickets AS ticket
                 JOIN locations AS location ON location.id = ticket.location_id
                 JOIN buildings AS building ON building.id = location.building_id
                 LEFT JOIN routes AS route
-                    ON route.worker_id = assignment.worker_id
+                    ON route.worker_id = ticket.assigned_worker_id
                    AND route.route_date =
                        (ticket.visit_window_start AT TIME ZONE 'Europe/Moscow')::date
-                WHERE assignment.worker_id = :worker_id
+                WHERE ticket.assigned_worker_id = :worker_id
                 ORDER BY building.district_id, route_date
                 """
             ),
