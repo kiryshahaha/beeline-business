@@ -41,7 +41,7 @@ class WindowChangeCommand(ExecutionCommand):
 
 
 class WorkerUnavailableCommand(ExecutionCommand):
-    district_id: int = Field(strict=True, ge=1)
+    service_area_id: int = Field(strict=True, ge=1)
     route_date: date
 
 
@@ -65,7 +65,7 @@ class RedirectCommand(BaseModel):
 
 class WorkerDayStateRead(BaseModel):
     worker_id: int
-    district_id: int
+    service_area_id: int
     route_date: date
     available: bool
     unavailable_at: AwareDatetime | None = None

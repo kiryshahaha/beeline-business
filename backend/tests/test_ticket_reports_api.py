@@ -120,7 +120,7 @@ class TicketExportApiTests(DatabaseTestCase):
                 "is_pinned",
                 "city_id",
                 "city",
-                "district_id",
+                "service_area_id",
                 "district",
                 "street_id",
                 "street",
@@ -139,10 +139,10 @@ class TicketExportApiTests(DatabaseTestCase):
         self.assertTrue(all(row["status"] == "completed" for row in rows))
         self.assertTrue(all(row["city_id"] == str(self.ids["cities"]["1"]) for row in rows))
 
-    def test_xlsx_export_returns_workbook_and_applies_district_filter(self):
+    def test_xlsx_export_returns_workbook_and_applies_service_area_filter(self):
         response = self.client.get(
             "/api/v1/reports/tickets/export",
-            params={"format": "xlsx", "district_id": self.ids["districts"]["1"]},
+            params={"format": "xlsx", "service_area_id": self.ids["service_areas"]["101"]},
             headers=self.observer,
         )
 
@@ -161,8 +161,10 @@ class TicketExportApiTests(DatabaseTestCase):
         rows = list(workbook["tickets"].iter_rows(values_only=True))
         self.assertGreater(len(rows), 1)
         headers = list(rows[0])
-        district_index = headers.index("district_id")
-        self.assertTrue(all(row[district_index] == self.ids["districts"]["1"] for row in rows[1:]))
+        area_index = headers.index("service_area_id")
+        self.assertTrue(
+            all(row[area_index] == self.ids["service_areas"]["101"] for row in rows[1:])
+        )
 
     def test_xlsx_is_default_format(self):
         response = self.client.get(
@@ -259,7 +261,7 @@ class TicketExportSafetyTests(DatabaseTestCase):
             building = Building(
                 city_id=city_row.id,
                 street_id=street_row.id,
-                district_id=district_row.id,
+                service_area_id=self.service_area_for_district(district_row.id),
                 number=number,
                 block=block,
             )
@@ -503,7 +505,12 @@ class TicketExportSafetyTests(DatabaseTestCase):
         self.add_ticket(location_id)
         with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
             rows = repository.stream_tickets(
-                session, limit=10, status=None, city_id=city_id, district_id=None, brigade_id=None
+                session,
+                limit=10,
+                status=None,
+                city_id=city_id,
+                service_area_id=None,
+                brigade_id=None,
             )
             with rows:
                 self.assertEqual(next(rows)["city_id"], city_id)

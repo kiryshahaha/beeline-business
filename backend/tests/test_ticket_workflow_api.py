@@ -26,7 +26,7 @@ class TicketWorkflowApiTests(DatabaseTestCase):
             Building(
                 city_id=city.id,
                 street_id=street.id,
-                district_id=district.id,
+                service_area_id=self.service_area_for_district(district.id),
                 number="10",
             )
         )

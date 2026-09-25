@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     firebase_project_id: str | None = None
     geoapify_api_key: str | None = None
     geoapify_timeout_seconds: float = 10.0
+    geoapify_max_retries: int = Field(default=2, ge=0, le=5)
+    geoapify_cache_ttl_seconds: int = Field(default=300, ge=1, le=3600)
+    geoapify_cache_coordinate_precision: int = Field(default=6, ge=4, le=8)
     # Public addresses for links inside calendar feeds; empty values fall back or omit links.
     public_api_url: str | None = None
     frontend_url: str | None = None

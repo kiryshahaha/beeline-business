@@ -29,7 +29,7 @@ TICKET_SELECT_SQL = """
         t.created_at, t.updated_at,
         t.assigned_worker_id, t.is_pinned,
         c.id AS city_id, c.name AS city,
-        d.id AS district_id, d.name AS district,
+        sa.id AS service_area_id, COALESCE(d.name, sa.name) AS district,
         s.id AS street_id, s.name AS street,
         b.id AS building_id, b.number AS building_number, b.block,
         l.entrance_id, e.number AS entrance_number,
@@ -40,7 +40,8 @@ TICKET_SELECT_SQL = """
     JOIN buildings AS b ON b.id = l.building_id
     JOIN streets AS s ON s.id = b.street_id
     JOIN cities AS c ON c.id = s.city_id
-    JOIN districts AS d ON d.id = b.district_id
+    JOIN service_areas AS sa ON sa.id = b.service_area_id
+    LEFT JOIN districts AS d ON sa.code = 'district_' || d.id
     LEFT JOIN entrances AS e ON e.id = l.entrance_id
 """
 
@@ -270,7 +271,7 @@ def find_tickets(
     *,
     status: str | None,
     city_id: int | None,
-    district_id: int | None,
+    service_area_id: int | None,
     limit: int,
     offset: int,
     brigade_id: int | None = None,
@@ -285,9 +286,9 @@ def find_tickets(
     if city_id is not None:
         conditions.append("b.city_id = :city_id")
         parameters["city_id"] = city_id
-    if district_id is not None:
-        conditions.append("b.district_id = :district_id")
-        parameters["district_id"] = district_id
+    if service_area_id is not None:
+        conditions.append("b.service_area_id = :service_area_id")
+        parameters["service_area_id"] = service_area_id
     if brigade_id is not None:
         conditions.append("""
             EXISTS (

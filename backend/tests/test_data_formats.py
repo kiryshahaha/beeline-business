@@ -222,10 +222,12 @@ class DataFormatTests(unittest.TestCase):
             for column in columns_for("day_plan_revisions")
             if column.name not in legacy_only_columns
         ]
+        headers.append("district_id")
+        legacy_district_row = [encode_cell(row.get(name)) for name in headers[:-1]] + ["1"]
         text = io.StringIO(newline="")
         writer = csv.writer(text, lineterminator="\r\n")
         writer.writerow(headers)
-        writer.writerow([encode_cell(row.get(name)) for name in headers])
+        writer.writerow(legacy_district_row)
 
         def package(version):
             output = io.BytesIO()
@@ -236,7 +238,7 @@ class DataFormatTests(unittest.TestCase):
 
         parsed = parse_file(package("3"), "legacy.zip")["day_plan_revisions"][0]
         self.assertIsNone(parsed["service_area_id"])
-        self.assertEqual(parsed["district_id"], row["district_id"])
+        self.assertEqual(parsed["_legacy_district_id"], 1)
 
         with self.assertRaises(ExchangeError):
             parse_file(package("4"), "current.zip")

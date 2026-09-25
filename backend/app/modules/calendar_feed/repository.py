@@ -74,7 +74,7 @@ def find_feed_tickets(session: Session, worker_id: int, since: datetime) -> list
                     t.planned_start_at, t.planned_end_at, t.updated_at,
                     l.id AS location_id,
                     c.id AS city_id, c.name AS city,
-                    d.id AS district_id, d.name AS district,
+                    sa.id AS service_area_id, COALESCE(d.name, sa.name) AS district,
                     s.id AS street_id, s.name AS street,
                     b.id AS building_id, b.number AS building_number, b.block,
                     l.entrance_id, e.number AS entrance_number,
@@ -85,7 +85,8 @@ def find_feed_tickets(session: Session, worker_id: int, since: datetime) -> list
                 JOIN buildings AS b ON b.id = l.building_id
                 JOIN streets AS s ON s.id = b.street_id
                 JOIN cities AS c ON c.id = s.city_id
-                JOIN districts AS d ON d.id = b.district_id
+                JOIN service_areas AS sa ON sa.id = b.service_area_id
+                LEFT JOIN districts AS d ON sa.code = 'district_' || d.id
                 LEFT JOIN entrances AS e ON e.id = l.entrance_id
                 WHERE t.assigned_worker_id = :worker_id
                   AND t.planned_start_at IS NOT NULL

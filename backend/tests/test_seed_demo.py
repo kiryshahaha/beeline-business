@@ -13,9 +13,12 @@ from app.db.models import (
     District,
     Entrance,
     Location,
+    ServiceArea,
     Street,
     Ticket,
     TicketComment,
+    User,
+    Worker,
 )
 from app.modules.tickets.enums import TicketStatus
 from app.modules.tickets.service import get_ticket_unscoped
@@ -49,11 +52,14 @@ class SeedDemoTests(DatabaseTestCase):
             self.assertEqual(entrance.number, visit.entrance)
             self.assertEqual(entrance.building_id, building.id)
             self.assertEqual(building.block, visit.block)
-            district = self.session.get(District, building.district_id)
+            service_area = self.session.get(ServiceArea, building.service_area_id)
+            district_row_id = int(service_area.code.removeprefix("district_"))
+            district = self.session.get(District, district_row_id)
             self.assertEqual(district.name, visit.district)
             self.assertEqual(district.city_id, building.city_id)
             self.assertEqual(
-                get_ticket_unscoped(self.session, ticket.id).location.district_id, district.id
+                get_ticket_unscoped(self.session, ticket.id).location.service_area_id,
+                service_area.id,
             )
             self.assertEqual(result.address, visit.address)
             self.assertEqual(
@@ -86,6 +92,18 @@ class SeedDemoTests(DatabaseTestCase):
 
     def test_demo_assignments_and_comments_are_repeatable_and_preserve_manual_text(self):
         first = seed_data(self.session, self.visit_date)
+        first_ticket = get_ticket_unscoped(self.session, first[0].ticket_id)
+        demo_worker_areas = (
+            self.session.execute(
+                select(Worker.service_area_id)
+                .join(User, User.id == Worker.user_id)
+                .where(User.username.in_(("demo_worker_1", "demo_worker_2")))
+                .order_by(User.username)
+            )
+            .scalars()
+            .all()
+        )
+        self.assertEqual(demo_worker_areas, [first_ticket.location.service_area_id] * 2)
         assignment_count = self.session.scalar(
             select(func.count()).select_from(Ticket).where(Ticket.assigned_worker_id.is_not(None))
         )
@@ -188,7 +206,7 @@ class SeedDemoTests(DatabaseTestCase):
         self.session.flush()
         building = Building(
             city_id=city.id,
-            district_id=district.id,
+            service_area_id=self.service_area_for_district(district.id),
             street_id=street.id,
             number=DEMO_VISITS[0].building,
             block=DEMO_VISITS[0].block.upper(),
@@ -211,7 +229,7 @@ class SeedDemoTests(DatabaseTestCase):
         self.assertEqual(location.floor, DEMO_VISITS[0].floor)
         self.assertEqual(city.name, "санкт-петербург")
         self.session.refresh(building)
-        self.assertEqual(building.district_id, district.id)
+        self.assertEqual(building.service_area_id, self.service_area_for_district(district.id))
         self.assertEqual(self.session.scalar(select(func.count()).select_from(District)), 6)
 
     def test_conflicting_district_rolls_back_new_tickets(self):
@@ -220,17 +238,17 @@ class SeedDemoTests(DatabaseTestCase):
         last_location = self.session.get(Location, original[-1].location_id)
         first = self.session.get(Building, first_location.building_id)
         last = self.session.get(Building, last_location.building_id)
-        last.district_id = first.district_id
-        conflicting_id = last.district_id
+        last.service_area_id = first.service_area_id
+        conflicting_id = last.service_area_id
         for result in original[:-1]:
             self.session.delete(self.session.get(Ticket, result.ticket_id))
         self.session.flush()
-        with self.assertRaisesRegex(RuntimeError, "другой район"):
+        with self.assertRaisesRegex(RuntimeError, "другая зона обслуживания"):
             with self.session.begin_nested():
                 seed_data(self.session, self.visit_date)
         self.session.expire_all()
-        self.assertEqual(first.district_id, conflicting_id)
-        self.assertEqual(last.district_id, conflicting_id)
+        self.assertEqual(first.service_area_id, conflicting_id)
+        self.assertEqual(last.service_area_id, conflicting_id)
         self.assertEqual(self.counts(), [2, 7, 9, 6, 10, 1])
 
     def test_coordinate_conflict_rolls_back_the_whole_attempt(self):

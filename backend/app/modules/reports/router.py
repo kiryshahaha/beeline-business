@@ -68,7 +68,7 @@ def export_tickets(
     city_id: Annotated[
         int | None, Query(ge=1, le=2_147_483_647, description="ID города места выполнения.")
     ] = None,
-    district_id: Annotated[
+    service_area_id: Annotated[
         int | None, Query(ge=1, le=2_147_483_647, description="ID района места выполнения.")
     ] = None,
     brigade_id: Annotated[
@@ -84,7 +84,7 @@ def export_tickets(
             format=format,
             status=status,
             city_id=city_id,
-            district_id=district_id,
+            service_area_id=service_area_id,
             brigade_id=brigade_id,
         )
     except ReportError as error:

@@ -47,7 +47,7 @@ def insert(connection, sql, **params):
     return connection.execute(text(sql), params).scalar_one()
 
 
-def place(connection):
+def place(connection, *, legacy_schema=False):
     city = insert(connection, "INSERT INTO cities (name) VALUES ('Город') RETURNING id")
     street = insert(
         connection, "INSERT INTO streets (name, city_id) VALUES ('Улица', :c) RETURNING id", c=city
@@ -57,13 +57,23 @@ def place(connection):
         "INSERT INTO districts (name, city_id) VALUES ('Район', :c) RETURNING id",
         c=city,
     )
+    if legacy_schema:
+        address_area_id = district
+        area_column = "district_id"
+    else:
+        address_area_id = insert(
+            connection,
+            "SELECT id FROM service_areas WHERE code = :code",
+            code=f"district_{district}",
+        )
+        area_column = "service_area_id"
     building = insert(
         connection,
-        "INSERT INTO buildings (city_id, street_id, district_id, number)"
+        f"INSERT INTO buildings (city_id, street_id, {area_column}, number)"
         " VALUES (:c, :s, :d, '1') RETURNING id",
         c=city,
         s=street,
-        d=district,
+        d=address_area_id,
     )
     return insert(
         connection, "INSERT INTO locations (building_id) VALUES (:b) RETURNING id", b=building
@@ -624,7 +634,7 @@ class LegacyWriteOffMigrationTests(DatabaseTestCase):
                 self.assertEqual(tuple(movement), (2, office, "consume", None))
 
     def legacy_rows(self, c):
-        location = place(c)
+        location = place(c, legacy_schema=True)
         office = insert(
             c,
             "INSERT INTO offices (name, location_id) VALUES ('Склад', :l) RETURNING id",

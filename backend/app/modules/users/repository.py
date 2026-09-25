@@ -496,7 +496,7 @@ def list_worker_day_contexts(session: Session, worker_id: int) -> list[RowMappin
         session.execute(
             text(
                 """
-                SELECT DISTINCT building.district_id,
+                SELECT DISTINCT building.service_area_id,
                     COALESCE(
                         route.route_date,
                         (ticket.visit_window_start AT TIME ZONE 'Europe/Moscow')::date
@@ -510,7 +510,7 @@ def list_worker_day_contexts(session: Session, worker_id: int) -> list[RowMappin
                    AND route.route_date =
                        (ticket.visit_window_start AT TIME ZONE 'Europe/Moscow')::date
                 WHERE ticket.assigned_worker_id = :worker_id
-                ORDER BY building.district_id, route_date
+                ORDER BY building.service_area_id, route_date
                 """
             ),
             {"worker_id": worker_id},

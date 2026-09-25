@@ -60,7 +60,7 @@ def find_tickets_summary(
                         JOIN locations AS off_loc ON off_loc.id = off.location_id
                         JOIN buildings AS off_bld ON off_bld.id = off_loc.building_id
                         JOIN service_areas AS bld_sa
-                          ON bld_sa.code = 'district_' || off_bld.district_id
+                          ON bld_sa.id = off_bld.service_area_id
                         WHERE off.id = :office_id
                     )
                 )

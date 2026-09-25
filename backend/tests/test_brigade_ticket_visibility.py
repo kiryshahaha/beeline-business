@@ -20,11 +20,16 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
         district = self.save(District(city_id=city.id, name="Район"))
         street = self.save(Street(city_id=city.id, name="Улица"))
         building = self.save(
-            Building(city_id=city.id, district_id=district.id, street_id=street.id, number="1")
+            Building(
+                city_id=city.id,
+                service_area_id=self.service_area_for_district(district.id),
+                street_id=street.id,
+                number="1",
+            )
         )
         self.location_id = self.save(Location(building_id=building.id)).id
         self.office_id = self.save(Office(location_id=self.location_id, name="Офис")).id
-        self.city_id, self.district_id = city.id, district.id
+        self.city_id, self.service_area_id = city.id, self.service_area_for_district(district.id)
         self.session.commit()
         self.observer = self.new_user("observer", UserRole.OBSERVER)
         self.foreman = self.new_user("foreman", UserRole.FOREMAN)
@@ -146,7 +151,7 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
                 self.worker,
                 status="planned",
                 city_id=self.city_id,
-                district_id=self.district_id,
+                service_area_id=self.service_area_id,
                 brigade_id=self.own_brigade,
             ),
             [self.own_ticket],
@@ -171,7 +176,7 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
                 self.foreman,
                 status="planned",
                 city_id=self.city_id,
-                district_id=self.district_id,
+                service_area_id=self.service_area_id,
                 brigade_id=self.own_brigade,
             ),
             [self.own_ticket],

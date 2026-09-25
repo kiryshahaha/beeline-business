@@ -9,10 +9,10 @@ from app.db.base import Base, IntegerIdMixin
 class Building(IntegerIdMixin, Base):
     __tablename__ = "buildings"
 
-    # Shared city_id makes both composite foreign keys enforce the same city.
+    # Shared city_id keeps the address street within the selected city.
     city_id: Mapped[int] = mapped_column()
     street_id: Mapped[int] = mapped_column()
-    district_id: Mapped[int] = mapped_column()
+    service_area_id: Mapped[int] = mapped_column()
     number: Mapped[str] = mapped_column(String(30))
     block: Mapped[str | None] = mapped_column(String(30))
 
@@ -24,12 +24,12 @@ class Building(IntegerIdMixin, Base):
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ["district_id", "city_id"],
-            ["districts.id", "districts.city_id"],
-            name="fk_buildings_district_city",
+            ["service_area_id"],
+            ["service_areas.id"],
+            name="fk_buildings_service_area_id_service_areas",
             ondelete="RESTRICT",
         ),
-        Index("ix_buildings_district_id", "district_id"),
+        Index("ix_buildings_service_area_id", "service_area_id"),
         CheckConstraint("number = btrim(number) AND number <> ''", name="number_not_blank"),
         CheckConstraint(
             "block IS NULL OR (block = btrim(block) AND block <> '')", name="block_not_blank"

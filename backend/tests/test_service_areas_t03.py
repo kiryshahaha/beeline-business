@@ -343,7 +343,7 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
             Building(
                 city_id=self.city.id,
                 street_id=self.street.id,
-                district_id=self.district_north.id,
+                service_area_id=self.service_area_for_district(self.district_north.id),
                 number="10",
             )
         )
@@ -351,7 +351,7 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
             Building(
                 city_id=self.city.id,
                 street_id=self.street.id,
-                district_id=self.district_south.id,
+                service_area_id=self.service_area_for_district(self.district_south.id),
                 number="20",
             )
         )
@@ -392,21 +392,17 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
 
         self.office = self.save(Office(name="Офис Север", location_id=self.loc_office.id))
 
-        # Service areas
-        self.area_north = self.save(
-            ServiceArea(
-                code="area_north",
-                name="Северный участок",
-                description="Обслуживание севера",
-            )
+        # District addresses and service-area ownership now share one identifier.
+        self.area_north = self.session.get(
+            ServiceArea, self.service_area_for_district(self.district_north.id)
         )
-        self.area_south = self.save(
-            ServiceArea(
-                code="area_south",
-                name="Южный участок",
-                description="Обслуживание юга",
-            )
+        self.area_north.name = "Северный участок"
+        self.area_north.description = "Обслуживание севера"
+        self.area_south = self.session.get(
+            ServiceArea, self.service_area_for_district(self.district_south.id)
         )
+        self.area_south.name = "Южный участок"
+        self.area_south.description = "Обслуживание юга"
 
         # Users
         self.observer = self.create_user("obs_t03", UserRole.OBSERVER)
@@ -553,13 +549,6 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
         self.assertEqual(profile["stock_office_id"], self.office.id)
 
     def test_f20_analytics_office_summary_unassigned_open_tickets(self):
-        # Create district-aligned service area for North
-        district_area = self.save(
-            ServiceArea(
-                code=f"district_{self.district_north.id}",
-                name="Район Северный",
-            )
-        )
         # Create unassigned open ticket in North area
         ticket = create_ticket(
             self.session,
@@ -567,7 +556,7 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
                 title="Заявка Север",
                 work_type_id=self.work_type.id,
                 location_id=self.loc_office.id,
-                service_area_id=district_area.id,
+                service_area_id=self.area_north.id,
                 visit_window_start=EPOCH.replace(hour=10, minute=0),
                 visit_window_end=EPOCH.replace(hour=12, minute=0),
                 estimated_duration_minutes=60,
@@ -591,8 +580,8 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
         response = self.client.get("/api/v1/service-areas", headers=headers)
         self.assertEqual(response.status_code, 200)
         codes = [sa["code"] for sa in response.json()]
-        self.assertIn("area_north", codes)
-        self.assertIn("area_south", codes)
+        self.assertIn(f"district_{self.district_north.id}", codes)
+        self.assertIn(f"district_{self.district_south.id}", codes)
 
         # Get by id
         response = self.client.get(f"/api/v1/service-areas/{self.area_north.id}", headers=headers)

@@ -31,6 +31,7 @@ from app.modules.planning.schemas import (
     PolicyRead,
     PreviewRequest,
 )
+from app.modules.routing.cache import GEOAPIFY_RESULT_CACHE
 from app.modules.routing.client import AsyncGeoapifyRoutingClient
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
@@ -68,7 +69,12 @@ def get_provider_factory(settings=Depends(planning_settings)):
     if not settings.geoapify_api_key:
         raise HTTPException(503, detail={"code": "routing_not_configured"})
     return lambda: AsyncGeoapifyRoutingClient(
-        settings.geoapify_api_key, timeout=settings.geoapify_timeout_seconds
+        settings.geoapify_api_key,
+        timeout=settings.geoapify_timeout_seconds,
+        max_retries=settings.geoapify_max_retries,
+        cache=GEOAPIFY_RESULT_CACHE,
+        cache_ttl_seconds=settings.geoapify_cache_ttl_seconds,
+        coordinate_precision=settings.geoapify_cache_coordinate_precision,
     )
 
 
@@ -111,11 +117,11 @@ async def preview(
 
 
 @router.post(
-    "/days/{district_id}/{route_date}/redirect",
+    "/days/{service_area_id}/{route_date}/redirect",
     response_model=WorkerDayStateRead,
 )
 def redirect_worker(
-    district_id: int,
+    service_area_id: int,
     route_date: date,
     data: RedirectCommand,
     actor: Observer,
@@ -127,7 +133,7 @@ def redirect_worker(
     try:
         return day_state.redirect_worker(
             session,
-            district_id,
+            service_area_id,
             route_date,
             data,
             actor_id=actor.id,
@@ -143,8 +149,8 @@ def redirect_worker(
             409,
             detail={"code": "idempotency_conflict", "event_id": error.event_id},
         ) from error
-    except day_state.DistrictNotFound as error:
-        raise HTTPException(404, detail="Район не найден") from error
+    except day_state.ServiceAreaNotFound as error:
+        raise HTTPException(404, detail="Зона обслуживания не найдена") from error
     except day_state.UnsafeRedirect as error:
         raise HTTPException(422, detail=str(error)) from error
 

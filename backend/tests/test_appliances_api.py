@@ -37,16 +37,20 @@ class AppliancesApiTests(DatabaseTestCase):
             text("INSERT INTO streets (name, city_id) VALUES ('Тест Улица', :c_id) RETURNING id"),
             {"c_id": city_id},
         ).scalar_one()
-        district_id = self.connection.execute(
+        district_row_id = self.connection.execute(
             text("INSERT INTO districts (name, city_id) VALUES ('Тест Район', :c_id) RETURNING id"),
             {"c_id": city_id},
         ).scalar_one()
+        service_area_id = self.connection.execute(
+            text("SELECT id FROM service_areas WHERE code = :code"),
+            {"code": f"district_{district_row_id}"},
+        ).scalar_one()
         building_id = self.connection.execute(
             text(
-                "INSERT INTO buildings (city_id, street_id, district_id, number) "
+                "INSERT INTO buildings (city_id, street_id, service_area_id, number) "
                 "VALUES (:c, :s, :d, '10') RETURNING id"
             ),
-            {"c": city_id, "s": street_id, "d": district_id},
+            {"c": city_id, "s": street_id, "d": service_area_id},
         ).scalar_one()
         self.location_id = self.connection.execute(
             text("INSERT INTO locations (building_id) VALUES (:b) RETURNING id"),

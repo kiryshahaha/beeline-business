@@ -20,7 +20,7 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
     # A day plan belongs to one district. Keep the fixture geographically rich
     # while placing every location and office in district 1.
     for building in data["buildings"]:
-        building.update(city_id=1, district_id=1, street_id=1)
+        building.update(city_id=1, service_area_id=101, street_id=1)
     for brigade in data["brigades"]:
         brigade["division_id"] = 1
     for skill in data["worker_skills"]:
@@ -44,7 +44,7 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
     for worker in data["workers"]:
         worker["workshift_start"] = time(22 if night else 8)
         worker["workshift_end"] = time(6 if night else 18)
-        worker["service_area_id"] = 1
+        worker["service_area_id"] = 101
     for location in data["locations"]:
         index = 0 if scenario == "duplicate_coordinates" else location["id"]
         location.update(
@@ -64,7 +64,7 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
         work_type = types[i % len(types)]
         worker = data["workers"][i % workers]
         ticket.update(
-            service_area_id=1,
+            service_area_id=101,
             status="planned",
             lifecycle_state="waiting_assignment",
             revision=1,

@@ -14,8 +14,6 @@ from sqlalchemy.orm import Session
 
 from app.modules.planning.day_models import DayPlanRevision
 from app.modules.planning.errors import PlanningError
-from app.modules.service_areas.models import ServiceArea
-from app.modules.users.models import Worker
 
 # Numeric metrics whose change is worth showing next to a revision.
 COMPARED_METRICS = (
@@ -107,31 +105,6 @@ def diff_states(before: dict | None, after: dict) -> dict:
     }
 
 
-def service_area_for_district(
-    session: Session, district_id: int, *, worker_id: int | None = None
-) -> int | None:
-    """Which service area plans this district-day.
-
-    The engineer's own area is the most direct answer. Otherwise migration 0021's
-    `district_<id>` code links a district to the area seeded for it, and a single-area
-    installation falls back to that area — the same order the planning snapshot uses.
-    """
-    if worker_id is not None:
-        area_id = session.execute(
-            select(Worker.service_area_id).where(Worker.user_id == worker_id)
-        ).scalar_one_or_none()
-        if area_id is not None:
-            return area_id
-    area_id = session.execute(
-        select(ServiceArea.id).where(ServiceArea.code == f"district_{district_id}")
-    ).scalar_one_or_none()
-    if area_id is not None:
-        return area_id
-    return session.execute(
-        select(ServiceArea.id).order_by(ServiceArea.id).limit(1)
-    ).scalar_one_or_none()
-
-
 def current_revision(session: Session, service_area_id: int, route_date: date) -> int | None:
     return session.execute(
         select(DayPlanRevision.revision).where(
@@ -153,7 +126,6 @@ def publish_revision(
     plan_state: dict,
     result: dict,
     at: datetime,
-    district_id: int | None = None,
     plan_id=None,
     event_id: int | None = None,
 ) -> DayPlanRevision:
@@ -181,7 +153,6 @@ def publish_revision(
         session.flush()
     revision = DayPlanRevision(
         service_area_id=service_area_id,
-        district_id=district_id,
         route_date=route_date,
         revision=number,
         previous_revision=previous_number or None,
@@ -197,14 +168,12 @@ def publish_revision(
         effective_at=at,
     )
     session.add(revision)
-    session.flush()
     return revision
 
 
 def _public(revision: DayPlanRevision) -> dict:
     return {
         "service_area_id": revision.service_area_id,
-        "district_id": revision.district_id,
         "route_date": revision.route_date,
         "revision": revision.revision,
         "previous_revision": revision.previous_revision,
