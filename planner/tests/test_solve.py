@@ -59,7 +59,8 @@ class SolverObjectiveTests(unittest.TestCase):
         data["service_times"] = [0, 30, 40]
         result = solve(SolveRequest.model_validate(data))
         self.assertEqual(result.routes[0].service_minutes, 70)
-        self.assertEqual(result.total_cost, 15)
+        self.assertEqual(result.objective_components.travel_time, 15)
+        self.assertGreater(result.total_cost, 15)  # includes vehicle cost
 
     def test_no_fixed_cost_for_using_two_workers(self):
         data = problem(n=4, vehicles=2, horizon=30)

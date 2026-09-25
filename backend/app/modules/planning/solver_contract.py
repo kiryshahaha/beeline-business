@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Minute = Annotated[int, Field(strict=True, ge=0, le=2880)]
 Index = Annotated[int, Field(strict=True, ge=0, le=99)]
-Cost = Annotated[int, Field(strict=True, ge=0, le=20_000_000_000_000_000)]
+Cost = Annotated[int, Field(strict=True, ge=0, le=9_000_000_000_000_000_000)]
 MinuteOffset = Annotated[int, Field(strict=True, ge=-2_147_483_648, le=2_147_483_647)]
 
 
