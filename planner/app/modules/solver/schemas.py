@@ -5,7 +5,7 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Minute = Annotated[int, Field(strict=True, ge=0, le=2880)]
-Index = Annotated[int, Field(strict=True, ge=0, le=99)]
+Index = Annotated[int, Field(strict=True, ge=0, le=1000)]
 Cost = Annotated[int, Field(strict=True, ge=0, le=9_000_000_000_000_000_000)]
 MinuteOffset = Annotated[int, Field(strict=True, ge=-2_147_483_648, le=2_147_483_647)]
 
@@ -15,8 +15,8 @@ class StrictModel(BaseModel):
 
 
 class Matrix(StrictModel):
-    time_minutes: list[list[Cost | None]] = Field(min_length=1, max_length=100)
-    distance_meters: list[list[Cost | None]] = Field(min_length=1, max_length=100)
+    time_minutes: list[list[Cost | None]] = Field(min_length=1, max_length=1000)
+    distance_meters: list[list[Cost | None]] = Field(min_length=1, max_length=1000)
 
 
 class TicketPolicy(StrictModel):
@@ -116,8 +116,8 @@ class Step(StrictModel):
 
 
 class Route(StrictModel):
-    vehicle_id: Annotated[int, Field(strict=True, ge=0, le=19)]
-    steps: list[Step] = Field(min_length=2, max_length=72)
+    vehicle_id: Annotated[int, Field(strict=True, ge=0, le=200)]
+    steps: list[Step] = Field(min_length=2, max_length=200)
     distance: Cost
     travel_minutes: Cost
     service_minutes: Cost
@@ -138,8 +138,8 @@ class SolveResponse(StrictModel):
     contract_version: Literal[2] = 2
     status: Literal["FEASIBLE", "OPTIMAL", "INFEASIBLE", "NOT_SOLVED"]
     solver_status_code: Annotated[int, Field(strict=True, ge=0, le=100)]
-    routes: list[Route] = Field(default_factory=list, max_length=20)
-    dropped_nodes: list[Index] = Field(default_factory=list, max_length=100)
+    routes: list[Route] = Field(default_factory=list, max_length=200)
+    dropped_nodes: list[Index] = Field(default_factory=list, max_length=1000)
     total_cost: Cost = 0
     total_distance: Cost = 0
     objective_components: ObjectiveComponents | None = None
