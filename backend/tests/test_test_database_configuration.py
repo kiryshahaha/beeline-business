@@ -10,8 +10,9 @@ from tests.support import DatabaseTestCase
 class RequiredDatabaseConfigurationTests(unittest.TestCase):
     def test_missing_database_url_fails_instead_of_skipping(self):
         with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaisesRegex(RuntimeError, "TEST_DATABASE_URL is required"):
-                DatabaseTestCase.setUpClass()
+            with patch("dotenv.load_dotenv"):
+                with self.assertRaisesRegex(RuntimeError, "TEST_DATABASE_URL is required"):
+                    DatabaseTestCase.setUpClass()
 
     def test_non_postgresql_and_non_test_database_urls_fail_before_connecting(self):
         for url in (
