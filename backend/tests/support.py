@@ -17,6 +17,7 @@ class DatabaseTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from dotenv import load_dotenv
+
         load_dotenv()
         database_url = os.getenv("TEST_DATABASE_URL")
         if not database_url:

@@ -24,6 +24,7 @@ def create_location(
     """Создать или получить существующий адрес из справочника."""
     return service.get_or_create_location(session, data)
 
+
 @router.get("/{location_id}", response_model=LocationRead)
 def get_location(
     location_id: int, session: DatabaseSession, _observer: CurrentObserver
