@@ -1,6 +1,8 @@
 """Read a snapshot, calculate outside transactions, then apply one immutable proposal."""
 
 import asyncio
+import logging
+import time
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -18,7 +20,7 @@ from app.modules.planning.diagnostics import (
 )
 from app.modules.planning.eligibility import prepare
 from app.modules.planning.errors import PlanningError
-from app.modules.planning.geometry import build_routes
+from app.modules.planning.geometry import apply_estimate_corrections, build_routes
 from app.modules.planning.matrices import build_problem
 from app.modules.planning.models import PlanningPlan, PlanningPlanRoute
 from app.modules.planning.policy import execution_policy, snapshot_policy
@@ -30,9 +32,12 @@ from app.modules.planning.validation import validate_solution
 from app.modules.routing.client import GeoapifyRoutingError
 from app.modules.routing.schemas import RouteCreate
 from app.modules.routing.service import save_routes_in_transaction
+from app.modules.routing.telemetry import RoutingTelemetry
 from app.modules.tickets.models import Ticket
 from app.modules.tickets.service import update_assignment_in_transaction
 from app.modules.users.models import User
+
+logger = logging.getLogger(__name__)
 
 
 def utc_now():
@@ -67,36 +72,86 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
     if not request.allow_partial and prepared["unassigned"]:
         raise PlanningError("incomplete_plan", unassigned=prepared["unassigned"])
     problem = solution = estimate = None
+    telemetry = RoutingTelemetry()
     routes, creates, dropped = [], [], []
     # When nothing passed the precheck the empty plan needs no provider or solver call.
     if prepared["tickets"]:
         try:
             async with asyncio.timeout(settings.planning_total_timeout_seconds):
                 async with provider_factory() as provider:
-                    problem, nodes = await build_problem(prepared, provider, settings)
-                    solution = await planner.solve(problem)
-                    validate_solution(problem, solution)
-                    dropped = await asyncio.to_thread(
-                        diagnose_dropped, prepared, problem, nodes, solution
-                    )
+                    telemetry = getattr(provider, "telemetry", None) or telemetry
+                    if hasattr(provider, "telemetry"):
+                        provider.telemetry = telemetry
+
+                    started = time.perf_counter()
+                    try:
+                        problem, nodes = await build_problem(prepared, provider, settings)
+                    finally:
+                        telemetry.record_stage("matrix_build", time.perf_counter() - started)
+
+                    for attempt in range(2):
+                        started = time.perf_counter()
+                        try:
+                            solution = await planner.solve(problem)
+                        finally:
+                            telemetry.record_stage("solver", time.perf_counter() - started)
+                        validate_solution(problem, solution)
+
+                        started = time.perf_counter()
+                        try:
+                            route_result = await build_routes(
+                                prepared, problem, nodes, solution, provider, settings
+                            )
+                        finally:
+                            telemetry.record_stage("route_fetch", time.perf_counter() - started)
+                        if route_result.corrections:
+                            if attempt:
+                                raise PlanningError("routing_estimate_changed", 502)
+                            apply_estimate_corrections(
+                                problem, prepared, nodes, route_result.corrections
+                            )
+                            continue
+                        routes, creates = route_result.routes, route_result.creates
+                        break
+
+                    started = time.perf_counter()
+                    try:
+                        dropped = await asyncio.to_thread(
+                            diagnose_dropped, prepared, problem, nodes, solution
+                        )
+                    finally:
+                        telemetry.record_stage("diagnostics", time.perf_counter() - started)
                     if not request.allow_partial and dropped:
                         raise PlanningError(
                             "incomplete_plan", unassigned=prepared["unassigned"] + dropped
                         )
-                    routes, creates = await build_routes(
-                        prepared,
-                        problem,
-                        nodes,
-                        solution,
-                        provider,
-                        settings,
-                    )
                     estimate = await asyncio.to_thread(
                         estimate_resources, prepared, problem, nodes, dropped
                     )
+        except asyncio.CancelledError:
+            telemetry.record_error("planning_cancelled")
+            logger.warning("planning_cancelled routing_metrics=%s", telemetry.snapshot())
+            raise
         except TimeoutError as error:
+            telemetry.record_error("planning_timeout")
+            logger.warning(
+                "planning_failed reason=planning_timeout routing_metrics=%s", telemetry.snapshot()
+            )
             raise PlanningError("planning_timeout", 504) from error
+        except PlanningError as error:
+            if not telemetry.snapshot()["error_reasons"].get(error.code):
+                telemetry.record_error(error.code)
+            logger.warning(
+                "planning_failed reason=%s routing_metrics=%s", error.code, telemetry.snapshot()
+            )
+            raise
         except GeoapifyRoutingError as error:
+            if not telemetry.snapshot()["error_reasons"].get("routing_invalid_response"):
+                telemetry.record_error("routing_invalid_response")
+            logger.warning(
+                "planning_failed reason=routing_invalid_response routing_metrics=%s",
+                telemetry.snapshot(),
+            )
             raise PlanningError("routing_invalid_response", 502) from error
     unassigned = sorted(prepared["unassigned"] + dropped, key=lambda item: item["ticket_id"])
     visit_factors(prepared, routes)
@@ -119,7 +174,10 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
             "objective_components": solution.objective_components.model_dump(mode="json")
             if solution and solution.objective_components
             else None,
-            "metrics": plan_metrics(request, prepared, routes, unassigned),
+            "metrics": {
+                **plan_metrics(request, prepared, routes, unassigned),
+                "routing": telemetry.snapshot(),
+            },
             "routes": routes,
             "unassigned": unassigned,
             "excluded_workers": prepared["excluded_workers"],

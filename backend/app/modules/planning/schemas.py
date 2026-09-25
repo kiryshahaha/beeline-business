@@ -96,6 +96,7 @@ class PlanMetrics(BaseModel):
     service_minutes: int
     waiting_minutes: int
     unassigned_by_category: dict[ReasonCategory, int]
+    routing: dict[str, Any] | None = None
 
 
 class WorkerCopyEstimate(BaseModel):

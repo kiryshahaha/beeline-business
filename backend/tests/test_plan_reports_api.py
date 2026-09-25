@@ -129,11 +129,17 @@ class PlanReportApiTests(CommittedDatabaseTestCase):
         self.assertEqual(summary["route_date"].value, plan["route_date"])
         self.assertEqual(summary["objective_order"].value, "unassigned_total > travel_minutes")
         for name, value in plan["metrics"].items():
-            if name == "unassigned_by_category":
+            if name in {"unassigned_by_category", "routing"}:
                 continue
             with self.subTest(metric=name):
                 self.assertEqual(summary[f"metrics.{name}"].data_type, "n")
                 self.assertEqual(summary[f"metrics.{name}"].value, value)
+        routing = plan["metrics"]["routing"]
+        self.assertEqual(summary["routing.matrix_cells"].value, routing["matrix_cells"])
+        self.assertEqual(
+            summary["routing.stages.solver.calls"].value,
+            routing["stages"]["solver"]["calls"],
+        )
         for category, count in plan["metrics"]["unassigned_by_category"].items():
             self.assertEqual(summary[f"unassigned_by_category.{category}"].value, count)
         self.assertEqual(summary["unassigned_by_category.skill"].value, 8)

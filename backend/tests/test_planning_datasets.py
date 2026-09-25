@@ -77,5 +77,6 @@ class PlanningDatasetTests(DatabaseTestCase):
             problem, nodes = await build_problem(prepared, provider, settings)
             solution = await FeasiblePlanner().solve(problem)
             validate_solution(problem, solution)
-            routes, _ = await build_routes(prepared, problem, nodes, solution, provider, settings)
+            result = await build_routes(prepared, problem, nodes, solution, provider, settings)
+            routes = result.routes
             return routes

@@ -1,6 +1,7 @@
 """Retrieve selected roads only; never turn provider gaps into invented road segments."""
 
 import math
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from pydantic import ValidationError
@@ -17,6 +18,22 @@ from app.modules.routing.schemas import (
 )
 
 
+@dataclass(frozen=True)
+class EstimateCorrection:
+    profile: str
+    source: tuple[float, float]
+    target: tuple[float, float]
+    duration_minutes: int
+    distance_meters: int
+
+
+@dataclass(frozen=True)
+class RouteBuildResult:
+    routes: list[dict]
+    creates: list[dict]
+    corrections: list[EstimateCorrection]
+
+
 async def build_routes(prepared, problem, nodes, solution, provider, settings):
     locations = prepared["locations"]
     open_end: bool = problem.open_end
@@ -26,14 +43,15 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
         return (float(loc["longitude"]), float(loc["latitude"]))
 
     routes = [r for r in solution.routes if len(r.steps) > 2]
-    requests = sorted(
-        {
-            (problem.vehicle_profiles[r.vehicle_id], position(a.node), position(b.node))
-            for r in routes
-            for a, b in zip(r.steps, r.steps[1:])
-            if position(a.node) != position(b.node)
-        }
-    )
+    finish_nodes = set(problem.ends) if open_end else set()
+    requests = set()
+    for route in routes:
+        for index, (step, next_step) in enumerate(zip(route.steps, route.steps[1:])):
+            if open_end and index == len(route.steps) - 2 and next_step.node in finish_nodes:
+                continue
+            start, end = position(step.node), position(next_step.node)
+            if start != end:
+                requests.add((problem.vehicle_profiles[route.vehicle_id], start, end))
 
     async def fetch(key):
         mode, start, end = key
@@ -49,9 +67,47 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
         return key, result
 
     roads = dict(await bounded_map(fetch, requests, settings.planning_provider_concurrency))
+
+    correction_by_edge = {}
+    for route in routes:
+        vehicle = route.vehicle_id
+        profile = problem.vehicle_profiles[vehicle]
+        matrix = problem.matrices[profile]
+        for index, (step, next_step) in enumerate(zip(route.steps, route.steps[1:])):
+            if open_end and index == len(route.steps) - 2 and next_step.node in finish_nodes:
+                continue
+            start, end = position(step.node), position(next_step.node)
+            if start == end:
+                continue
+            road = roads[(profile, start, end)]
+            matrix_minutes = matrix.time_minutes[step.node][next_step.node]
+            matrix_meters = matrix.distance_meters[step.node][next_step.node]
+            if matrix_minutes is None or matrix_meters is None:
+                raise PlanningError("routing_estimate_changed", 502)
+            if (
+                road.duration_seconds > prepared["horizon"] * 60
+                or road.distance_meters > 1_000_000_000
+            ):
+                raise PlanningError("routing_estimate_changed", 502)
+            route_minutes = math.ceil(road.duration_seconds / 60)
+            route_meters = math.ceil(road.distance_meters)
+            if (route_minutes, route_meters) != (matrix_minutes, matrix_meters):
+                key = (profile, start, end)
+                correction_by_edge[key] = EstimateCorrection(
+                    profile=profile,
+                    source=start,
+                    target=end,
+                    duration_minutes=route_minutes,
+                    distance_meters=route_meters,
+                )
+
+    if correction_by_edge:
+        return RouteBuildResult(
+            routes=[], creates=[], corrections=list(correction_by_edge.values())
+        )
+
     output, snapshots = [], []
     epoch = prepared["epoch"]
-    finish_nodes = set(problem.ends) if open_end else set()
 
     for route in routes:
         vehicle = route.vehicle_id
@@ -101,10 +157,15 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
                     (road.duration_seconds, road.distance_meters) if road else (0, 0)
                 )
                 conservative_travel = max(
-                    matrix.time_minutes[previous_step.node][node_index],
+                    matrix.time_minutes[previous_step.node][node_index]
+                    if matrix.time_minutes[previous_step.node][node_index] is not None
+                    else -1,
                     math.ceil(seconds / 60),
                 )
-                if conservative_travel < 0:
+                if (
+                    conservative_travel < 0
+                    or matrix.distance_meters[previous_step.node][node_index] is None
+                ):
                     raise PlanningError("routing_estimate_changed", 502)
                 physical_arrival_min = prev_service_end_min + conservative_travel
                 # service_start = max(physical_arrival, window_lower)
@@ -164,7 +225,10 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
             stops.append(stop)
 
         properties = GeoapifyPathProperties(
-            mode=worker["profile"], legs=legs, snap_limit_meters=settings.planning_max_snap_meters
+            mode=worker["profile"],
+            approximate=worker["profile"] == "approximated_transit",
+            legs=legs,
+            snap_limit_meters=settings.planning_max_snap_meters,
         )
         route_stops = [
             RouteStop(
@@ -238,4 +302,22 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
                 "legs": [leg.model_dump() for leg in legs],
             }
         )
-    return output, snapshots
+    return RouteBuildResult(routes=output, creates=snapshots, corrections=[])
+
+
+def apply_estimate_corrections(problem, prepared, nodes, corrections):
+    def position(node):
+        location = prepared["locations"][node["location_id"]]
+        return (float(location["longitude"]), float(location["latitude"]))
+
+    positions = [position(node) for node in nodes]
+    for correction in corrections:
+        matrix = problem.matrices[correction.profile]
+        for source, source_position in enumerate(positions):
+            if source_position != correction.source:
+                continue
+            for target, target_position in enumerate(positions):
+                if target_position != correction.target:
+                    continue
+                matrix.time_minutes[source][target] = correction.duration_minutes
+                matrix.distance_meters[source][target] = correction.distance_meters
