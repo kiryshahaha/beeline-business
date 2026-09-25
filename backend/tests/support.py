@@ -81,8 +81,9 @@ class CommittedDatabaseTestCase(DatabaseTestCase):
                     "ticket_appliances, appliance_stocks, appliances, "
                     "brigade_members, brigades, divisions, offices, notification_events, "
                     "push_subscriptions, ticket_comments, ticket_assignments, "
-                    "tickets, refresh_tokens, calendar_tokens, worker_skill_assignments, "
+                    "ticket_work_type_migration_issues, tickets, refresh_tokens, "
+                    "calendar_tokens, worker_skill_assignments, "
                     "worker_skills, workers, users, locations, entrances, "
-                    "buildings, streets, districts, cities"
+                    "buildings, streets, districts, cities, service_areas"
                 )
             )

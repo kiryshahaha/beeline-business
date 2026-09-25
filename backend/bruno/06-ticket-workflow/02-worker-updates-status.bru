@@ -1,5 +1,5 @@
 meta {
-  name: Исполнитель меняет статус
+  name: Исполнитель не может менять статус
   type: http
   seq: 2
 }
@@ -19,11 +19,11 @@ body:json {
 }
 
 assert {
-  res.status: eq 200
+  res.status: eq 403
 }
 
 tests {
-  test("Статус изменён", function () {
-    expect(res.getBody().status).to.equal("in_progress");
+  test("Смена статуса доступна только наблюдателю", function () {
+    expect(res.getBody().detail).to.be.a("string");
   });
 }

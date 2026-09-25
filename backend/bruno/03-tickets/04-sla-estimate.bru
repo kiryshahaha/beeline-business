@@ -1,0 +1,48 @@
+meta {
+  name: Оценить риск SLA
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{created_ticket_id}}/sla-estimate
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "previous_ticket_end_at": "{{sla_previous_ticket_end_at}}",
+    "travel_minutes": 15
+  }
+}
+
+script:pre-request {
+  bru.setVar("sla_previous_ticket_end_at", new Date(Date.now() + 30 * 60 * 1000).toISOString());
+}
+
+tests {
+  test("Оценка разделяет опоздание к окну и риск SLA", function () {
+    expect([200, 409]).to.include(res.getStatus());
+    if (res.getStatus() === 200) {
+      const estimate = res.getBody();
+      expect(estimate.estimated_arrival_at).to.be.a("string");
+      expect(["within_window", "late"]).to.include(estimate.arrival_status);
+      expect(["on_time", "at_risk", "not_configured"]).to.include(estimate.sla_status);
+    } else {
+      expect(res.getBody().detail.code).to.equal("work_type_planning_rule_missing");
+    }
+  });
+}
+
+docs {
+  Использует созданную заявку и уже заданное окно её визита. При настроенном WorkTypePlanningRule возвращает прогноз прибытия и отдельный статус SLA; без настройки длительности вернёт 409.
+}

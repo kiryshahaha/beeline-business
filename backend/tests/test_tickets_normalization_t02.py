@@ -9,7 +9,7 @@ Tests cover:
 - WorkType code, category, default_priority propagation to Ticket
 """
 
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
@@ -34,7 +34,11 @@ from app.main import app
 from app.modules.planning.eligibility import check_eligibility
 from app.modules.tickets.enums import TicketCategory
 from app.modules.tickets.schemas import TicketCreate
-from app.modules.tickets.service import create_ticket, get_ticket
+from app.modules.tickets.service import (
+    InvalidSlaDeadlineError,
+    create_ticket,
+    get_ticket_unscoped,
+)
 from app.modules.users.enums import TransportType, UserRole
 from app.modules.users.schemas import UserCreate, WorkerProfileCreate
 from app.modules.users.service import create_user
@@ -137,6 +141,87 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
         )
         return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
+    def test_sla_estimate_separates_visit_window_from_service_deadline(self):
+        work_type = self.session.execute(
+            select(WorkType).where(WorkType.code == "connection")
+        ).scalar_one()
+        rule = self.session.get(WorkTypePlanningRule, work_type.id)
+        if rule is None:
+            rule = WorkTypePlanningRule(
+                work_type_id=work_type.id,
+                service_duration_source="ticket_estimate",
+                configured_by=self.observer.id,
+            )
+            self.session.add(rule)
+        else:
+            rule.service_duration_source = "ticket_estimate"
+        self.session.flush()
+
+        start = datetime.combine(datetime.now(TZ).date(), time(10, 15), TZ)
+        ticket = create_ticket(
+            self.session,
+            TicketCreate(
+                location_id=self.location.id,
+                title="Оценка риска SLA",
+                work_type_id=work_type.id,
+                category=TicketCategory.REPAIR,
+                priority=4,
+                received_at=start - timedelta(minutes=15),
+                sla_deadline_at=start + timedelta(minutes=30),
+                required_transport_type=TransportType.CAR,
+                visit_window_start=start,
+                visit_window_end=start + timedelta(minutes=15),
+                estimated_duration_minutes=30,
+            ),
+        )
+        headers = self.auth_headers(self.observer)
+        response = self.client.post(
+            f"/api/v1/tickets/{ticket.id}/sla-estimate",
+            headers=headers,
+            json={
+                "previous_ticket_end_at": (start + timedelta(minutes=10)).isoformat(),
+                "travel_minutes": 10,
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        estimate = response.json()
+        self.assertEqual(
+            estimate["estimated_arrival_at"], (start + timedelta(minutes=20)).isoformat()
+        )
+        self.assertEqual(estimate["arrival_status"], "late")
+        self.assertEqual(estimate["arrival_late_minutes"], 5)
+        self.assertEqual(estimate["sla_status"], "at_risk")
+        self.assertEqual(estimate["sla_late_minutes"], 20)
+        self.assertEqual(estimate["duration_source"], "ticket_estimate")
+        self.assertEqual(estimate["duration_minutes"], 30)
+        denied = self.client.post(
+            f"/api/v1/tickets/{ticket.id}/sla-estimate",
+            json={
+                "previous_ticket_end_at": (start + timedelta(minutes=10)).isoformat(),
+                "travel_minutes": 10,
+            },
+        )
+        self.assertEqual(denied.status_code, 401)
+
+    def test_explicit_deadline_must_follow_generated_received_at(self):
+        work_type = self.session.execute(
+            select(WorkType).where(WorkType.code == "repair")
+        ).scalar_one()
+        now = datetime.now(UTC)
+        with self.assertRaises(InvalidSlaDeadlineError):
+            create_ticket(
+                self.session,
+                TicketCreate(
+                    location_id=self.location.id,
+                    title="Срок в прошлом",
+                    work_type_id=work_type.id,
+                    sla_deadline_at=now - timedelta(minutes=1),
+                    visit_window_start=now + timedelta(hours=1),
+                    visit_window_end=now + timedelta(hours=2),
+                    estimated_duration_minutes=30,
+                ),
+            )
+
     def test_a21_rename_canonical_work_type_does_not_break_tickets(self):
         """A21: Renaming work type does not disconnect tickets or break eligibility."""
         session = self.session
@@ -181,7 +266,7 @@ class TicketsNormalizationT02Tests(DatabaseTestCase):
         )
 
         # 4. Read ticket again - FK intact
-        re_read = get_ticket(session, ticket.id)
+        re_read = get_ticket_unscoped(session, ticket.id)
         self.assertEqual(re_read.work_type_id, conn_wt.id)
 
         # 5. Check snapshot & eligibility: no unknown_work_type error!

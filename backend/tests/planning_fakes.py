@@ -56,6 +56,10 @@ class FeasiblePlanner:
 
     async def solve(self, problem):
         remaining = set(map(int, problem.allowed_vehicles))
+        task_nodes = sorted(
+            set(range(len(problem.time_windows))) - set(problem.starts) - set(problem.ends)
+        )
+        policy_by_node = dict(zip(task_nodes, problem.ticket_policies, strict=True))
         routes = []
         for vehicle, depot in enumerate(problem.starts):
             finish = problem.ends[vehicle]
@@ -67,6 +71,7 @@ class FeasiblePlanner:
             for node in sorted(remaining):
                 if vehicle not in problem.allowed_vehicles[str(node)]:
                     continue
+                policy = policy_by_node[node]
                 duration = matrix.time_minutes[previous][node]
                 back = matrix.time_minutes[node][finish]
                 if duration is None or back is None:
@@ -75,6 +80,11 @@ class FeasiblePlanner:
                 next_time = max(earliest, problem.time_windows[node][0])
                 if (
                     next_time > problem.time_windows[node][1]
+                    or next_time < policy.received_at
+                    or (
+                        policy.sla_deadline_at is not None
+                        and next_time + problem.service_times[node] > policy.sla_deadline_at
+                    )
                     or next_time + problem.service_times[node] + back
                     > problem.vehicle_time_windows[vehicle][1]
                 ):

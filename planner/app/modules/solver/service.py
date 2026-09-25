@@ -41,10 +41,18 @@ def solve(data: SolveRequest) -> SolveResponse:
         dimension.CumulVar(routing.End(v)).SetRange(a, b)
 
     tasks = sorted(set(range(n)) - (set(data.starts) | set(data.ends)))
-    for node in tasks:
+    for task_position, node in enumerate(tasks):
         index = manager.NodeToIndex(node)
-        dimension.CumulVar(index).SetRange(*data.time_windows[node])
+        lower, upper = data.time_windows[node]
+        ticket_policy = data.ticket_policies[task_position]
+        lower = max(lower, ticket_policy.received_at)
+        if ticket_policy.sla_deadline_at is not None:
+            upper = min(upper, ticket_policy.sla_deadline_at - data.service_times[node])
         routing.AddDisjunction([index], data.penalties[node])
+        if lower > upper:
+            routing.ActiveVar(index).SetValue(0)
+        else:
+            dimension.CumulVar(index).SetRange(lower, upper)
         allowed = data.allowed_vehicles[str(node)]
         if not allowed:
             routing.ActiveVar(index).SetValue(0)
@@ -66,6 +74,7 @@ def solve(data: SolveRequest) -> SolveResponse:
     status = routing.status()
     if assignment is None:
         return SolveResponse(
+            contract_version=2,
             status="INFEASIBLE" if status == 6 else "NOT_SOLVED",
             solver_status_code=status,
         )
@@ -119,6 +128,7 @@ def solve(data: SolveRequest) -> SolveResponse:
         if assignment.Value(routing.NextVar(manager.NodeToIndex(node))) == manager.NodeToIndex(node)
     ]
     return SolveResponse(
+        contract_version=2,
         status="OPTIMAL" if status == 7 else "FEASIBLE",
         solver_status_code=status,
         routes=routes,

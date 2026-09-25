@@ -2,12 +2,21 @@
 
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+import httpx
+from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
+from app.core.access_log import install_access_log_redaction
 from app.core.body_limit import BodyLimitMiddleware
 from app.core.config import get_settings
+from app.db.session import get_engine
 from app.modules.analytics.router import router as analytics_router
 from app.modules.appliances.router import (
     appliances_router,
@@ -32,6 +41,7 @@ from app.modules.planning.router import router as planning_router
 from app.modules.reports.router import router as reports_router
 from app.modules.routing.router import router as routing_router
 from app.modules.schedule.router import router as schedule_router
+from app.modules.service_areas.router import router as service_areas_router
 from app.modules.tickets.router import router as tickets_router
 from app.modules.tickets.schemas import TICKET_CREATE_EXAMPLE, TICKET_READ_EXAMPLE
 from app.modules.users.router import router as users_router
@@ -53,6 +63,7 @@ from app.modules.work_types.router import router as work_types_router
 async def lifespan(_app: FastAPI):
     from app.core.config import get_settings
 
+    install_access_log_redaction()
     settings = get_settings()
     task = None
     if settings.notification_dispatcher_enabled:
@@ -122,12 +133,64 @@ app.include_router(comments_router)
 app.include_router(notifications_router)
 app.include_router(data_exchange_router)
 app.include_router(schedule_router)
+app.include_router(service_areas_router)
 
 
 @app.get("/health", tags=["system"])
 def health() -> dict[str, str]:
     """Liveness only: this endpoint does not check database readiness."""
     return {"status": "ok"}
+
+
+def check_database_readiness() -> tuple[bool, bool]:
+    """Return database connectivity and whether its schema matches Alembic heads."""
+    try:
+        with get_engine().connect() as connection:
+            connection.execute(text("SELECT 1"))
+            current_heads = set(MigrationContext.configure(connection).get_current_heads())
+    except Exception:
+        return False, False
+
+    try:
+        config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+        expected_heads = set(ScriptDirectory.from_config(config).get_heads())
+    except Exception:
+        return True, False
+    return True, current_heads == expected_heads
+
+
+async def check_planner_readiness() -> bool:
+    """Check planner liveness without calling Geoapify or the paid routing provider."""
+    settings = get_settings()
+    url = settings.planner_base_url.rstrip("/") + "/health"
+    timeout = httpx.Timeout(
+        settings.planner_read_timeout_seconds,
+        connect=settings.planner_connect_timeout_seconds,
+    )
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(url)
+        return response.status_code == 200
+    except (httpx.HTTPError, ValueError):
+        return False
+
+
+@app.get("/ready", tags=["system"])
+async def readiness() -> JSONResponse:
+    database_available, migrations_current = check_database_readiness()
+    planner_available = await check_planner_readiness()
+    ready = database_available and migrations_current and planner_available
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={
+            "status": "ready" if ready else "not_ready",
+            "checks": {
+                "database": "ok" if database_available else "unavailable",
+                "migrations": "ok" if migrations_current else "pending",
+                "planner": "ok" if planner_available else "unavailable",
+            },
+        },
+    )
 
 
 default_openapi = app.openapi

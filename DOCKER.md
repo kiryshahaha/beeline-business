@@ -4,7 +4,7 @@
 - **`frontend`** (Next.js 16) — порт `3000`
 - **`backend`** (FastAPI) — порт `8000` (Swagger UI: `http://localhost:8000/docs`)
 - **`planner`** (Микросервис оптимизации маршрутов OR-Tools) — порт `8001` (Swagger UI: `http://localhost:8001/docs`)
-- **`db`** (PostgreSQL 16) — порт `5432`
+- **`db`** (PostgreSQL 17) — порт `5432`
 
 ---
 
@@ -15,6 +15,11 @@
    cp .env.docker.example .env
    ```
    *(В Windows PowerShell: `Copy-Item .env.docker.example .env`)*
+
+   Шаблон оставляет `POSTGRES_PASSWORD` и `JWT_SECRET_KEY` пустыми. Заполните их
+   случайными значениями; безопасный скрипт для этого находится в
+   [руководстве runtime](docs/RUNTIME.md). Compose остановится с понятной ошибкой,
+   пока обязательные секреты не заданы.
 
    Для планирования задайте в `.env` `PLANNING_ENABLED=true`, непустой
    `PLANNER_SERVICE_TOKEN` и действующий `GEOAPIFY_API_KEY`. Compose передаст один
@@ -36,9 +41,10 @@
    - Веб-приложение: [http://localhost:3000](http://localhost:3000)
    - Основной API Swagger: [http://localhost:8000/docs](http://localhost:8000/docs)
    - Planner API Swagger: [http://localhost:8001/docs](http://localhost:8001/docs)
-   - Healthcheck бэкенда: [http://localhost:8000/health](http://localhost:8000/health)
+   - Liveness API: [http://localhost:8000/health](http://localhost:8000/health)
+   - Готовность БД, миграций и planner: [http://localhost:8000/ready](http://localhost:8000/ready)
 
-   Успешный healthcheck подтверждает запуск процесса. Для расчёта нужны также
+   `/ready` проверяет зависимости backend, не обращаясь к Geoapify. Для расчёта нужны также
    координаты офисов и заявок, будущие смены, транспорт, навыки, резерв оборудования
    и явно настроенные правила видов работ через
    `PUT /api/v1/work-types/{id}/planning-rules`. Расчёт запускается через

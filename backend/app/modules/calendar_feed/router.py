@@ -81,5 +81,6 @@ def get_calendar_feed(
         headers={
             "Content-Disposition": 'inline; filename="schedule.ics"',
             "Cache-Control": "private, no-store",
+            "Referrer-Policy": "no-referrer",
         },
     )

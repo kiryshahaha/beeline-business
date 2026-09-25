@@ -7,18 +7,18 @@ Backend передаёт матрицы времени/расстояния по
 
 ## Запуск
 
-Из папки planner, Python 3.12:
+Из корня репозитория, Python 3.12:
 
-```powershell
-python -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
-$env:PLANNER_SERVICE_TOKEN = "ваш-случайный-внутренний-токен"
-.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+```sh
+python3.12 -m venv .venv
+.venv/bin/python -m pip install --no-cache-dir --only-binary=ortools -c constraints.txt -r planner/requirements.txt
+PLANNER_SERVICE_TOKEN="ваш-случайный-внутренний-токен" .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
 Тот же token задаётся backend. Запрос требует X-Planner-Token. Без настройки — 503,
 при неправильном token — 401. Не публикуйте порт решателя напрямую в интернет.
-`GET /health` — проверка работающего процесса.
+`GET /health` — проверка процесса planner; backend `/ready` обращается сюда вместе
+с проверкой PostgreSQL и миграций. Endpoint не запускает поиск маршрута.
 
 ## Устройство
 
@@ -47,5 +47,5 @@ OPTIMAL возвращается только для соответствующ�
 .venv\Scripts\python tests/generate_strong.py
 ```
 
-OR-Tools закреплён на 9.15.6755. Установка и импорт нативной библиотеки обязательны:
-при её отсутствии проверки завершаются ошибкой.
+OR-Tools закреплён на 9.15.6755 в `requirements.txt`; пакет устанавливается только
+из готового нативного колеса. CI завершится ошибкой, если бинарный пакет недоступен.

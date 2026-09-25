@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_session
 from app.modules.appliances.inventory import InventoryError
-from app.modules.auth.dependencies import OptionalCurrentUser, get_current_user, require_roles
+from app.modules.auth.dependencies import get_current_user, require_roles
 from app.modules.execution import service as execution_service
 from app.modules.execution.enums import WorkEventType
 from app.modules.execution.schemas import ExecutionCommand, WindowChangeCommand
@@ -17,6 +17,8 @@ from app.modules.tickets.schemas import (
     TicketAssigneesUpdate,
     TicketCreate,
     TicketRead,
+    TicketSlaEstimateRead,
+    TicketSlaEstimateRequest,
     TicketStatusUpdate,
 )
 from app.modules.users.enums import UserRole
@@ -71,7 +73,7 @@ def _execution_error(error: Exception) -> None:
 @router.get("", response_model=list[TicketRead])
 def list_tickets(
     session: DatabaseSession,
-    current_user: OptionalCurrentUser,
+    current_user: CurrentUser,
     status: Annotated[TicketStatus | None, Query(description="Фильтр по статусу заявки.")] = None,
     city_id: Annotated[
         int | None, Query(ge=1, le=2_147_483_647, description="ID города места выполнения.")
@@ -91,9 +93,10 @@ def list_tickets(
     """Получить список заявок с полными адресами по возрастанию ID.
 
     Фильтры необязательны и объединяются через AND. Пагинация применяется
-    после фильтрации. Начальник видит заявки, назначенные работникам его бригады.
+    после фильтрации. Наблюдатель видит все заявки, бригадир — заявки своей бригады,
+    исполнитель — только назначенные ему заявки.
     Фильтр brigade_id пересекается с доступными заявками. Если совпадений нет,
-    возвращается пустой массив. Чтение без авторизации сохранено для совместимости.
+    возвращается пустой массив.
     """
     return service.list_tickets(
         session,
@@ -108,12 +111,23 @@ def list_tickets(
 
 
 @router.post("", response_model=TicketRead, status_code=status.HTTP_201_CREATED)
-def create_ticket(data: TicketCreate, session: DatabaseSession, response: Response) -> TicketRead:
+def create_ticket(
+    data: TicketCreate,
+    session: DatabaseSession,
+    response: Response,
+    current_user: CurrentObserver,
+) -> TicketRead:
     """Создать заявку на существующее место выполнения из адресного справочника."""
     try:
-        ticket = service.create_ticket(session, data)
+        ticket = service.create_ticket(session, data, actor_id=current_user.id)
     except service.LocationNotFoundError as error:
         raise HTTPException(status_code=422, detail="Место выполнения не найдено") from error
+    except service.WorkTypeNotFoundError as error:
+        raise HTTPException(status_code=422, detail="Вид работ не найден") from error
+    except service.InvalidSlaDeadlineError as error:
+        raise HTTPException(
+            status_code=422, detail="Срок SLA должен быть позже времени поступления"
+        ) from error
     response.headers["Location"] = f"/api/v1/tickets/{ticket.id}"
     return ticket
 
@@ -124,13 +138,35 @@ def create_ticket(data: TicketCreate, session: DatabaseSession, response: Respon
 def get_ticket(
     id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     session: DatabaseSession,
-    current_user: OptionalCurrentUser,
+    current_user: CurrentUser,
 ) -> TicketRead:
     """Получить одну заявку вместе с адресом и координатами места выполнения."""
     try:
         return service.get_ticket(session, id, current_user)
     except service.TicketNotFoundError as error:
         raise HTTPException(status_code=404, detail="Заявка не найдена") from error
+
+
+@router.post("/{id}/sla-estimate", response_model=TicketSlaEstimateRead)
+def estimate_ticket_sla(
+    id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    data: TicketSlaEstimateRequest,
+    session: DatabaseSession,
+    current_user: CurrentUser,
+) -> TicketSlaEstimateRead:
+    """Estimate arrival, service completion and separate visit-window/SLA risks."""
+    try:
+        return service.estimate_sla(
+            session,
+            id,
+            current_user,
+            previous_ticket_end_at=data.previous_ticket_end_at,
+            travel_minutes=data.travel_minutes,
+        )
+    except service.TicketNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Заявка не найдена") from error
+    except service.SlaEstimationConfigurationError as error:
+        raise HTTPException(status_code=409, detail={"code": error.code}) from error
 
 
 @router.put("/{id}/assignees", response_model=TicketRead)
@@ -154,6 +190,11 @@ def replace_ticket_assignees(
             status_code=422,
             detail="Один или несколько исполнителей сняты с линии",
         ) from error
+    except service.ServiceAreaMismatchError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Исполнитель принадлежит другому участку обслуживания",
+        ) from error
     except InventoryError as error:
         raise HTTPException(status_code=error.status, detail=error.detail()) from error
 
@@ -163,10 +204,10 @@ def update_ticket_status(
     id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     data: TicketStatusUpdate,
     session: DatabaseSession,
-    current_user: CurrentUser,
+    current_user: CurrentObserver,
     idempotency_key: IdempotencyHeader = None,
 ) -> TicketRead:
-    """Change status as an observer or a worker assigned to this ticket."""
+    """Change ticket status; this operation is reserved for observers."""
     try:
         return service.update_ticket_status(
             session,

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 Minute = Annotated[int, Field(strict=True, ge=0, le=2880)]
 Index = Annotated[int, Field(strict=True, ge=0, le=99)]
 Cost = Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+MinuteOffset = Annotated[int, Field(strict=True, ge=-2_147_483_648, le=2_147_483_647)]
 
 
 class StrictModel(BaseModel):
@@ -18,8 +19,16 @@ class Matrix(StrictModel):
     distance_meters: list[list[Cost | None]] = Field(min_length=1, max_length=100)
 
 
+class TicketPolicy(StrictModel):
+    ticket_id: Annotated[int, Field(strict=True, ge=1, le=2_147_483_647)]
+    category: Literal["emergency", "connection", "repair", "additional"]
+    priority: Annotated[int, Field(strict=True, ge=1, le=2_147_483_647)]
+    received_at: MinuteOffset
+    sla_deadline_at: MinuteOffset | None
+
+
 class SolveRequest(StrictModel):
-    contract_version: Literal[1] = 1
+    contract_version: Literal[2] = 2
     policy_version: Literal[1] = 1
     num_vehicles: Annotated[int, Field(strict=True, ge=1, le=20)]
     starts: list[Index]
@@ -31,6 +40,7 @@ class SolveRequest(StrictModel):
     service_times: list[Minute]
     allowed_vehicles: dict[str, list[Annotated[int, Field(strict=True, ge=0, le=19)]]]
     penalties: list[Cost]
+    ticket_policies: list[TicketPolicy]
     time_capacity: Annotated[int, Field(strict=True, ge=1, le=2880)]
     slack_max: Minute
     vehicle_fixed_cost: Annotated[int, Field(strict=True, ge=0, le=0)] = 0
@@ -73,6 +83,13 @@ class SolveRequest(StrictModel):
         if any(self.service_times[i] or self.penalties[i] for i in depots):
             raise ValueError("Depots cannot have service or dropping costs")
         tasks = set(range(n)) - depots
+        if len(self.ticket_policies) != len(tasks):
+            raise ValueError("Ticket policy count must match task count")
+        if len({policy.ticket_id for policy in self.ticket_policies}) != len(tasks):
+            raise ValueError("Ticket IDs in ticket policies must be unique")
+        for policy in self.ticket_policies:
+            if policy.sla_deadline_at is not None and policy.sla_deadline_at <= policy.received_at:
+                raise ValueError("SLA deadline must be later than received_at")
         if set(self.allowed_vehicles) != {str(i) for i in tasks}:
             raise ValueError("Explicit eligibility is required for every task, only tasks")
         for allowed in self.allowed_vehicles.values():
@@ -108,7 +125,7 @@ class Route(StrictModel):
 
 
 class SolveResponse(StrictModel):
-    contract_version: Literal[1] = 1
+    contract_version: Literal[2] = 2
     status: Literal["FEASIBLE", "OPTIMAL", "INFEASIBLE", "NOT_SOLVED"]
     solver_status_code: Annotated[int, Field(strict=True, ge=0, le=100)]
     routes: list[Route] = Field(default_factory=list, max_length=20)

@@ -40,6 +40,16 @@ def problem(service, allowed, windows=None, walk_gaps=(), gaps=()):
         service_times=[0, 0, *service],
         allowed_vehicles={str(n): v for n, v in allowed.items()},
         penalties=[0, 0] + [1] * len(service),
+        ticket_policies=[
+            {
+                "ticket_id": 101 + node,
+                "category": "repair",
+                "priority": 3,
+                "received_at": 0,
+                "sla_deadline_at": None,
+            }
+            for node in range(2, size)
+        ],
         time_capacity=1440,
         slack_max=1440,
     )
@@ -144,7 +154,10 @@ class DroppedVisitDiagnosticsTests(unittest.TestCase):
 
         missed = result[104]
         self.assertEqual(missed["reason"]["code"], "feasible_slot_missed")
-        self.assertEqual(missed["reason"]["observed"], {"search_time_limit_seconds": 5})
+        self.assertEqual(
+            missed["reason"]["observed"],
+            {"search_time_limit_seconds": 5, "category": "repair", "priority": 3},
+        )
         slot = missed["candidates"][0]["reason"]
         self.assertEqual(slot["code"], "slot_available")
         self.assertEqual(slot["observed"], {"position": 0})
@@ -220,6 +233,7 @@ def snapshot(workers, *, allocations=None, reserved=1, stock=3):
                 "id": 101,
                 "status": "planned",
                 "work_type": "Монтаж",
+                "work_type_id": 1,
                 "location_id": 10,
                 "visit_window_start": "2030-01-15T10:00:00+03:00",
                 "visit_window_end": "2030-01-15T12:00:00+03:00",
@@ -324,8 +338,22 @@ class PrecheckReasonTests(unittest.TestCase):
         missing = prepare(snapshot([engineer(21)], allocations=[]), NOW)["unassigned"][0]["reason"]
         self.assertEqual(missing["code"], "equipment_not_reserved")
         self.assertEqual(missing["message"], "Не зарезервировано оборудование: «Роутер» 0 из 1")
-        self.assertEqual(missing["observed"], {"appliances": [{"appliance_id": 5, "quantity": 0}]})
-        self.assertEqual(missing["required"], {"appliances": [{"appliance_id": 5, "quantity": 1}]})
+        self.assertEqual(
+            missing["observed"],
+            {
+                "appliances": [{"appliance_id": 5, "quantity": 0}],
+                "category": "repair",
+                "priority": 3,
+            },
+        )
+        self.assertEqual(
+            missing["required"],
+            {
+                "appliances": [{"appliance_id": 5, "quantity": 1}],
+                "planning_priority_order": ["emergency", "connection", "repair", "additional"],
+                "ticket_priority": 3,
+            },
+        )
         broken = prepare(snapshot([engineer(21)], reserved=5), NOW)["unassigned"][0]["reason"]
         self.assertEqual(broken["code"], "stock_inconsistent")
         self.assertIn("«Роутер» в офисе №1: резерв 5, остаток 3", broken["message"])
@@ -344,6 +372,19 @@ class PrecheckReasonTests(unittest.TestCase):
         self.assertEqual(reason["code"], "shift_already_started")
         self.assertEqual(reason["observed"], {"calculated_at": "2030-01-15T09:30:00+03:00"})
         self.assertEqual(reason["required"], {"calculated_before": "2030-01-15T09:00:00+03:00"})
+
+    def test_sla_deadline_is_checked_separately_from_the_visit_window(self):
+        data = snapshot([engineer(21)])
+        data["tickets"][0].update(
+            work_type_id=1,
+            received_at="2030-01-15T10:00:00+03:00",
+            sla_deadline_at="2030-01-15T11:00:00+03:00",
+        )
+
+        prepared = prepare(data, NOW)
+
+        self.assertEqual(prepared["tickets"], [])
+        self.assertEqual(prepared["unassigned"][0]["reason"]["code"], "sla_deadline_missed")
 
 
 class TextHelpersTests(unittest.TestCase):

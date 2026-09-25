@@ -1,6 +1,6 @@
 """Ticket request/response contracts; validation mirrors the agreed database constraints."""
 
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import (
     AwareDatetime,
@@ -25,7 +25,6 @@ TICKET_CREATE_EXAMPLE = {
     "location_id": 1,
     "title": "Настроить Wi-Fi",
     "description": "Учебный пример заявки",
-    "work_type": "Настройка сети",
     "work_type_id": 1,
     "category": "connection",
     "priority": 2,
@@ -43,6 +42,7 @@ TICKET_CREATE_EXAMPLE = {
 
 TICKET_READ_EXAMPLE = {
     **TICKET_CREATE_EXAMPLE,
+    "work_type": "Настройка сети",
     "id": 1,
     "assignee_ids": [2],
     "state": "waiting_assignment",
@@ -85,19 +85,17 @@ class TicketFields(BaseModel):
     location_id: PositiveInt32 = Field(
         description="ID существующего места выполнения. В примере замените 1 на ID из вашей БД."
     )
+    service_area_id: PositiveInt32 | None = Field(
+        default=None,
+        description="ID участка обслуживания.",
+    )
     title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     description: str | None = None
     work_type_id: PositiveInt32 | None = Field(
         default=None,
-        description=(
-            "ID вида работ из справочника work_types. Если не указан, определяется по work_type."
-        ),
+        description="ID вида работ из справочника work_types.",
     )
-    work_type: (
-        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
-        | None
-    ) = None
-    category: TicketCategory | str | None = Field(
+    category: TicketCategory | None = Field(
         default=None,
         description=(
             "Каноническая категория: emergency, connection, repair, additional. "
@@ -122,10 +120,6 @@ class TicketFields(BaseModel):
             "Обязательный транспорт исполнителя (car, walking, bicycle, public_transport). "
             "null — любой."
         ),
-    )
-    service_duration_source: str | None = Field(
-        default=None,
-        description="Источник норматива обслуживания: ticket_estimate или work_norm.",
     )
     status: TicketStatus = Field(
         default=TicketStatus.PLANNED,
@@ -156,7 +150,7 @@ class TicketFields(BaseModel):
         "null — ещё не указана, 0 — явно введённые ноль минут.",
     )
 
-    @field_validator("title", "description", "work_type")
+    @field_validator("title", "description")
     @classmethod
     def reject_null_character(cls, value: str | None) -> str | None:
         if value is not None and "\x00" in value:
@@ -165,8 +159,6 @@ class TicketFields(BaseModel):
 
     @model_validator(mode="after")
     def validate_intervals(self) -> Self:
-        if self.work_type_id is None and (self.work_type is None or not self.work_type.strip()):
-            raise ValueError("Укажите work_type_id или work_type")
         if self.visit_window_end <= self.visit_window_start:
             raise ValueError("Конец окна визита должен быть позже начала")
         if (self.planned_start_at is None) != (self.planned_end_at is None):
@@ -187,6 +179,9 @@ class TicketFields(BaseModel):
 
 
 class TicketCreate(TicketFields):
+    work_type_id: PositiveInt32 = Field(
+        description="ID существующего вида работ из справочника work_types."
+    )
     model_config = ConfigDict(
         extra="forbid", json_schema_extra={"examples": [TICKET_CREATE_EXAMPLE]}
     )
@@ -215,10 +210,35 @@ class TicketStatusUpdate(BaseModel):
     reason: str | None = Field(default=None, max_length=2000)
 
 
+class TicketSlaEstimateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    previous_ticket_end_at: AwareDatetime
+    travel_minutes: NonNegativeInt32
+
+
+class TicketSlaEstimateRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: PositiveInt32
+    estimated_arrival_at: AwareDatetime
+    estimated_service_start_at: AwareDatetime
+    estimated_service_end_at: AwareDatetime
+    visit_window_end_at: AwareDatetime
+    arrival_status: Literal["within_window", "late"]
+    arrival_late_minutes: NonNegativeInt32
+    sla_deadline_at: AwareDatetime | None
+    sla_status: Literal["on_time", "at_risk", "not_configured"]
+    sla_late_minutes: NonNegativeInt32
+    duration_minutes: PositiveInt32
+    duration_source: Literal["ticket_estimate", "work_norm"]
+
+
 class TicketRead(TicketFields):
     model_config = ConfigDict(json_schema_extra={"examples": [TICKET_READ_EXAMPLE]})
 
     id: int
+    work_type: str | None = None
     work_type_id: int | None = None
     category: TicketCategory
     priority: int

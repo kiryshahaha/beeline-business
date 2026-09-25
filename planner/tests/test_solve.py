@@ -87,6 +87,7 @@ class SolverObjectiveTests(unittest.TestCase):
         data["service_times"] = [0, 0, 10, 10]
         data["penalties"] = [0, 0, 201, 201]
         data["allowed_vehicles"] = {"2": [0], "3": [0]}
+        data["ticket_policies"] = data["ticket_policies"][1:]
         result = solve(SolveRequest.model_validate(data))
         self.assertIn(result.status, ("FEASIBLE", "OPTIMAL"))
         self.assertEqual(result.dropped_nodes, [])
@@ -94,6 +95,19 @@ class SolverObjectiveTests(unittest.TestCase):
         # first step must be depot (0), last step must be finish (1)
         self.assertEqual(route.steps[0].node, 0)
         self.assertEqual(route.steps[-1].node, 1)
+
+    def test_received_at_and_sla_deadline_bound_service_start_and_completion(self):
+        data = problem(n=2, horizon=100)
+        data["time_windows"][1] = [0, 80]
+        data["ticket_policies"][0]["received_at"] = 30
+        data["ticket_policies"][0]["sla_deadline_at"] = 40
+        result = solve(SolveRequest.model_validate(data))
+        self.assertEqual(result.dropped_nodes, [])
+        self.assertEqual(result.routes[0].steps[1].arrival_time, 30)
+
+        data["ticket_policies"][0]["sla_deadline_at"] = 39
+        result = solve(SolveRequest.model_validate(data))
+        self.assertEqual(result.dropped_nodes, [1])
 
     def test_waiting_minutes_matches_gap_between_arrival_and_window_open(self):
         """F10: when a vehicle arrives early the gap is reflected in waiting_minutes."""

@@ -85,12 +85,15 @@ def main():
             )
             stack.callback(stop, process)
             deadline = time.monotonic() + 30
+            health_path = "/ready" if key == "backend" else "/health"
             while time.monotonic() < deadline:
                 if process.poll() is not None:
                     raise RuntimeError(f"{key} exited; see {args.report_dir / (key + '.log')}")
                 try:
                     if (
-                        httpx.get(f"http://127.0.0.1:{ports[key]}/health", timeout=1).status_code
+                        httpx.get(
+                            f"http://127.0.0.1:{ports[key]}{health_path}", timeout=1
+                        ).status_code
                         == 200
                     ):
                         break
@@ -114,6 +117,9 @@ def main():
                 "Local",
                 "--env-var",
                 f"base_url=http://127.0.0.1:{ports['backend']}",
+                "--reporter-skip-all-headers",
+                "--reporter-skip-request-body",
+                "--reporter-skip-response-body",
                 "--reporter-junit",
                 str(args.report_dir / "bruno.xml"),
             ],

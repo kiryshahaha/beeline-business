@@ -11,6 +11,7 @@ def validate_solution(problem: SolveRequest, solution: SolveResponse) -> None:
     # open_end: depots = starts ∪ ends; round-trip: starts == ends so union = starts
     depots = set(problem.starts) | set(problem.ends)
     tasks = set(range(len(problem.time_windows))) - depots
+    ticket_policy_by_node = dict(zip(sorted(tasks), problem.ticket_policies, strict=True))
     try:
         for route in solution.routes:
             v = route.vehicle_id
@@ -51,6 +52,15 @@ def validate_solution(problem: SolveRequest, solution: SolveResponse) -> None:
                     if (
                         not start <= b.arrival_time <= end
                         or v not in problem.allowed_vehicles[str(b.node)]
+                    ):
+                        raise ValueError
+                    ticket_policy = ticket_policy_by_node[b.node]
+                    if b.arrival_time < ticket_policy.received_at:
+                        raise ValueError
+                    if (
+                        ticket_policy.sla_deadline_at is not None
+                        and b.arrival_time + problem.service_times[b.node]
+                        > ticket_policy.sla_deadline_at
                     ):
                         raise ValueError
             if (distance, travel, service, waiting) != (

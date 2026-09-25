@@ -8,8 +8,9 @@ from app.modules.notifications.enums import NotificationKind
 # Shared columns and joins keep single-ticket and list responses identical.
 TICKET_SELECT_SQL = """
     SELECT
-        t.id, t.location_id, t.title, t.description,
-        t.work_type, t.work_type_id, t.category, t.priority,
+        t.id, t.location_id, t.service_area_id, t.title, t.description,
+        COALESCE(wt.name, t.work_type) AS work_type,
+        t.work_type_id, t.category, t.priority,
         t.received_at, t.sla_deadline_at, t.required_transport_type, t.service_duration_source,
         t.status,
         CASE
@@ -41,6 +42,7 @@ TICKET_SELECT_SQL = """
         l.entrance_id, e.number AS entrance_number,
         l.floor, l.apartment, l.latitude, l.longitude
     FROM tickets AS t
+    LEFT JOIN work_types AS wt ON wt.id = t.work_type_id
     JOIN locations AS l ON l.id = t.location_id
     JOIN buildings AS b ON b.id = l.building_id
     JOIN streets AS s ON s.id = b.street_id
@@ -59,6 +61,15 @@ FOREMAN_VISIBILITY_SQL = """
         JOIN brigades AS visible_brigade ON visible_brigade.id = visible_member.brigade_id
         WHERE visible_assignment.ticket_id = t.id
           AND visible_brigade.foreman_id = :foreman_id
+    )
+"""
+
+WORKER_VISIBILITY_SQL = """
+    EXISTS (
+        SELECT 1
+        FROM ticket_assignments AS visible_assignment
+        WHERE visible_assignment.ticket_id = t.id
+          AND visible_assignment.worker_id = :worker_id
     )
 """
 
@@ -84,14 +95,14 @@ def add_ticket(session: Session, values: dict[str, object]) -> int:
     return session.execute(
         text("""
             INSERT INTO tickets (
-                location_id, title, description,
+                location_id, service_area_id, title, description,
                 work_type, work_type_id, category, priority,
                 received_at, sla_deadline_at, required_transport_type, service_duration_source,
                 status, lifecycle_state,
                 visit_window_start, visit_window_end, planned_start_at, planned_end_at,
                 estimated_duration_minutes, actual_duration_minutes
             ) VALUES (
-                :location_id, :title, :description,
+                :location_id, :service_area_id, :title, :description,
                 :work_type, :work_type_id, :category, :priority,
                 :received_at, :sla_deadline_at, :required_transport_type, :service_duration_source,
                 :status, :lifecycle_state,
@@ -109,7 +120,7 @@ def lock_ticket(session: Session, ticket_id: int) -> RowMapping | None:
         session.execute(
             text("""
                 SELECT id, title, status, lifecycle_state, revision, execution_cycle,
-                       location_id, visit_window_start, visit_window_end,
+                       location_id, service_area_id, visit_window_start, visit_window_end,
                        planned_start_at, planned_end_at
                 FROM tickets
                 WHERE id = :ticket_id
@@ -237,13 +248,20 @@ def add_notification_events(
 
 
 def find_ticket(
-    session: Session, ticket_id: int, *, foreman_id: int | None = None
+    session: Session,
+    ticket_id: int,
+    *,
+    foreman_id: int | None = None,
+    worker_id: int | None = None,
 ) -> RowMapping | None:
     query = TICKET_SELECT_SQL + " WHERE t.id = :ticket_id"
     parameters = {"ticket_id": ticket_id}
     if foreman_id is not None:
         query += " AND " + FOREMAN_VISIBILITY_SQL
         parameters["foreman_id"] = foreman_id
+    if worker_id is not None:
+        query += " AND " + WORKER_VISIBILITY_SQL
+        parameters["worker_id"] = worker_id
     return (
         session.execute(
             text(query),
@@ -264,6 +282,7 @@ def find_tickets(
     offset: int,
     brigade_id: int | None = None,
     foreman_id: int | None = None,
+    worker_id: int | None = None,
 ) -> list[RowMapping]:
     conditions = []
     parameters: dict[str, object] = {"limit": limit, "offset": offset}
@@ -290,6 +309,9 @@ def find_tickets(
     if foreman_id is not None:
         conditions.append(FOREMAN_VISIBILITY_SQL)
         parameters["foreman_id"] = foreman_id
+    if worker_id is not None:
+        conditions.append(WORKER_VISIBILITY_SQL)
+        parameters["worker_id"] = worker_id
 
     # Only fixed SQL fragments are joined; every value is a bound parameter.
     query = TICKET_SELECT_SQL

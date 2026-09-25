@@ -34,38 +34,10 @@ Backend вызывает существующий /api/v1/solve через мо�
 
 ## Запуск
 
-Нужны Python 3.12+, PostgreSQL 16+ и Node.js 22 для frontend/Bruno.
-Полный запуск через Docker описан в [DOCKER.md](DOCKER.md).
-Docker Compose автоматически применяет миграции backend при запуске контейнера.
-
-Локальный backend, PowerShell, из корня проекта:
-
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements.txt
-Copy-Item .env.example .env
-# В .env укажите DATABASE_URL и собственный JWT_SECRET_KEY.
-.\.venv\Scripts\python -m alembic upgrade head
-.\.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
-```
-
-Swagger: `http://127.0.0.1:8000/docs`. `/health` проверяет процесс, а не доступность БД.
-На Linux/macOS используется `.venv/bin/python` вместо `.venv\Scripts\python`.
-Первый демонстрационный диспетчер создаётся командой `python seed_demo.py`
-в отдельной локальной демонстрационной БД; учётные данные описаны в backend README.
-
-```powershell
-cd ../frontend
-npm ci
-npm run dev
-```
-
-Для planner создайте отдельное окружение, установите `planner/requirements.txt`
-и запустите из planner: python -m uvicorn app.main:app --port 8001.
-Оба сервиса требуют одинаковый PLANNER_SERVICE_TOKEN. Backend также нужны
-PLANNING_ENABLED=true и GEOAPIFY_API_KEY; настройка требований видов работ
-описана в [README модуля](backend/app/modules/planning/README.md).
+Поддерживаемые версии и чистые команды запуска backend с planner собраны
+в [руководстве runtime](docs/RUNTIME.md). Compose запускает PostgreSQL 17,
+применяет миграции перед backend и проверяет `/ready`; для локальной демонстрации
+не нужны Firebase credentials или ключ Geoapify.
 
 ## Три дополнения
 
@@ -87,34 +59,11 @@ PLANNING_ENABLED=true и GEOAPIFY_API_KEY; настройка требовани
 
 ## Проверки
 
-Создайте отдельную БД с именем, заканчивающимся на `_test`. Для кириллицы нужна
-локаль с поддержкой регистронезависимого сравнения: например `ru-RU` через ICU
-или обычная UTF-8 локаль контейнера PostgreSQL. Локаль `C` без Unicode case folding
-не подходит существующим тестам справочников.
-
-Из `backend` в PowerShell:
-
-```powershell
-$env:TEST_DATABASE_URL='postgresql+psycopg://beeline_test:beeline_test@127.0.0.1:5432/beeline_test'
-$env:DATABASE_URL=$env:TEST_DATABASE_URL
-$env:JWT_SECRET_KEY='isolated-tests-only-key-at-least-32-characters'
-$env:NOTIFICATION_DISPATCHER_ENABLED='false'
-.\.venv\Scripts\python -m unittest discover -s tests -v
-.\.venv\Scripts\python -m ruff check .
-.\.venv\Scripts\python -m ruff format --check .
-```
-
-Тесты БД используют случайные схемы и удаляют только собственные схемы. Без
-`TEST_DATABASE_URL` интеграционные тесты завершаются ошибкой.
-Как запускать всю коллекцию на чистой тестовой БД — [Bruno README](backend/bruno/README.md).
-
-```powershell
-# Из frontend
-npm run lint
-npm run build
-# Из planner, в его окружении
-python -m unittest discover -s tests -v
-```
+Backend CI использует Python 3.12, PostgreSQL 17 и Node 24 для Bruno. Он запускает
+backend unittest, проверку seed/синтетических данных и Bruno E2E с настоящим planner.
+Поддерживаемые версии и команды установки зависимостей описаны в
+[руководстве runtime](docs/RUNTIME.md); Bruno сценарии — в
+[backend/bruno](backend/bruno/README.md).
 
 ## Синтетические данные
 

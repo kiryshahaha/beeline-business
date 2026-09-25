@@ -27,8 +27,13 @@ from app.modules.offices.models import Office  # noqa: F401
 from app.modules.planning.day_models import DayPlanRevision
 from app.modules.planning.models import PlanningPlan, PlanningPlanRoute
 from app.modules.routing.models import Route
+from app.modules.service_areas.models import ServiceArea
 from app.modules.streets.models import Street
-from app.modules.tickets.models import Ticket, TicketAssignment
+from app.modules.tickets.models import (
+    Ticket,
+    TicketAssignment,
+    TicketWorkTypeMigrationIssue,
+)
 from app.modules.users.models import (
     RefreshToken,
     User,
@@ -66,10 +71,12 @@ __all__ = [
     "PushSubscription",
     "RefreshToken",
     "Route",
+    "ServiceArea",
     "Street",
     "Ticket",
     "TicketAppliance",
     "TicketAssignment",
+    "TicketWorkTypeMigrationIssue",
     "TicketComment",
     "User",
     "Worker",

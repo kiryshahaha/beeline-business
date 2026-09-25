@@ -48,7 +48,7 @@ class DatabaseTests(DatabaseTestCase):
         values = {
             "location_id": self.location.id,
             "title": "Настроить Wi-Fi",
-            "work_type": "Настройка сети",
+            "work_type_id": 1,
             "visit_window_start": self.window_start,
             "visit_window_end": self.window_start + timedelta(hours=4),
             "estimated_duration_minutes": 60,

@@ -7,11 +7,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.security import create_access_token
 from app.db.models import Building, City, District, Entrance, Location, Street, Ticket
 from app.db.session import get_session
 from app.main import app
 from app.modules.tickets import repository
 from app.modules.tickets.enums import TicketStatus
+from app.modules.users.enums import UserRole
+from app.modules.users.schemas import UserCreate
+from app.modules.users.service import create_user
 from tests.support import DatabaseTestCase
 
 
@@ -47,13 +51,29 @@ class TicketsApiTests(DatabaseTestCase):
         # Release the fixture savepoint; HTTP sessions share only the outer test transaction.
         self.session.commit()
 
+        observer = create_user(
+            self.session,
+            UserCreate(
+                name="Тестовый",
+                surname="Наблюдатель",
+                username="tickets_api_observer",
+                password="Password123!",
+                role=UserRole.OBSERVER,
+            ),
+        )
+        self.session.commit()
+        auth_headers = {
+            "Authorization": "Bearer "
+            + create_access_token({"sub": str(observer.id), "role": observer.role.value})
+        }
+
         def override_session():
             with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
                 yield session
 
         app.dependency_overrides[get_session] = override_session
         self.addCleanup(app.dependency_overrides.pop, get_session)
-        self.client = self.enterContext(TestClient(app))
+        self.client = self.enterContext(TestClient(app, headers=auth_headers))
 
     def save(self, instance):
         self.session.add(instance)
@@ -64,7 +84,7 @@ class TicketsApiTests(DatabaseTestCase):
         return {
             "location_id": self.location_id,
             "title": "Настроить Wi-Fi",
-            "work_type": "Настройка сети",
+            "work_type_id": 1,
             "visit_window_start": "2026-09-14T10:00:00+03:00",
             "visit_window_end": "2026-09-14T14:00:00+03:00",
             "estimated_duration_minutes": 60,
@@ -145,7 +165,6 @@ class TicketsApiTests(DatabaseTestCase):
     def test_sql_like_text_is_returned_unchanged(self):
         values = {
             "title": "Офис 'Север'; SELECT 1 --",
-            "work_type": "Wi-Fi 'настройка'",
             "description": "Кавычки: ' и \"; параметры :ticket_id и % остаются текстом.",
         }
         response = self.create(**values)
@@ -158,7 +177,8 @@ class TicketsApiTests(DatabaseTestCase):
 
     def test_failure_after_insert_rolls_back_ticket(self):
         with patch(
-            "app.modules.tickets.service.get_ticket", side_effect=RuntimeError("response failed")
+            "app.modules.tickets.service.get_ticket_unscoped",
+            side_effect=RuntimeError("response failed"),
         ):
             with self.assertRaisesRegex(RuntimeError, "response failed"):
                 self.create()
@@ -174,7 +194,6 @@ class TicketsApiTests(DatabaseTestCase):
     def test_maximum_text_lengths_and_durations_are_saved_without_truncation(self):
         values = {
             "title": "Я" * 200,
-            "work_type": "Ю" * 100,
             "estimated_duration_minutes": 2_147_483_647,
             "actual_duration_minutes": 2_147_483_647,
         }
@@ -190,12 +209,12 @@ class TicketsApiTests(DatabaseTestCase):
         self.location.latitude = 0
         self.location.longitude = 0
         self.session.commit()
-        response = self.create(work_type="  Настройка Wi-Fi  ")
+        response = self.create()
         self.assertEqual(response.status_code, 201, response.text)
         fetched = self.client.get(response.headers["Location"])
         self.assertEqual(fetched.status_code, 200, fetched.text)
         data = fetched.json()
-        self.assertEqual(data["work_type"], "Настройка Wi-Fi")
+        self.assertEqual(data["work_type"], "Подключение клиентов Базовая")
         self.assertEqual(data["location"]["floor"], 0)
         self.assertEqual(data["location"]["latitude"], 0)
         self.assertEqual(data["location"]["longitude"], 0)
@@ -234,11 +253,12 @@ class TicketsApiTests(DatabaseTestCase):
         invalid = [
             {"title": " "},
             {"title": "x" * 201},
-            {"work_type": ""},
-            {"work_type": "x" * 101},
+            {"work_type_id": 0},
+            {"work_type_id": "1"},
             {"description": "text\x00text"},
             {"title": "text\x00text"},
-            {"work_type": "text\x00text"},
+            {"work_type": "legacy text is not accepted"},
+            {"work_type_id": 2_147_483_647},
             {"status": "unknown"},
             {"location_id": 0},
             {"location_id": -1},
@@ -290,7 +310,7 @@ class TicketsApiTests(DatabaseTestCase):
         for field in (
             "location_id",
             "title",
-            "work_type",
+            "work_type_id",
             "visit_window_start",
             "visit_window_end",
             "estimated_duration_minutes",
@@ -509,6 +529,7 @@ class TicketsApiTests(DatabaseTestCase):
                 "/api/v1/tickets/{id}/comments/{comment_id}",
                 "/api/v1/tickets/{id}/equipment/restore",
                 "/api/v1/tickets/{id}/status",
+                "/api/v1/tickets/{id}/sla-estimate",
                 "/api/v1/tickets/{id}/dispatch",
                 "/api/v1/tickets/{id}/start-route",
                 "/api/v1/tickets/{id}/start",
