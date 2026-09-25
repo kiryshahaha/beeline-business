@@ -160,6 +160,11 @@ def replace_ticket_assignees(
             status_code=422,
             detail="Один или несколько исполнителей сняты с линии",
         ) from error
+    except service.ServiceAreaMismatchError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Исполнитель принадлежит другому участку обслуживания",
+        ) from error
     except InventoryError as error:
         raise HTTPException(status_code=error.status, detail=error.detail()) from error
 

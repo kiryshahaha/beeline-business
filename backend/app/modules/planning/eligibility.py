@@ -33,6 +33,10 @@ def candidate_reason(
     missing = sorted(skills - worker["skill_ids"])
     if missing:
         return reasons.missing_skill(missing, skills)
+    worker_area = worker.get("service_area_id")
+    ticket_area = ticket.get("service_area_id")
+    if worker_area is not None and ticket_area is not None and worker_area != ticket_area:
+        return reasons.service_area_mismatch(worker_area, ticket_area)
     offices = sorted({a["office_id"] for a in allocations})
     if any(office != worker["office_id"] for office in offices):
         return reasons.office_mismatch(worker["office_id"], offices)
@@ -87,6 +91,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
     for worker in snapshot["workers"]:
         worker = dict(worker)
         wid = worker["user_id"]
+        day_state = day_states.get(wid)
         start = datetime.combine(
             epoch.date(), time.fromisoformat(worker["workshift_start"]), MOSCOW
         )
@@ -94,9 +99,28 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         if end <= start:
             end += timedelta(days=1)
         brigade = brigades.get(members.get(wid))
-        office = offices.get(brigade["office_id"]) if brigade else None
-        location = locations.get(office["location_id"]) if office else None
-        day_state = day_states.get(wid)
+        office_id = worker.get("stock_office_id") or (brigade["office_id"] if brigade else None)
+        office = offices.get(office_id) if office_id else None
+
+        if day_state and day_state.get("last_location_id"):
+            start_location_id = day_state["last_location_id"]
+        elif worker.get("start_location_id"):
+            start_location_id = worker["start_location_id"]
+        elif office:
+            start_location_id = office["location_id"]
+        else:
+            start_location_id = None
+
+        if worker.get("end_location_id"):
+            end_location_id = worker["end_location_id"]
+        elif worker.get("start_location_id"):
+            end_location_id = worker["start_location_id"]
+        elif office:
+            end_location_id = office["location_id"]
+        else:
+            end_location_id = start_location_id
+
+        location = locations.get(start_location_id) if start_location_id else None
         reason = None
         if roles.get(wid) != "worker":
             reason = reasons.invalid_worker_role(roles.get(wid))
@@ -111,7 +135,9 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         elif not office:
             reason = reasons.missing_office()
         elif not location or location["latitude"] is None or location["longitude"] is None:
-            reason = reasons.office_without_coordinates(office["id"], office["location_id"])
+            reason = reasons.office_without_coordinates(
+                office["id"], start_location_id or office["location_id"]
+            )
         elif start <= now and not (day_state and day_state.get("last_location_id")):
             reason = reasons.shift_already_started(start, now, day)
         elif day_state and day_state.get("current_ticket_id"):
@@ -141,29 +167,24 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         if reason:
             excluded_workers.append({"worker_id": wid, "reason": reason})
             continue
-        start_location_id = (
-            day_state["last_location_id"]
-            if day_state and day_state.get("last_location_id")
-            else office["location_id"]
-        )
         if start_location_id not in locations:
             excluded_workers.append({"worker_id": wid, "reason": "missing_last_location"})
             continue
         available_at = start
         if day_state and day_state.get("expected_available_at"):
             available_at = max(available_at, dt(day_state["expected_available_at"]))
+        worker_area_id = (
+            worker.get("service_area_id")
+            or snapshot.get("worker_service_areas", {}).get(wid)
+            or snapshot.get("service_area_id")
+        )
         worker.update(
             {
                 "office_id": office["id"],
+                "service_area_id": worker_area_id,
                 "location_id": start_location_id,
-                **(
-                    {
-                        "start_location_id": start_location_id,
-                        "end_location_id": office["location_id"],
-                    }
-                    if day_state and day_state.get("last_location_id")
-                    else {}
-                ),
+                "start_location_id": start_location_id,
+                "end_location_id": end_location_id,
                 "profile": PROFILES[worker["transport_type"]],
                 "transport_type": worker["transport_type"],
                 "window": [
@@ -275,8 +296,14 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 reason = reasons.stock_inconsistent(not_issuable, names)
             else:
                 allowed = []
+                ticket_area_id = (
+                    ticket.get("service_area_id")
+                    or snapshot.get("ticket_service_areas", {}).get(tid)
+                    or snapshot.get("service_area_id")
+                )
                 candidate_ticket = dict(
                     ticket,
+                    service_area_id=ticket_area_id,
                     visit_window_start=window_start.isoformat(),
                     visit_window_end=window_end.isoformat(),
                 )
@@ -298,6 +325,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 nobody = sorted(skills - set().union(*(w["skill_ids"] for w in workers)))
                 if allowed:
                     ticket.update(
+                        service_area_id=ticket_area_id,
                         window=window,
                         duration=duration,
                         allowed=allowed,
@@ -326,12 +354,24 @@ def prepare(snapshot: dict, now: datetime) -> dict:
             unassigned.append({"ticket_id": tid, "reason": reason, "candidates": candidates})
         else:
             tickets.append(ticket)
-    open_end = policy.route_end == "open_end"
+    req_route_end = (
+        request.get("route_end")
+        if isinstance(request, dict)
+        else getattr(request, "route_end", None)
+    )
+    if req_route_end in ("open", "open_end"):
+        open_end = True
+    elif req_route_end in ("return_to_start", "return_to_brigade_office", "specific_finish"):
+        open_end = False
+    else:
+        open_end = policy.route_end in ("open", "open_end")
     return {
         "policy": policy,
         "epoch": epoch,
         "horizon": horizon,
         "open_end": open_end,
+        "route_end": req_route_end or ("open" if open_end else "return_to_start"),
+        "service_area_id": snapshot.get("service_area_id"),
         "workers": workers,
         "tickets": tickets,
         "locations": locations,

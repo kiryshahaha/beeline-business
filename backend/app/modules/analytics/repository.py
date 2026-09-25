@@ -45,15 +45,32 @@ def find_tickets_summary(
     elif office_id is not None:
         conditions.append(
             """
-            EXISTS (
-                SELECT 1
-                FROM ticket_assignments AS scope_assignment
-                JOIN brigade_members AS scope_member
-                    ON scope_member.worker_id = scope_assignment.worker_id
-                JOIN brigades AS scope_brigade
-                    ON scope_brigade.id = scope_member.brigade_id
-                WHERE scope_assignment.ticket_id = t.id
-                  AND scope_brigade.office_id = :office_id
+            (
+                EXISTS (
+                    SELECT 1
+                    FROM ticket_assignments AS scope_assignment
+                    JOIN brigade_members AS scope_member
+                        ON scope_member.worker_id = scope_assignment.worker_id
+                    JOIN brigades AS scope_brigade
+                        ON scope_brigade.id = scope_member.brigade_id
+                    WHERE scope_assignment.ticket_id = t.id
+                      AND scope_brigade.office_id = :office_id
+                )
+                OR (
+                    NOT EXISTS (
+                        SELECT 1 FROM ticket_assignments AS unassigned_scope
+                        WHERE unassigned_scope.ticket_id = t.id
+                    )
+                    AND t.service_area_id IN (
+                        SELECT bld_sa.id
+                        FROM offices AS off
+                        JOIN locations AS off_loc ON off_loc.id = off.location_id
+                        JOIN buildings AS off_bld ON off_bld.id = off_loc.building_id
+                        JOIN service_areas AS bld_sa
+                          ON bld_sa.code = 'district_' || off_bld.district_id
+                        WHERE off.id = :office_id
+                    )
+                )
             )
             """
         )

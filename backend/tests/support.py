@@ -83,6 +83,6 @@ class CommittedDatabaseTestCase(DatabaseTestCase):
                     "push_subscriptions, ticket_comments, ticket_assignments, "
                     "tickets, refresh_tokens, calendar_tokens, worker_skill_assignments, "
                     "worker_skills, workers, users, locations, entrances, "
-                    "buildings, streets, districts, cities"
+                    "buildings, streets, districts, cities, service_areas"
                 )
             )
