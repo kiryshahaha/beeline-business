@@ -6,9 +6,10 @@ export function useBrigades() {
   const { token } = useAuth();
 
   const { data: brigades = [], ...brigadesData } = useQuery({
-    queryKey: ["brigadesList", token],
+    queryKey: ["brigadesList"],
+    enabled: !!token,
     queryFn: async () => {
-      const res = await apiFetch("/brigades", token);
+      const res = await apiFetch("/brigades");
       if (!res.ok) throw new Error("Ошибка в получении бригад");
       return res.json();
     },
@@ -16,3 +17,5 @@ export function useBrigades() {
 
   return { brigades, brigadesData };
 }
+
+

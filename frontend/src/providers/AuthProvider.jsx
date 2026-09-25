@@ -1,7 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
-import { registerTokenSetter } from "@/lib/tokenBus";
+import { registerTokenSetter, updateToken } from "@/lib/tokenBus";
+import { refreshSession } from "@/lib/apiFetch";
 
 const AuthContext = createContext(null);
 
@@ -15,18 +16,17 @@ export function AuthProvider({ children }) {
     registerTokenSetter(setToken);
   }, []);
 
+  const restoreAttempted = React.useRef(false);
+
   // При монтировании пробуем восстановить сессию через refresh_token из httpOnly cookie
   useEffect(() => {
+    if (restoreAttempted.current) return;
+    restoreAttempted.current = true;
+
     const restoreSession = async () => {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/auth/refresh`, {
-          method: "POST",
-          credentials: "include",
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setToken(data.access_token);
-        }
+        const accessToken = await refreshSession();
+        setToken(accessToken);
       } catch {
         // Нет сети или нет cookie — пользователь не авторизован
       } finally {
@@ -39,7 +39,7 @@ export function AuthProvider({ children }) {
 
   const login = useCallback((accessToken) => {
     // refresh_token сервер поставил в httpOnly cookie — нам не нужно его трогать
-    setToken(accessToken);
+    updateToken(accessToken);
   }, []);
 
   const logout = useCallback(async () => {
@@ -51,7 +51,7 @@ export function AuthProvider({ children }) {
     } catch {
       // Игнорируем ошибки сети при логауте
     }
-    setToken(null);
+    updateToken(null);
   }, []);
 
   return (

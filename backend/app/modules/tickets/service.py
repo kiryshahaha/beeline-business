@@ -487,6 +487,7 @@ def update_ticket_status(
         event_type = {
             TicketStatus.IN_PROGRESS: WorkEventType.START,
             TicketStatus.COMPLETED: WorkEventType.COMPLETE,
+            TicketStatus.WONT_FIX: WorkEventType.CANCEL_TICKET,
         }.get(status)
         if event_type is None:
             raise PermissionDeniedError

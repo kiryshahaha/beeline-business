@@ -1,0 +1,499 @@
+.menuContainer {
+    border-radius: 12px;
+    height: 46px;
+    max-width: 46px;
+    min-width: 46px;
+    width: max-content;
+    padding: 0;
+    border: 2px solid var(--stroke);
+    background-color: var(--tertiary);
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    transition: max-width 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding 0.4s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.4s cubic-bezier(0.4, 0, 0.2, 1), height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+    cursor: pointer;
+    box-sizing: border-box;
+    position: relative;
+}
+
+.menuContainer.open {
+    max-width: 250px;
+    cursor: default;
+    padding-right: 12px;
+}
+
+.iconWrapper {
+    width: 42px;
+    /* 56px - 4px borders */
+    height: 42px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-shrink: 0;
+    transition: opacity 0.3s ease;
+}
+
+.menuContainer.open .iconWrapper {
+    cursor: pointer;
+}
+
+.menuItems {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    white-space: nowrap;
+}
+
+.menuContainer.open .menuItems {
+    opacity: 1;
+    pointer-events: auto;
+    transition-delay: 0.15s;
+}
+
+.menuButton {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+    width: 40px;
+    height: 40px;
+}
+
+.menuButton:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.iconMask {
+    width: 24px;
+    height: 24px;
+    background-color: #FFFFFF;
+    mask-size: contain;
+    mask-position: center;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+    -webkit-mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    transition: background-color 0.2s ease;
+}
+
+.menuButton.active .iconMask {
+    background-color: var(--beeline);
+}
+
+.menuContainer.usersWide {
+    max-width: 320px;
+    min-width: 320px;
+    cursor: default;
+}
+
+.menuContainer.usersTall {
+    height: 50vh;
+    padding: 0;
+}
+
+.menuContainer.usersWide .iconWrapper,
+.menuContainer.usersWide .menuItems {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.usersPanelWrapper {
+    display: none;
+}
+
+.menuContainer.usersWide .usersPanelWrapper {
+    display: block;
+    position: absolute;
+    inset: 0;
+}
+
+/* Brigades Panel inside is only rendered during usersTall, so animation starts then */
+.menuContainer.usersTall .usersPanelWrapper {
+    animation: fadeIn 0.4s ease forwards;
+}
+
+@keyframes fadeIn {
+    0% {
+        opacity: 0;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+/* Brigades Panel Styles */
+.brigadesPanel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 16px;
+    background-color: #1C1C1E;
+}
+
+.brigadesCloseHeader {
+    display: flex;
+    justify-content: flex-end;
+    /* margin-bottom: 8px; */
+}
+
+.closeBtn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.closeBtn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.brigadesContent {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 17px;
+    padding-right: 4px;
+}
+
+/* Scrollbar styles for brigades content */
+.brigadesContent::-webkit-scrollbar {
+    width: 4px;
+}
+
+.brigadesContent::-webkit-scrollbar-thumb {
+    background-color: var(--stroke);
+    border-radius: 4px;
+}
+
+.districtGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 17px;
+}
+
+.districtTitle {
+    font-size: 14px;
+    color: #888888;
+    /* margin-bottom: 4px; */
+    border-bottom: 1px solid #8A8A8A;
+    padding-bottom: 4px;
+}
+
+.brigadeCard {
+    background-color: var(--tertiary);
+    border-radius: 8px;
+    padding: 10px;
+    border: 1px solid var(--stroke);
+    display: flex;
+    flex-direction: column;
+    gap: 8px
+}
+
+.brigadeCardHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    /* margin-bottom: 8px; */
+}
+
+.brigadeName {
+    font-weight: 500;
+    font-size: 15px;
+    color: #FFFFFF;
+}
+
+.brigadeBadge {
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    color: #AAAAAA;
+}
+
+.badgeHighlight {
+    color: var(--beeline);
+    font-weight: 500;
+}
+
+.badgeFull .badgeHighlight {
+    color: #FF4444;
+    /* red if full, just based on mockup colors (mockup showed orange/red for 8/10, 10/10) */
+}
+
+.brigadeOffice {
+    font-size: 13px;
+    color: #AAAAAA;
+}
+
+.brigadesSearchContainer {
+    position: relative;
+    /* margin-top: 16px; */
+}
+
+.brigadesSearch {
+    display: flex;
+    align-items: center;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 8px 12px;
+}
+
+.searchInput {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #FFFFFF;
+    outline: none;
+    font-size: 14px;
+}
+
+.searchInput::placeholder {
+    color: #888888;
+}
+
+.searchDivider {
+    width: 1px;
+    height: 20px;
+    background-color: var(--stroke);
+    /* margin: 0 12px; */
+}
+
+.filterBtn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.filterBtn:hover,
+.filterActiveIcon {
+    opacity: 1;
+}
+
+.filterIconMask {
+    width: 20px;
+    height: 20px;
+    background-color: #FFFFFF;
+    mask-size: contain;
+    mask-position: center;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+    -webkit-mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    transition: background-color 0.2s ease;
+}
+
+.filterActiveIcon .filterIconMask {
+    background-color: var(--beeline);
+}
+
+.filterMenu {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 0;
+    width: 200px;
+    background-color: #2A2A2A;
+    border: 1px solid var(--stroke);
+    border-radius: 8px;
+    padding: 8px 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    z-index: 100;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.filterMenuHeader {
+    padding: 4px 12px 8px;
+    font-size: 12px;
+    color: #888888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    /* margin-bottom: 4px; */
+}
+
+.filterItem {
+    padding: 8px 12px;
+    font-size: 14px;
+    color: #FFFFFF;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.filterItem:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.filterItem.active {
+    color: var(--beeline);
+    background-color: rgba(255, 204, 0, 0.05);
+    /* slightly tinted active state */
+}
+
+.emptyState {
+    text-align: center;
+    padding: 24px;
+    color: #888888;
+    font-size: 14px;
+}
+
+.separator {
+    border-bottom: 1px solid rgba(120, 120, 128, 0.36);
+}
+
+.separator2 {
+    border-bottom: 1px solid #E2E8F0;
+}
+
+
+/* Brigade Details Panel */
+.detailsHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.backBtn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.detailsTitle {
+    font-size: 16px;
+    font-weight: 600;
+    color: #FFFFFF;
+}
+
+.detailsSubheader {
+    font-size: 14px;
+    color: #888888;
+    margin-bottom: 17px;
+    /* padding-bottom: 16px; */
+}
+
+.workerCard {
+    background-color: #2A2A2A;
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px
+        /* margin-bottom: 12px; */
+}
+
+.workerCardHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    /* padding-bottom: 12px; */
+    /* margin-bottom: 12px; */
+}
+
+.workerInfo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.workerAvatar {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background-color: #1A1A1A;
+    color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.workerName {
+    font-size: 13px;
+    color: #FFFFFF;
+    font-weight: 500;
+    margin-bottom: 4px;
+    font-weight: 600;
+}
+
+.workerRole {
+    font-size: 11px;
+    color: #888888;
+}
+
+.workerStatus {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    background-color: rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.statusActive {
+    color: #4CAF50;
+}
+
+.statusFree {
+    color: #5C8CFF;
+}
+
+.workerWorkload {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.workloadText {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    color: #888888;
+}
+
+.workloadText b {
+    color: #FFFFFF;
+    font-weight: 600;
+}
+
+.workloadBarBg {
+    height: 6px;
+    background-color: #FFFFFF;
+    border-radius: 3px;
+    width: 100%;
+}
+
+.workloadBarFill {
+    height: 100%;
+    background-color: var(--beeline);
+    border-radius: 3px;
+}

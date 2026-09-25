@@ -71,8 +71,8 @@ const Search = () => {
           <Image
             src="/icons/icon-search.svg"
             alt="Search icon"
-            width={20}
-            height={20}
+            width={16}
+            height={16}
             className={styles.icon}
           />
           <input
