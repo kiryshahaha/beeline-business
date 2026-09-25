@@ -32,6 +32,10 @@ def login(data: LoginRequest, response: Response, session: DatabaseSession) -> L
             detail="Неверный логин или пароль",
             headers={"WWW-Authenticate": "Bearer"},
         ) from error
+    except service.ArchivedUserError as error:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Учётная запись в архиве"
+        ) from error
 
     response.set_cookie(
         key=REFRESH_COOKIE,

@@ -73,11 +73,6 @@ def validate_solution(problem: SolveRequest, solution: SolveResponse) -> None:
         dropped = set(solution.dropped_nodes)
         if len(dropped) != len(solution.dropped_nodes) or seen & dropped or seen | dropped != tasks:
             raise ValueError
-        expected_cost = sum(r.travel_minutes for r in solution.routes) + sum(
-            problem.penalties[n] for n in dropped
-        )
-        if solution.total_cost != expected_cost:
-            raise ValueError
         if solution.total_distance != sum(r.distance for r in solution.routes):
             raise ValueError
     except (ValueError, IndexError, KeyError) as error:

@@ -509,7 +509,7 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
         # Attempt to assign worker_north to south ticket
         response = self.client.put(
             f"/api/v1/tickets/{ticket.id}/assignees",
-            json={"worker_ids": [self.worker_north.id]},
+            json={"worker_id": self.worker_north.id, "is_pinned": True},
             headers=headers,
         )
         self.assertEqual(response.status_code, 422)
@@ -538,7 +538,7 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
         # Assign worker_south to south ticket
         response = self.client.put(
             f"/api/v1/tickets/{ticket.id}/assignees",
-            json={"worker_ids": [self.worker_south.id]},
+            json={"worker_id": self.worker_south.id, "is_pinned": True},
             headers=headers,
         )
         self.assertEqual(response.status_code, 200)

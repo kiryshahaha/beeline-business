@@ -60,6 +60,8 @@ def find_brigade_workers(session: Session, brigade_ids: list[int]) -> list[RowMa
                 JOIN workers AS w ON w.user_id = bm.worker_id
                 JOIN users AS u ON u.id = w.user_id
                 WHERE bm.brigade_id = ANY(:brigade_ids)
+                  AND u.role = 'worker'
+                  AND u.archived_at IS NULL
                 ORDER BY u.surname, u.name, u.id
             """),
             {"brigade_ids": brigade_ids},
@@ -76,9 +78,12 @@ def find_unassigned_workers(session: Session) -> list[RowMapping]:
                 SELECT {WORKER_COLUMNS_SQL}
                 FROM workers AS w
                 JOIN users AS u ON u.id = w.user_id
-                WHERE NOT EXISTS (
+                -- A former worker keeps the profile as history; it is not a free engineer.
+                WHERE u.role = 'worker'
+                  AND u.archived_at IS NULL
+                  AND NOT EXISTS (
                     SELECT 1 FROM brigade_members AS bm WHERE bm.worker_id = w.user_id
-                )
+                  )
                 ORDER BY u.surname, u.name, u.id
             """)
         )
@@ -96,11 +101,10 @@ def find_planned_tickets(
         session.execute(
             text("""
                 SELECT
-                    ta.worker_id, t.id, t.title, t.work_type, t.status,
+                    t.assigned_worker_id AS worker_id, t.id, t.title, t.work_type, t.status,
                     t.planned_start_at, t.planned_end_at
-                FROM ticket_assignments AS ta
-                JOIN tickets AS t ON t.id = ta.ticket_id
-                WHERE ta.worker_id = ANY(:worker_ids)
+                FROM tickets AS t
+                    WHERE t.assigned_worker_id = ANY(:worker_ids)
                   AND t.planned_start_at < :day_end
                   AND t.planned_end_at > :day_start
                 ORDER BY t.planned_start_at, t.id

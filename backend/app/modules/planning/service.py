@@ -8,7 +8,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
-from app.modules.planning.day_models import DayPlanRevision
+from app.modules.planning.day_plans import build_plan_state, publish_revision
 from app.modules.planning.diagnostics import (
     diagnose_dropped,
     estimate_resources,
@@ -31,7 +31,8 @@ from app.modules.routing.client import GeoapifyRoutingError
 from app.modules.routing.schemas import RouteCreate
 from app.modules.routing.service import save_routes_in_transaction
 from app.modules.tickets.models import Ticket
-from app.modules.tickets.service import replace_assignees_in_transaction
+from app.modules.tickets.service import update_assignment_in_transaction
+from app.modules.users.models import User
 
 
 def utc_now():
@@ -105,14 +106,19 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
         {
             "plan_id": str(plan_id),
             "planning_policy": snapshot["planning_policy"],
+            "case_policy_version": snapshot.get("policy_version"),
             "state": "ready",
             "outcome": outcome(routes, unassigned),
             "route_date": request.route_date,
             "district_id": snapshot.get("district_id"),
+            "service_area_id": snapshot.get("service_area_id"),
             "day_revision": snapshot.get("current_day_revision"),
             "timezone": "Europe/Moscow",
             "expires_at": expires,
             "solver_status": solution.status if solution else None,
+            "objective_components": solution.objective_components.model_dump(mode="json")
+            if solution and solution.objective_components
+            else None,
             "metrics": plan_metrics(request, prepared, routes, unassigned),
             "routes": routes,
             "unassigned": unassigned,
@@ -149,6 +155,63 @@ async def preview(engine, request, actor, settings, provider_factory, planner, c
     return public
 
 
+def plan_workers(session: Session, snapshot: dict) -> list[dict]:
+    """Brigade and office come from the plan's snapshot, so later membership changes,
+    a new role or archiving never rewrite whom the plan belonged to."""
+    brigades = {row["id"]: row for row in snapshot.get("brigades", [])}
+    members = {row["worker_id"]: row["brigade_id"] for row in snapshot.get("members", [])}
+    workers = sorted(snapshot.get("workers", []), key=lambda row: row["user_id"])
+    users = {
+        row.id: row
+        for row in session.execute(
+            select(
+                User.id, User.surname, User.name, User.lastname, User.role, User.archived_at
+            ).where(User.id.in_([row["user_id"] for row in workers]))
+        )
+    }
+    result = []
+    for worker in workers:
+        brigade = brigades.get(members.get(worker["user_id"]))
+        user = users.get(worker["user_id"])
+        result.append(
+            {
+                "worker_id": worker["user_id"],
+                "full_name": " ".join(
+                    part for part in (user.surname, user.name, user.lastname) if part
+                )
+                if user
+                else None,
+                "brigade_id": brigade["id"] if brigade else None,
+                "brigade_name": brigade["name"] if brigade else None,
+                "office_id": worker.get("stock_office_id")
+                or (brigade["office_id"] if brigade else None),
+                "role": user.role if user else None,
+                "archived_at": user.archived_at if user else None,
+            }
+        )
+    return result
+
+
+def plan_state(session: Session, plan: PlanningPlan, clock=utc_now) -> dict:
+    """Public stored plan and its live state; the caller owns one read-only snapshot."""
+    result = {**legacy_public(plan.result_snapshot["public"]), "state": plan.state}
+    result["planning_policy"] = plan.input_snapshot.get("planning_policy")
+    if plan.state == "ready" and plan.expires_at <= clock():
+        result["state"] = "expired"
+    if plan.state == "applied":
+        request = PreviewRequest.model_validate(plan.input_snapshot["request"])
+        result["is_current"] = (
+            fingerprint(
+                load_snapshot(
+                    session, request, policy_snapshot=recorded_policy(plan.input_snapshot)
+                )
+            )
+            == plan.applied_fingerprint
+        )
+        result["apply_result"] = plan.apply_result
+    return result
+
+
 def read_plan(engine, plan_id: UUID, clock=utc_now):
     with Session(engine) as session, session.begin():
         session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
@@ -170,6 +233,7 @@ def read_plan(engine, plan_id: UUID, clock=utc_now):
                 == plan.applied_fingerprint
             )
             result["apply_result"] = plan.apply_result
+        result["workers"] = plan_workers(session, plan.input_snapshot)
         return result
 
 
@@ -232,10 +296,11 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                 for stop in route.stops:
                     if stop.ticket_id is None:
                         continue
-                    replace_assignees_in_transaction(
+                    update_assignment_in_transaction(
                         session,
                         stop.ticket_id,
-                        [route.worker_id],
+                        route.worker_id,
+                        is_pinned=False,
                         actor_id=plan.created_by,
                     )
                     ticket = session.get(Ticket, stop.ticket_id)
@@ -262,32 +327,29 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                 ],
                 "assigned_ticket_ids": ticket_ids,
             }
-            district_id = current.get("district_id")
+            service_area_id = current.get("service_area_id")
             revision_row = None
-            if district_id is not None:
-                previous_revision = current.get("current_day_revision") or 0
-                session.execute(
-                    text(
-                        """
-                        UPDATE day_plan_revisions
-                        SET is_current = false
-                        WHERE district_id = :district_id
-                          AND route_date = :route_date
-                          AND is_current
-                        """
-                    ),
-                    {"district_id": district_id, "route_date": request.route_date},
-                )
-                revision_row = DayPlanRevision(
-                    district_id=district_id,
+            if service_area_id is not None:
+                # One revision of the area-day is current; publishing hands the marker
+                # over inside this transaction, so two applies never both look current.
+                revision_row = publish_revision(
+                    session,
+                    service_area_id=service_area_id,
+                    district_id=current.get("district_id"),
                     route_date=request.route_date,
-                    revision=previous_revision + 1,
-                    previous_revision=previous_revision or None,
                     actor_id=plan.created_by,
+                    reason="plan_applied",
                     fingerprint="pending",
-                    diff={"assigned_ticket_ids": ticket_ids},
+                    plan_state=build_plan_state(
+                        plan.result_snapshot["public"],
+                        {
+                            route.worker_id: stored.id
+                            for route, stored in zip(data, saved, strict=True)
+                        },
+                    ),
                     result=result,
-                    is_current=True,
+                    at=clock(),
+                    plan_id=plan_id,
                 )
                 result["day_revision"] = revision_row.revision
                 revision_row.result = result
@@ -298,7 +360,6 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                         "day_revision": revision_row.revision,
                     },
                 }
-                session.add(revision_row)
                 session.flush()
             applied_fingerprint = fingerprint(
                 load_snapshot(

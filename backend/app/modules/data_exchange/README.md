@@ -6,7 +6,7 @@
 | Файл | Что делает |
 | --- | --- |
 | `registry.py` | Явный allowlist 25 таблиц, исключение секретов, порядок зависимостей |
-| `formats.py` | UTF-8 CSV, ZIP и XLSX; типизация, лимиты, защита от формул, сериализация |
+| `formats.py` | UTF-8 CSV, ZIP и XLSX; типизация, лимиты, защита от формул (общее правило `core/spreadsheet.py`, как в отчётах), сериализация |
 | `service.py` | Транзакция, перенос ID/связей, проверка ролей/склада/GeoJSON, квитанции |
 | `models.py` | Служебная таблица `data_imports`: fingerprint, результат, время |
 | `router.py` | `/api/v1/data/schema`, `/export`, `/import`; доступ observer |
@@ -30,7 +30,14 @@ python -m unittest tests.test_exchange_and_routes_api tests.test_exchange_roundt
 и три таблицы требований. norm_minutes экспортируется для проверки, но вычисляется
 БД при вставке. Одноимённый вид работ с одинаковыми компонентами норматива использует
 существующий ID (включая строки миграции 0011); расхождение нормативов отклоняет весь импорт.
+Формат выгрузки — 3; пакеты форматов 1 и 2 читаются (новых таблиц в них просто нет).
 Планы planning_plans и planning_plan_routes не экспортируются: это служебные снимки
-для проверки актуальности и применения. Таблицы оборудования на руках и журнала операций
-(office_kit_reserves, worker_appliances, appliance_operations, appliance_movements,
-ticket_appliance_states) исключены до T11. Сохранённые GeoJSON-маршруты экспортируются полностью.
+для проверки актуальности и применения. Не экспортируются также токены, подписки,
+data_imports и ticket_work_type_migration_issues (отчёт миграции 0022). С T11 в обмен входят
+оборудование на руках с журналом операций (office_kit_reserves, worker_appliances,
+appliance_operations, appliance_movements, ticket_appliance_states) и происхождение исходных
+файлов (source_imports, source_addresses, source_records). ID в составном ключе
+ticket_appliance_states и в `request` операций переносятся; `report` импорта исходного файла —
+квитанция исходной базы, ID в нём не переносятся. Сохранённые GeoJSON-маршруты экспортируются
+полностью. Исходные файлы организатора загружаются отдельным профилем:
+[source_import](../source_import/README.md).

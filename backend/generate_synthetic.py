@@ -184,6 +184,9 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             "completed": "completed",
             "wont_fix": "cancelled",
         }[status]
+        worker = (i - 1) % workers + 9
+        assigned_worker_id = worker if scenario not in ("unassigned", "missing_skill") else None
+
         add(
             "tickets",
             id=i,
@@ -229,11 +232,10 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
             planned_end_at=start + timedelta(minutes=duration + 10)
             if status in ("in_progress", "completed")
             else None,
+            assigned_worker_id=assigned_worker_id,
+            is_pinned=False,
         )
 
-        worker = (i - 1) % workers + 9
-        if scenario not in ("unassigned", "missing_skill"):
-            add("ticket_assignments", ticket_id=i, worker_id=worker)
         if i % 3 == 0:
             add(
                 "ticket_comments",
@@ -305,18 +307,118 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
     add(
         "day_plan_revisions",
         id=1,
+        service_area_id=1,
         district_id=1,
         route_date=start_date,
         revision=1,
         previous_revision=None,
+        superseded_at=None,
+        superseded_by_revision=None,
+        plan_id=None,
         event_id=1,
         actor_id=1,
+        reason="plan_applied",
         fingerprint=hashlib.sha256(f"synthetic-{seed}".encode()).hexdigest(),
         diff={},
         result={},
+        plan_state={},
         is_current=True,
+        effective_at=stamp,
         created_at=stamp,
     )
+    # Equipment on hand: the first allocation was issued to its engineer (T08 ledger).
+    assignees = {t["id"]: t["assigned_worker_id"] for t in tables["tickets"]}
+    allocation = next(a for a in tables["ticket_appliances"] if assignees[a["ticket_id"]])
+    holder = assignees[allocation["ticket_id"]]
+    add("office_kit_reserves", office_id=1, appliance_id=1, quantity=2, updated_at=stamp)
+    add(
+        "worker_appliances",
+        worker_id=holder,
+        appliance_id=allocation["appliance_id"],
+        quantity=allocation["quantity"],
+        updated_at=stamp,
+    )
+    add(
+        "appliance_operations",
+        id=1,
+        operation_key=f"synthetic-{seed}-issue-1",
+        kind="issue",
+        worker_id=holder,
+        ticket_id=None,
+        actor_id=1,
+        reason=None,
+        request={"worker_id": holder, "date": start_date.isoformat()},
+        recorded_at=stamp,
+    )
+    add(
+        "appliance_movements",
+        id=1,
+        operation_id=1,
+        appliance_id=allocation["appliance_id"],
+        quantity=allocation["quantity"],
+        ticket_id=allocation["ticket_id"],
+        from_office_id=allocation["office_id"],
+        from_worker_id=None,
+        to_office_id=None,
+        to_worker_id=holder,
+    )
+    add(
+        "ticket_appliance_states",
+        ticket_id=allocation["ticket_id"],
+        appliance_id=allocation["appliance_id"],
+        holder_worker_id=holder,
+        consumed_operation_id=None,
+    )
+    # Provenance of one fictional source-file row and one brigade (T11).
+    raw_row = {"Заявка": f"S{seed}-1", "Тип заявки BK": "Локальная заявка", "Адрес": "вымышлен"}
+    add(
+        "source_imports",
+        id=1,
+        service_area_id=1,
+        kind="demand",
+        filename="synthetic-source.csv",
+        file_sha256=hashlib.sha256(f"source-{seed}".encode()).hexdigest(),
+        mapping_version=1,
+        work_date=start_date,
+        office_id=1,
+        report={"counts": {"read": 1, "created": 1}},
+        created_by=1,
+        created_at=stamp,
+    )
+    add(
+        "source_addresses",
+        id=1,
+        service_area_id=1,
+        raw_address=f"Синтетический город {seed}-1, Вымышленная улица 1, д. 1",
+        location_id=1,
+        status="manual",
+        source="manual",
+        reviewed_by=1,
+        updated_at=stamp,
+    )
+    for record_id, kind, external_id, ticket_id, worker_id in (
+        (1, "demand", f"S{seed}-1", 1, None),
+        (2, "brigade", f"Синтетическая бригада {seed}", None, holder),
+    ):
+        add(
+            "source_records",
+            id=record_id,
+            import_id=1,
+            service_area_id=1,
+            kind=kind,
+            external_id=external_id,
+            row_number=2,
+            bk_type="Локальная заявка" if kind == "demand" else None,
+            hd_type="Работа с кабелем" if kind == "demand" else None,
+            raw=raw_row,
+            content_sha256=hashlib.sha256(json.dumps(raw_row).encode()).hexdigest(),
+            ticket_id=ticket_id,
+            worker_id=worker_id,
+            address_id=1 if kind == "demand" else None,
+            outcome="created",
+            created_at=stamp,
+            updated_at=stamp,
+        )
     # Saved routes are fixture snapshots, not an assertion that the optimizer found these plans.
     for w in range(workers):
         for day_index in range(days):

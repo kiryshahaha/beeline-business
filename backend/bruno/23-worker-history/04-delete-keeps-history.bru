@@ -1,0 +1,29 @@
+meta {
+  name: Удаление инженера с историей — 409 со связями
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{base_url}}/api/v1/users/{{history_worker_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 409
+  res.body.detail.code: eq user_has_history
+}
+
+tests {
+  test("Перечислены маршруты и маршруты применённых планов", function () {
+    const links = res.getBody().detail.links;
+    expect(links.routes).to.be.at.least(1);
+    expect(links.planning_plan_routes).to.be.at.least(1);
+    expect(res.getBody().detail.message).to.include("/archive");
+  });
+}

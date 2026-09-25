@@ -1,0 +1,53 @@
+meta {
+  name: Заявка с текстом, похожим на формулу
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "location_id": {{location_id}},
+    "title": "=1+1 отчёт T15",
+    "description": " @SUM(A1) и +7 999",
+    "work_type_id": 1,
+    "status": "planned",
+    "visit_window_start": "{{report_window_start}}",
+    "visit_window_end": "{{report_window_end}}",
+    "planned_start_at": null,
+    "planned_end_at": null,
+    "estimated_duration_minutes": 30,
+    "actual_duration_minutes": null
+  }
+}
+
+script:pre-request {
+  const now = Date.now();
+  bru.setVar("report_window_start", new Date(now + 60 * 60 * 1000).toISOString());
+  bru.setVar("report_window_end", new Date(now + 3 * 60 * 60 * 1000).toISOString());
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("report_formula_ticket_id", res.getBody().id);
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("Текст сохранён как есть", function () {
+    expect(res.getBody().title).to.equal("=1+1 отчёт T15");
+  });
+}

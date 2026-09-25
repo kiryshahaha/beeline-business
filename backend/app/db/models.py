@@ -28,10 +28,10 @@ from app.modules.planning.day_models import DayPlanRevision
 from app.modules.planning.models import PlanningPlan, PlanningPlanRoute
 from app.modules.routing.models import Route
 from app.modules.service_areas.models import ServiceArea
+from app.modules.source_import.models import SourceAddress, SourceImport, SourceRecord
 from app.modules.streets.models import Street
 from app.modules.tickets.models import (
     Ticket,
-    TicketAssignment,
     TicketWorkTypeMigrationIssue,
 )
 from app.modules.users.models import (
@@ -72,10 +72,12 @@ __all__ = [
     "RefreshToken",
     "Route",
     "ServiceArea",
+    "SourceAddress",
+    "SourceImport",
+    "SourceRecord",
     "Street",
     "Ticket",
     "TicketAppliance",
-    "TicketAssignment",
     "TicketWorkTypeMigrationIssue",
     "TicketComment",
     "User",

@@ -1,0 +1,41 @@
+meta {
+  name: Синтетические данные — загрузка с геокодированием
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/data/sources/import?dataset=Bruno&dry_run=false&geocode=true
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:multipart-form {
+  file: @file(fixtures/source-demand.csv)
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    bru.setVar("source_import_id", res.getBody().import_id);
+    bru.setVar("source_area_id", res.getBody().service_area.id);
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.import_id: isNumber
+}
+
+tests {
+  test("Заявки созданы, координаты по статусам", function () {
+    const body = res.getBody();
+    expect(body.counts.created).to.equal(6);
+    expect(body.by_category).to.deep.equal({additional: 1, connection: 2, emergency: 1, repair: 2});
+    expect(body.coordinates.ambiguous).to.equal(1);
+    expect(body.office.coordinates).to.equal("geocoded");
+  });
+}

@@ -72,7 +72,6 @@ class PlanningBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sum(len(c["sources"]) * len(c["targets"]) for c in calls), 2 * 52 * 52)
         for matrix in problem.matrices.values():
             self.assertTrue(all(value is not None for row in matrix.time_minutes for value in row))
-        self.assertEqual(problem.penalties[2], 2001 * (len(prepared()["tickets"]) + 2))
         self.assertEqual(problem.vehicle_fixed_cost, 0)
 
     async def test_duplicate_coordinates_stay_distinct_logical_visits(self):

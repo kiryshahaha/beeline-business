@@ -27,14 +27,7 @@ TICKET_SELECT_SQL = """
         t.visit_window_start, t.visit_window_end, t.planned_start_at, t.planned_end_at,
         t.estimated_duration_minutes, t.actual_duration_minutes,
         t.created_at, t.updated_at,
-        COALESCE(
-            (
-                SELECT array_agg(ta.worker_id ORDER BY ta.worker_id)
-                FROM ticket_assignments AS ta
-                WHERE ta.ticket_id = t.id
-            ),
-            ARRAY[]::integer[]
-        ) AS assignee_ids,
+        t.assigned_worker_id, t.is_pinned,
         c.id AS city_id, c.name AS city,
         d.id AS district_id, d.name AS district,
         s.id AS street_id, s.name AS street,
@@ -55,22 +48,15 @@ TICKET_SELECT_SQL = """
 FOREMAN_VISIBILITY_SQL = """
     EXISTS (
         SELECT 1
-        FROM ticket_assignments AS visible_assignment
-        JOIN brigade_members AS visible_member
-            ON visible_member.worker_id = visible_assignment.worker_id
+        FROM brigade_members AS visible_member
         JOIN brigades AS visible_brigade ON visible_brigade.id = visible_member.brigade_id
-        WHERE visible_assignment.ticket_id = t.id
+        WHERE visible_member.worker_id = t.assigned_worker_id
           AND visible_brigade.foreman_id = :foreman_id
     )
 """
 
 WORKER_VISIBILITY_SQL = """
-    EXISTS (
-        SELECT 1
-        FROM ticket_assignments AS visible_assignment
-        WHERE visible_assignment.ticket_id = t.id
-          AND visible_assignment.worker_id = :worker_id
-    )
+    t.assigned_worker_id = :worker_id
 """
 
 
@@ -138,7 +124,16 @@ def find_worker_ids(session: Session, worker_ids: list[int]) -> set[int]:
         return set()
     return set(
         session.execute(
-            text("SELECT user_id FROM workers WHERE user_id = ANY(:worker_ids)"),
+            text(
+                """
+                SELECT w.user_id
+                FROM workers AS w
+                JOIN users AS u ON u.id = w.user_id
+                WHERE w.user_id = ANY(:worker_ids)
+                  AND u.role = 'worker'
+                  AND u.archived_at IS NULL
+                """
+            ),
             {"worker_ids": worker_ids},
         )
         .scalars()
@@ -152,40 +147,38 @@ def find_worker_line_statuses(session: Session, worker_ids: list[int]) -> dict[i
     return dict(
         session.execute(
             text("""
-                SELECT user_id, is_on_line
-                FROM workers
-                WHERE user_id = ANY(:worker_ids)
-                ORDER BY user_id
-                FOR KEY SHARE
+                SELECT w.user_id, w.is_on_line
+                FROM workers AS w
+                JOIN users AS u ON u.id = w.user_id
+                -- An archived engineer or a former worker keeps history but gets no new work.
+                WHERE w.user_id = ANY(:worker_ids)
+                  AND u.role = 'worker'
+                  AND u.archived_at IS NULL
+                ORDER BY w.user_id
+                FOR KEY SHARE OF w
             """),
             {"worker_ids": worker_ids},
         ).all()
     )
 
 
-def replace_assignees(session: Session, ticket_id: int, worker_ids: list[int]) -> set[int]:
-    current_ids = set(
-        session.execute(
-            text("SELECT worker_id FROM ticket_assignments WHERE ticket_id = :ticket_id"),
-            {"ticket_id": ticket_id},
-        )
-        .scalars()
-        .all()
-    )
-    requested_ids = set(worker_ids)
-    session.execute(
-        text("DELETE FROM ticket_assignments WHERE ticket_id = :ticket_id"),
+def update_assignment(
+    session: Session, ticket_id: int, worker_id: int | None, is_pinned: bool = True
+) -> tuple[int | None, int | None]:
+    old_worker_id = session.execute(
+        text("SELECT assigned_worker_id FROM tickets WHERE id = :ticket_id FOR UPDATE"),
         {"ticket_id": ticket_id},
+    ).scalar_one()
+
+    session.execute(
+        text("""
+            UPDATE tickets
+            SET assigned_worker_id = :worker_id, is_pinned = :is_pinned, updated_at = now()
+            WHERE id = :ticket_id
+        """),
+        {"ticket_id": ticket_id, "worker_id": worker_id, "is_pinned": is_pinned},
     )
-    for worker_id in sorted(requested_ids):
-        session.execute(
-            text("""
-                INSERT INTO ticket_assignments (ticket_id, worker_id)
-                VALUES (:ticket_id, :worker_id)
-            """),
-            {"ticket_id": ticket_id, "worker_id": worker_id},
-        )
-    return requested_ids - current_ids
+    return old_worker_id, worker_id
 
 
 def is_worker_assigned(session: Session, ticket_id: int, worker_id: int) -> bool:
@@ -194,8 +187,8 @@ def is_worker_assigned(session: Session, ticket_id: int, worker_id: int) -> bool
             text("""
                 SELECT EXISTS (
                     SELECT 1
-                    FROM ticket_assignments
-                    WHERE ticket_id = :ticket_id AND worker_id = :worker_id
+                    FROM tickets
+                    WHERE id = :ticket_id AND assigned_worker_id = :worker_id
                 )
             """),
             {"ticket_id": ticket_id, "worker_id": worker_id},
@@ -298,10 +291,8 @@ def find_tickets(
     if brigade_id is not None:
         conditions.append("""
             EXISTS (
-                SELECT 1 FROM ticket_assignments AS brigade_assignment
-                JOIN brigade_members AS brigade_member
-                    ON brigade_member.worker_id = brigade_assignment.worker_id
-                WHERE brigade_assignment.ticket_id = t.id
+                SELECT 1 FROM brigade_members AS brigade_member
+                    WHERE brigade_member.worker_id = t.assigned_worker_id
                   AND brigade_member.brigade_id = :brigade_id
             )
         """)

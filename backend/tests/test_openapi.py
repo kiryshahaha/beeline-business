@@ -33,6 +33,8 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/users",
             "/api/v1/users/me",
             "/api/v1/users/{id}",
+            "/api/v1/users/{id}/archive",
+            "/api/v1/users/{id}/restore",
             "/api/v1/workers/{worker_id}/line-status",
             "/api/v1/workers/{worker_id}/unavailable",
             "/api/v1/workers/{worker_id}/day-state",
@@ -47,6 +49,7 @@ class OpenApiTests(unittest.TestCase):
             "/api/v1/analytics/brigades-workload",
             "/api/v1/analytics/recent-activity",
             "/api/v1/reports/tickets/export",
+            "/api/v1/reports/plans/{plan_id}/export",
             "/api/v1/planning/policy",
             "/api/v1/planning/days/{district_id}/{route_date}/redirect",
         ]
@@ -57,6 +60,14 @@ class OpenApiTests(unittest.TestCase):
         self.assertIn("get", user_by_id_ops)
         self.assertIn("patch", user_by_id_ops)
         self.assertIn("delete", user_by_id_ops)
+        for action in ("archive", "restore"):
+            operation = paths[f"/api/v1/users/{{id}}/{action}"]["post"]
+            self.assertIn({"BearerAuth": []}, operation["security"])
+        self.assertIn("409", user_by_id_ops["delete"]["responses"])
+        self.assertIn(
+            "include_archived",
+            {parameter["name"] for parameter in paths["/api/v1/users"]["get"]["parameters"]},
+        )
 
         self.assertIn("post", paths["/api/v1/brigades"])
         self.assertIn("get", paths["/api/v1/brigades"])
@@ -111,6 +122,16 @@ class OpenApiTests(unittest.TestCase):
         self.assertIn(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", report_content
         )
+        plan_report = paths["/api/v1/reports/plans/{plan_id}/export"]["get"]
+        self.assertIn({"BearerAuth": []}, plan_report["security"])
+        self.assertEqual(
+            set(plan_report["responses"]["200"]["content"]),
+            {
+                "application/zip",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            },
+        )
+        self.assertIn("404", plan_report["responses"])
         workload_operation = paths["/api/v1/analytics/brigades-workload"]["get"]
         self.assertIn({"BearerAuth": []}, workload_operation["security"])
         self.assertEqual(

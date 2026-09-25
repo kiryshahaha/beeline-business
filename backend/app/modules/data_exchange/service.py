@@ -15,6 +15,7 @@ from app.core.security import hash_password
 from app.modules.data_exchange.formats import ExchangeError, json_default
 from app.modules.data_exchange.models import DataImport
 from app.modules.data_exchange.registry import TABLES, columns_for
+from app.modules.planning.day_plans import service_area_for_district
 from app.modules.routing.schemas import RouteGeoJSON, StopFeature
 
 
@@ -39,6 +40,26 @@ def _remap(name: str, value, tables: dict, ids: dict):
     if value not in ids.get(name, {}):
         raise ValueError(f"Ссылка {name}:{value} отсутствует в пакете")
     return ids[name][value]
+
+
+def _remap_operation_request(request, tables: dict, ids: dict):
+    """Replay of an inventory operation compares this request, so its IDs must follow."""
+    if not isinstance(request, dict):
+        return request
+    result = dict(request)
+    for key, target in (("worker_id", "users"), ("office_id", "offices"), ("ticket_id", "tickets")):
+        if result.get(key) is not None:
+            result[key] = _remap(target, result[key], tables, ids)
+    if "ticket_ids" in result:
+        result["ticket_ids"] = sorted(
+            _remap("tickets", t, tables, ids) for t in result["ticket_ids"]
+        )
+    if "items" in result:
+        result["items"] = sorted(
+            [_remap("appliances", appliance, tables, ids), quantity]
+            for appliance, quantity in result["items"]
+        )
+    return result
 
 
 def _validate_route(session: Session, values: dict, tables: dict, ids: dict) -> None:
@@ -119,6 +140,42 @@ def _validate_business_rules(session: Session, tables: dict, ids: dict, inserted
             )
 
 
+def _continue_day_plan_chain(session: Session, values: dict) -> None:
+    """Append an imported revision after the history the target day already has.
+
+    One service area and date have exactly one current revision, so a package cannot
+    simply re-insert its own numbering into a database that already knows that day.
+    The imported chain keeps its shape and shifts past the existing maximum, and the
+    revision it replaces is closed the same way a published one is.
+    """
+    area_id, route_date = values.get("service_area_id"), values.get("route_date")
+    if area_id is None or route_date is None:
+        return
+    offset = session.execute(
+        text(
+            "SELECT COALESCE(max(revision), 0) FROM day_plan_revisions "
+            "WHERE service_area_id = :area AND route_date = :route_date"
+        ),
+        {"area": area_id, "route_date": route_date},
+    ).scalar_one()
+    if offset:
+        for field in ("revision", "previous_revision", "superseded_by_revision"):
+            if values.get(field) is not None:
+                values[field] = values[field] + offset
+        values["previous_revision"] = values.get("previous_revision") or offset
+    if not values.get("is_current"):
+        return
+    session.execute(
+        text(
+            "UPDATE day_plan_revisions SET is_current = false, "
+            "superseded_at = COALESCE(superseded_at, now()), "
+            "superseded_by_revision = COALESCE(superseded_by_revision, :revision) "
+            "WHERE service_area_id = :area AND route_date = :route_date AND is_current"
+        ),
+        {"area": area_id, "route_date": route_date, "revision": values["revision"]},
+    )
+
+
 def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: bool = False) -> dict:
     fingerprint = hashlib.sha256(
         json.dumps(
@@ -172,6 +229,18 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                         # city_id participates in two composite FKs, neither targets cities.id.
                         if name == "buildings":
                             values["city_id"] = _remap("cities", values["city_id"], tables, ids)
+                        # The composite key targets ticket_appliances, whose parts are IDs.
+                        if name == "ticket_appliance_states":
+                            values["ticket_id"] = _remap(
+                                "tickets", values["ticket_id"], tables, ids
+                            )
+                            values["appliance_id"] = _remap(
+                                "appliances", values["appliance_id"], tables, ids
+                            )
+                        if name == "appliance_operations":
+                            values["request"] = _remap_operation_request(
+                                values.get("request"), tables, ids
+                            )
                         for column in table.columns:
                             for foreign in column.foreign_keys:
                                 if foreign.column.name == "id" or (
@@ -251,6 +320,21 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                                 ids[name][source_id] = existing["id"]
                                 inserted[name].append(dict(existing))
                                 continue
+                        if name == "day_plan_revisions":
+                            if values.get("service_area_id") is None:
+                                district_id = values.get("district_id")
+                                if district_id is None:
+                                    raise ValueError(
+                                        "Для ревизии без service_area_id требуется district_id"
+                                    )
+                                values["service_area_id"] = service_area_for_district(
+                                    session, district_id
+                                )
+                                if values["service_area_id"] is None:
+                                    raise ValueError(
+                                        "Для района из ревизии не найдена зона обслуживания"
+                                    )
+                            _continue_day_plan_chain(session, values)
                         if name == "service_areas":
                             code = values.get("code")
                             if code:

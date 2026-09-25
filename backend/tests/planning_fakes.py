@@ -118,6 +118,5 @@ class FeasiblePlanner:
             routes=routes,
             dropped_nodes=sorted(remaining),
             total_distance=sum(r["distance"] for r in routes),
-            total_cost=sum(r["travel_minutes"] for r in routes)
-            + sum(problem.penalties[n] for n in remaining),
+            total_cost=sum(r["travel_minutes"] for r in routes),
         )

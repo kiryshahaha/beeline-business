@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 USER_SELECT_COLUMNS = """
     u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
-    u.created_at, u.updated_at,
+    u.created_at, u.updated_at, u.archived_at,
     w.workshift_start, w.workshift_end, w.transport_type, w.is_on_line,
     w.service_area_id, w.start_location_id, w.stock_office_id, w.end_location_id,
     b.id AS brigade_id, b.name AS brigade_name,
@@ -26,7 +26,7 @@ USER_SELECT_JOINS = """
 
 USER_SELECT_GROUP_BY = """
     GROUP BY u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
-             u.created_at, u.updated_at, w.workshift_start, w.workshift_end,
+             u.created_at, u.updated_at, u.archived_at, w.workshift_start, w.workshift_end,
              w.transport_type, w.is_on_line,
              w.service_area_id, w.start_location_id, w.stock_office_id, w.end_location_id,
              b.id, b.name
@@ -186,6 +186,7 @@ def list_users(
     brigade_id: int | None = None,
     viewer_id: int | None = None,
     viewer_role: str | None = None,
+    include_archived: bool = False,
 ) -> list[RowMapping]:
     return list(
         session.execute(
@@ -193,6 +194,7 @@ def list_users(
                 SELECT {USER_SELECT_COLUMNS}
                 {USER_SELECT_JOINS}
                 WHERE (CAST(:role AS TEXT) IS NULL OR u.role = :role)
+                  AND (:include_archived OR u.archived_at IS NULL)
                   AND (
                     CAST(:brigade_id AS integer) IS NULL
                     OR b.id = CAST(:brigade_id AS integer)
@@ -228,6 +230,7 @@ def list_users(
                 "brigade_id": brigade_id,
                 "viewer_id": viewer_id,
                 "viewer_role": viewer_role,
+                "include_archived": include_archived,
             },
         )
         .mappings()
@@ -281,11 +284,121 @@ def upsert_worker(session: Session, user_id: int, values: dict[str, object]) -> 
     )
 
 
-def delete_worker(session: Session, user_id: int) -> None:
-    session.execute(
-        text("DELETE FROM workers WHERE user_id = :user_id"),
-        {"user_id": user_id},
+def lock_user(session: Session, user_id: int) -> RowMapping | None:
+    return (
+        session.execute(
+            text("SELECT id, role, archived_at FROM users WHERE id = :user_id FOR UPDATE"),
+            {"user_id": user_id},
+        )
+        .mappings()
+        .one_or_none()
     )
+
+
+def set_archived(session: Session, user_id: int, archived: bool) -> None:
+    session.execute(
+        text("""
+            UPDATE users
+            SET archived_at = CASE WHEN :archived THEN now() END, updated_at = now()
+            WHERE id = :user_id
+        """),
+        {"user_id": user_id, "archived": archived},
+    )
+
+
+def find_active_work(session: Session, worker_id: int) -> dict[str, list]:
+    """Work that would be orphaned if the engineer stopped receiving tickets now."""
+    ticket_ids = (
+        session.execute(
+            text("""
+                SELECT ticket.id
+                FROM tickets AS ticket
+                WHERE ticket.assigned_worker_id = :worker_id
+                  AND ticket.status IN ('planned', 'in_progress')
+                ORDER BY ticket.id
+            """),
+            {"worker_id": worker_id},
+        )
+        .scalars()
+        .all()
+    )
+    equipment = (
+        session.execute(
+            text("""
+                SELECT appliance_id, quantity
+                FROM worker_appliances
+                WHERE worker_id = :worker_id AND quantity > 0
+                ORDER BY appliance_id
+            """),
+            {"worker_id": worker_id},
+        )
+        .mappings()
+        .all()
+    )
+    return {"ticket_ids": list(ticket_ids), "equipment_on_hand": [dict(row) for row in equipment]}
+
+
+def end_worker_duties(session: Session, user_id: int) -> None:
+    """Current brigade membership and the worker-only calendar link end; history stays."""
+    session.execute(
+        text("DELETE FROM brigade_members WHERE worker_id = :user_id"), {"user_id": user_id}
+    )
+    session.execute(
+        text("DELETE FROM calendar_tokens WHERE user_id = :user_id"), {"user_id": user_id}
+    )
+
+
+def delete_push_subscriptions(session: Session, user_id: int) -> None:
+    session.execute(
+        text("DELETE FROM push_subscriptions WHERE user_id = :user_id"), {"user_id": user_id}
+    )
+
+
+# Rows that only serve the live account; every other reference to a user is history.
+DISPOSABLE_REFERENCES = (
+    "brigade_members",
+    "calendar_tokens",
+    "notification_events",
+    "push_subscriptions",
+    "refresh_tokens",
+    "worker_skill_assignments",
+    "workers",
+)
+
+
+def find_history_links(session: Session, user_id: int) -> dict[str, int]:
+    """Count rows of every table that references the user or the worker profile.
+
+    Foreign keys are read from the catalog, so a history table added later is protected
+    without changing this function: only DISPOSABLE_REFERENCES may be deleted with the user.
+    """
+    references = session.execute(
+        text("""
+            SELECT child.relname AS table_name, attribute.attname AS column_name
+            FROM pg_constraint AS fk
+            JOIN pg_class AS child ON child.oid = fk.conrelid
+            JOIN pg_class AS parent ON parent.oid = fk.confrelid
+            JOIN pg_attribute AS attribute
+                ON attribute.attrelid = fk.conrelid AND attribute.attnum = fk.conkey[1]
+            WHERE fk.contype = 'f'
+              AND cardinality(fk.conkey) = 1
+              AND parent.relnamespace = to_regnamespace(current_schema())
+              AND parent.relname IN ('users', 'workers')
+              AND child.relname <> ALL(:disposable)
+            ORDER BY child.relname, attribute.attname
+        """),
+        {"disposable": list(DISPOSABLE_REFERENCES)},
+    ).all()
+    links: dict[str, int] = {}
+    for table_name, column_name in references:
+        table = '"' + table_name.replace('"', '""') + '"'
+        column = '"' + column_name.replace('"', '""') + '"'
+        count = session.execute(
+            text(f"SELECT count(*) FROM {table} WHERE {column} = :user_id"), {"user_id": user_id}
+        ).scalar_one()
+        if count:
+            links[table_name] = links.get(table_name, 0) + count
+    return links
 
 
 def clear_worker_skills(session: Session, worker_id: int) -> None:
@@ -314,10 +427,13 @@ def lock_worker_line_status(session: Session, worker_id: int) -> RowMapping | No
     return (
         session.execute(
             text("""
-                SELECT user_id, is_on_line, workshift_start, workshift_end
-                FROM workers
-                WHERE user_id = :worker_id
-                FOR UPDATE
+                SELECT w.user_id, w.is_on_line, w.workshift_start, w.workshift_end
+                FROM workers AS w
+                JOIN users AS u ON u.id = w.user_id
+                WHERE w.user_id = :worker_id
+                  AND u.role = 'worker'
+                  AND u.archived_at IS NULL
+                FOR UPDATE OF w
             """),
             {"worker_id": worker_id},
         )
@@ -341,13 +457,12 @@ def release_planned_assignments(session: Session, worker_id: int) -> list[int]:
     return sorted(
         session.execute(
             text("""
-                DELETE FROM ticket_assignments AS assignment
-                USING tickets AS ticket
-                WHERE assignment.ticket_id = ticket.id
-                  AND assignment.worker_id = :worker_id
-                  AND ticket.status = 'planned'
-                  AND ticket.lifecycle_state IN ('waiting_assignment', 'assigned')
-                RETURNING assignment.ticket_id
+                UPDATE tickets
+                SET assigned_worker_id = NULL
+                WHERE assigned_worker_id = :worker_id
+                  AND status = 'planned'
+                  AND lifecycle_state IN ('waiting_assignment', 'assigned')
+                RETURNING id
             """),
             {"worker_id": worker_id},
         )
@@ -369,8 +484,7 @@ def clear_planned_times_without_assignees(session: Session, ticket_ids: list[int
               AND ticket.status = 'planned'
               AND NOT EXISTS (
                   SELECT 1
-                  FROM ticket_assignments AS assignment
-                  WHERE assignment.ticket_id = ticket.id
+                  WHERE ticket.assigned_worker_id IS NOT NULL
               )
         """),
         {"ticket_ids": ticket_ids},
@@ -388,15 +502,14 @@ def list_worker_day_contexts(session: Session, worker_id: int) -> list[RowMappin
                         (ticket.visit_window_start AT TIME ZONE 'Europe/Moscow')::date
                     )
                     AS route_date
-                FROM ticket_assignments AS assignment
-                JOIN tickets AS ticket ON ticket.id = assignment.ticket_id
+                FROM tickets AS ticket
                 JOIN locations AS location ON location.id = ticket.location_id
                 JOIN buildings AS building ON building.id = location.building_id
                 LEFT JOIN routes AS route
-                    ON route.worker_id = assignment.worker_id
+                    ON route.worker_id = ticket.assigned_worker_id
                    AND route.route_date =
                        (ticket.visit_window_start AT TIME ZONE 'Europe/Moscow')::date
-                WHERE assignment.worker_id = :worker_id
+                WHERE ticket.assigned_worker_id = :worker_id
                 ORDER BY building.district_id, route_date
                 """
             ),

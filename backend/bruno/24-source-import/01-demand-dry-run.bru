@@ -1,0 +1,35 @@
+meta {
+  name: Синтетические данные — dry-run
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/v1/data/sources/import?dataset=Bruno
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:multipart-form {
+  file: @file(fixtures/source-demand.csv)
+}
+
+assert {
+  res.status: eq 200
+  res.body.dry_run: eq true
+  res.body.import_id: isNull
+}
+
+tests {
+  test("Каждая строка учтена, запись не выполнена", function () {
+    const body = res.getBody();
+    expect(body.counts).to.deep.equal({read: 6, created: 6, updated: 0, unchanged: 0, rejected: 0});
+    expect(body.file.encoding).to.equal("cp1251");
+    expect(body.office.address).to.include("Учебная");
+    expect(body.pending_geocoding).to.equal(6);
+  });
+}

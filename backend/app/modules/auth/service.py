@@ -25,11 +25,17 @@ class InvalidTokenError(Exception):
     pass
 
 
+class ArchivedUserError(Exception):
+    pass
+
+
 def authenticate_user(session: Session, username: str, password: str) -> TokenResponse:
     with session.begin():
         user = users_repository.find_user_by_username(session, username)
         if user is None or not verify_password(password, user["password_hash"]):
             raise InvalidCredentialsError
+        if user["archived_at"] is not None:
+            raise ArchivedUserError
 
         settings = get_settings()
         payload = {
@@ -71,7 +77,7 @@ def refresh_access_token(session: Session, raw_token: str) -> TokenResponse:
             raise InvalidTokenError
 
         user = users_repository.find_user_by_id(session, user_id)
-        if user is None:
+        if user is None or user["archived_at"] is not None:
             raise InvalidTokenError
 
         settings = get_settings()

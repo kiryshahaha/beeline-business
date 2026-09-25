@@ -1,0 +1,30 @@
+meta {
+  name: Повторная загрузка без изменений
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/v1/data/sources/import?dataset=Bruno&dry_run=false
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:multipart-form {
+  file: @file(fixtures/source-demand.csv)
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Новых заявок нет", function () {
+    expect(res.getBody().counts.unchanged).to.equal(6);
+    expect(res.getBody().counts.created).to.equal(0);
+  });
+}

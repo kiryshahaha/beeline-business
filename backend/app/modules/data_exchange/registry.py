@@ -25,12 +25,19 @@ TABLE_NAMES = frozenset(
         "brigades",
         "brigade_members",
         "tickets",
-        "ticket_assignments",
         "ticket_comments",
         "appliances",
         "appliance_stocks",
         "ticket_appliances",
+        "office_kit_reserves",
+        "worker_appliances",
+        "appliance_operations",
+        "appliance_movements",
+        "ticket_appliance_states",
         "equipment_movements",
+        "source_imports",
+        "source_addresses",
+        "source_records",
         "notification_events",
         "work_events",
         "worker_day_states",
@@ -40,8 +47,15 @@ TABLE_NAMES = frozenset(
 )
 TABLES = {table.name: table for table in Base.metadata.sorted_tables if table.name in TABLE_NAMES}
 TABLES["routes"] = TABLES.pop("routes")  # GeoJSON also refers to tickets and locations.
-EXCLUDED_COLUMNS = {"users": {"password_hash"}}
-FORMAT_VERSION = "2"
+EXCLUDED_COLUMNS = {
+    "users": {"password_hash"},
+    # A revision points at the preview that produced it, and previews are not part
+    # of the exchange: carrying the UUID over would reference a missing plan.
+    "day_plan_revisions": {"plan_id"},
+}
+# Format 4 adds service-area keyed plan revisions. Older packages remain readable.
+FORMAT_VERSION = "4"
+READABLE_FORMATS = ("1", "2", "3", FORMAT_VERSION)
 
 
 def columns_for(name: str):
@@ -72,10 +86,7 @@ def describe_tables() -> dict:
             "data_imports",
             "planning_plans",
             "planning_plan_routes",
-            "office_kit_reserves",
-            "worker_appliances",
-            "appliance_operations",
-            "appliance_movements",
-            "ticket_appliance_states",
+            "day_plan_revisions.plan_id",
+            "ticket_work_type_migration_issues",
         ],
     }

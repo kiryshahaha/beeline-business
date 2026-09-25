@@ -130,7 +130,7 @@ class BrigadesApiTests(DatabaseTestCase):
                 "name": "Неверный",
                 "foreman_id": self.worker_one.id,
                 "office_id": self.office_id,
-                "worker_ids": [],
+                "worker_id": None,
             },
             headers=self.auth_header("observer"),
         )
@@ -179,7 +179,7 @@ class BrigadesApiTests(DatabaseTestCase):
             json={
                 "foreman_id": self.worker_three.id,
                 "office_id": self.office_id,
-                "worker_ids": [],
+                "worker_id": None,
             },
             headers=self.auth_header("observer"),
         )

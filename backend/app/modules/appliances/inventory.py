@@ -57,8 +57,10 @@ def find_worker(session: Session, worker_id: int) -> dict:
     row = (
         session.execute(
             text("""
-                SELECT w.user_id, w.workshift_start, w.workshift_end, b.office_id
+                SELECT w.user_id, w.workshift_start, w.workshift_end, b.office_id,
+                       u.role = 'worker' AND u.archived_at IS NULL AS active
                 FROM workers w
+                JOIN users u ON u.id = w.user_id
                 LEFT JOIN brigade_members bm ON bm.worker_id = w.user_id
                 LEFT JOIN brigades b ON b.id = bm.brigade_id
                 WHERE w.user_id = :id
@@ -218,9 +220,7 @@ def ticket_lines(session: Session, worker_id: int, day: date) -> list[dict]:
         text(f"""
             SELECT ta.ticket_id, ta.appliance_id, ta.office_id, ta.quantity
             FROM ticket_appliances ta
-            JOIN tickets t ON t.id = ta.ticket_id
-            JOIN ticket_assignments asg
-              ON asg.ticket_id = ta.ticket_id AND asg.worker_id = :worker
+            JOIN tickets t ON t.id = ta.ticket_id AND t.assigned_worker_id = :worker
             LEFT JOIN ticket_appliance_states s
               ON s.ticket_id = ta.ticket_id AND s.appliance_id = ta.appliance_id
             WHERE s.ticket_id IS NULL AND t.status IN ('planned', 'in_progress')
@@ -325,6 +325,10 @@ def issue_kit(session: Session, worker_id: int, day: date, key: str, actor_id: i
     if (done := replay(session, key, "issue", request)) is not None:
         return done
     worker = find_worker(session, worker_id)
+    if not worker["active"]:
+        raise InventoryError(
+            "worker_inactive", f"Инженер №{worker_id} в архиве или больше не исполнитель", 409
+        )
     lines = ticket_lines(session, worker_id, day)
     lines += reserve_lines(session, worker, free_units(session, worker_id))
     if not lines:

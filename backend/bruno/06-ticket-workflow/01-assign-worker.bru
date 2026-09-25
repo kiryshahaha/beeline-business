@@ -15,7 +15,7 @@ auth:bearer {
 }
 
 body:json {
-  {"worker_ids":[{{worker_id}}]}
+  {"worker_id": {{worker_id}}}
 }
 
 assert {
@@ -24,6 +24,6 @@ assert {
 
 tests {
   test("Назначен выбранный исполнитель", function () {
-    expect(res.getBody().assignee_ids).to.deep.equal([Number(bru.getVar("worker_id"))]);
+    expect(res.getBody().assigned_worker_id).to.equal(Number(bru.getVar("worker_id")));
   });
 }

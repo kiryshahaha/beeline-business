@@ -1,0 +1,32 @@
+meta {
+  name: Адреса на проверку
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/api/v1/data/sources/addresses?service_area_id={{source_area_id}}&status=ambiguous
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+script:post-response {
+  if (res.getStatus() === 200 && res.getBody().length) bru.setVar("source_address_id", res.getBody()[0].id);
+}
+
+assert {
+  res.status: eq 200
+  res.body: isArray
+}
+
+tests {
+  test("Неуверенный ответ не стал координатами", function () {
+    const [address] = res.getBody();
+    expect(address.latitude).to.equal(null);
+    expect(address.candidate_latitude).to.not.equal(null);
+  });
+}

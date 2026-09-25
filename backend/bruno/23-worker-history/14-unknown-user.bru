@@ -1,0 +1,19 @@
+meta {
+  name: Архив неизвестного пользователя — 404
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{base_url}}/api/v1/users/2147483647/archive
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 404
+}

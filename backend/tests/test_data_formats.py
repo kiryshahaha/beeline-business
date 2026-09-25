@@ -1,15 +1,23 @@
 """File contracts: no database required, every table is exercised in both formats."""
 
 import copy
+import csv
 import io
+import json
 import unittest
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from openpyxl import load_workbook
 
 from app.db.base import Base
-from app.modules.data_exchange.formats import MAX_FILE_BYTES, ExchangeError, parse_file, serialize
-from app.modules.data_exchange.registry import TABLES
+from app.modules.data_exchange.formats import (
+    MAX_FILE_BYTES,
+    ExchangeError,
+    encode_cell,
+    parse_file,
+    serialize,
+)
+from app.modules.data_exchange.registry import TABLES, columns_for
 from generate_synthetic import generate_dataset
 from seed_synthetic import validate_database_url
 
@@ -56,11 +64,6 @@ class DataFormatTests(unittest.TestCase):
                 "data_imports",
                 "planning_plans",
                 "planning_plan_routes",
-                "office_kit_reserves",
-                "worker_appliances",
-                "appliance_operations",
-                "appliance_movements",
-                "ticket_appliance_states",
                 "ticket_work_type_migration_issues",
             },
         )
@@ -125,6 +128,16 @@ class DataFormatTests(unittest.TestCase):
                         book = load_workbook(io.BytesIO(content))
                         self.assertEqual(book["cities"]["B2"].data_type, "s")
                         book.close()
+
+    def test_xlsx_cell_limit_counts_utf16_units(self):
+        fits = "🙂" * 16_383 + "я"  # 32 767 UTF-16 units: an emoji takes two
+        book = load_workbook(io.BytesIO(serialize({"cities": [{"id": 1, "name": fits}]}, "xlsx")))
+        header = [cell.value for cell in book["cities"][1]]
+        self.assertEqual(book["cities"].cell(2, header.index("name") + 1).value, fits)
+        book.close()
+        with self.assertRaises(ExchangeError) as result:
+            serialize({"cities": [{"id": 1, "name": "🙂" * 16_384}]}, "xlsx")
+        self.assertEqual(result.exception.detail["column"], "name")
 
     def test_csv_delimiters_bom_and_errors_with_coordinates(self):
         for delimiter in (",", ";", "\t"):
@@ -193,3 +206,37 @@ class DataFormatTests(unittest.TestCase):
             archive.writestr("../cities.csv", "id,name\n1,A")
         with self.assertRaises(ExchangeError):
             parse_file(output.getvalue(), "data.zip")
+
+    def test_legacy_day_plan_revision_archive_remains_readable(self):
+        row = self.data["day_plan_revisions"][0]
+        legacy_only_columns = {
+            "service_area_id",
+            "superseded_at",
+            "superseded_by_revision",
+            "reason",
+            "effective_at",
+            "plan_state",
+        }
+        headers = [
+            column.name
+            for column in columns_for("day_plan_revisions")
+            if column.name not in legacy_only_columns
+        ]
+        text = io.StringIO(newline="")
+        writer = csv.writer(text, lineterminator="\r\n")
+        writer.writerow(headers)
+        writer.writerow([encode_cell(row.get(name)) for name in headers])
+
+        def package(version):
+            output = io.BytesIO()
+            with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+                archive.writestr("manifest.json", json.dumps({"format_version": version}))
+                archive.writestr("day_plan_revisions.csv", text.getvalue().encode("utf-8-sig"))
+            return output.getvalue()
+
+        parsed = parse_file(package("3"), "legacy.zip")["day_plan_revisions"][0]
+        self.assertIsNone(parsed["service_area_id"])
+        self.assertEqual(parsed["district_id"], row["district_id"])
+
+        with self.assertRaises(ExchangeError):
+            parse_file(package("4"), "current.zip")
