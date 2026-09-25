@@ -60,6 +60,8 @@ export function useNotificationsWS() {
             
             // Инвалидируем запросы заявок, чтобы они перезагрузились в фоне
             queryClient.invalidateQueries({ queryKey: ["ticketsList"] });
+            // Инвалидируем историю уведомлений, чтобы выпадашка обновилась
+            queryClient.invalidateQueries({ queryKey: ["notificationsHistory"] });
           }
         } catch (err) {
           console.error("Ошибка парсинга WS сообщения:", err);
