@@ -707,7 +707,7 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
 
         service_area_id = session.execute(
             text("SELECT id FROM service_areas WHERE code = :code"),
-            {"code": f"district_{district_id}"},
+            {"code": f"district_{district_row_id}"},
         ).scalar_one_or_none()
 
         office_id = get_or_create_id(
