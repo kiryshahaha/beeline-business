@@ -51,6 +51,7 @@ ReasonCategory = Literal[
     "mixed",
     "policy",
     "selection",
+    "sla",
 ]
 
 

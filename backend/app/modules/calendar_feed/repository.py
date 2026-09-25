@@ -62,7 +62,11 @@ def find_feed_tickets(session: Session, worker_id: int, since: datetime) -> list
         session.execute(
             text("""
                 SELECT
-                    t.id, t.title, t.description, t.work_type, t.status,
+                    t.id, t.title, t.description,
+                    COALESCE(wt.name, t.work_type) AS work_type,
+                    t.work_type_id, t.category, t.priority, t.received_at,
+                    t.sla_deadline_at, t.required_transport_type,
+                    t.status,
                     t.visit_window_start, t.visit_window_end,
                     t.planned_start_at, t.planned_end_at, t.updated_at,
                     l.id AS location_id,
@@ -74,6 +78,7 @@ def find_feed_tickets(session: Session, worker_id: int, since: datetime) -> list
                     l.floor, l.apartment, l.latitude, l.longitude
                 FROM ticket_assignments AS ta
                 JOIN tickets AS t ON t.id = ta.ticket_id
+                LEFT JOIN work_types AS wt ON wt.id = t.work_type_id
                 JOIN locations AS l ON l.id = t.location_id
                 JOIN buildings AS b ON b.id = l.building_id
                 JOIN streets AS s ON s.id = b.street_id

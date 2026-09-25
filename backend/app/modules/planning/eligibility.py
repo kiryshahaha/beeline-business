@@ -18,7 +18,7 @@ PROFILES = {
 
 
 def dt(value: str) -> datetime:
-    return datetime.fromisoformat(value)
+    return value if isinstance(value, datetime) else datetime.fromisoformat(value)
 
 
 def at(epoch: datetime, minutes: int) -> datetime:
@@ -200,7 +200,6 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         workers.append(worker)
     horizon = max((w["window"][1] for w in workers), default=1440)
     types_by_id = {x["id"]: x for x in snapshot["work_types"]}
-    types_by_name = {x["name"].strip().lower(): x for x in snapshot["work_types"]}
     rules = {x["work_type_id"]: x for x in snapshot["rules"]}
     stock = {(x["office_id"], x["appliance_id"]): x["stock"] for x in snapshot["stocks"]}
     reserved = {
@@ -212,16 +211,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
     for ticket in snapshot["tickets"]:
         ticket = dict(ticket)
         tid = ticket["id"]
-        raw_wt = ticket.get("work_type")
-        raw_clean = raw_wt.strip().lower() if raw_wt else None
-        if raw_clean in ("unknown", "unknown_work_type") or (
-            raw_clean and "unconfigured" in raw_clean
-        ):
-            work_type = None
-        else:
-            work_type = types_by_id.get(ticket.get("work_type_id")) or (
-                types_by_name.get(raw_clean) if raw_clean else None
-            )
+        work_type = types_by_id.get(ticket.get("work_type_id"))
         rule = rules.get(work_type["id"]) if work_type else None
         location = locations.get(ticket["location_id"])
         allocations = [a for a in snapshot["allocations"] if a["ticket_id"] == tid]
@@ -245,16 +235,19 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 else work_type["work_minutes"] + work_type["documents_minutes"]
             )
             window_start = dt(ticket["visit_window_start"])
+            received_at = dt(ticket["received_at"]) if ticket.get("received_at") else None
             if ticket.get("received_at"):
-                received = dt(ticket["received_at"])
-                if received > window_start:
-                    window_start = received
+                window_start = max(window_start, received_at)
             window_end = dt(ticket["visit_window_end"])
-            if ticket.get("sla_deadline_at"):
-                sla = dt(ticket["sla_deadline_at"])
-                if sla < window_end:
-                    window_end = sla
-            window = policy.start_window(window_start, window_end, epoch, duration, horizon)
+            sla_deadline_at = (
+                dt(ticket["sla_deadline_at"]) if ticket.get("sla_deadline_at") else None
+            )
+            earliest_completion = window_start + timedelta(minutes=duration)
+            if sla_deadline_at is not None and earliest_completion > sla_deadline_at:
+                reason = reasons.sla_deadline_missed(earliest_completion, sla_deadline_at, ticket)
+                window = None
+            else:
+                window = policy.start_window(window_start, window_end, epoch, duration, horizon)
             required = [
                 a for a in snapshot["required_appliances"] if a["work_type_id"] == work_type["id"]
             ]
@@ -282,7 +275,9 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 or reserved.get((a["office_id"], a["appliance_id"]), 0)
                 > stock.get((a["office_id"], a["appliance_id"]), 0)
             ]
-            if not 0 < duration <= 2880:
+            if reason is not None:
+                pass
+            elif not 0 < duration <= 2880:
                 reason = reasons.invalid_duration(
                     duration, rule["service_duration_source"], work_type
                 )
@@ -332,6 +327,8 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                         duration_source=rule["service_duration_source"],
                         category=ticket.get("category") or work_type.get("category") or "repair",
                         priority=ticket.get("priority") or work_type.get("default_priority") or 3,
+                        received_at=received_at.isoformat() if received_at else None,
+                        sla_deadline_at=(sla_deadline_at.isoformat() if sla_deadline_at else None),
                         work_type_id=work_type["id"],
                         rejected=candidates,
                         required_skill_ids=sorted(skills),
@@ -351,6 +348,11 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 else:
                     reason = reasons.no_eligible_worker(candidates)
         if reason:
+            reason = reasons.annotate_priority(
+                reason,
+                ticket.get("category") or (work_type or {}).get("category") or "repair",
+                ticket.get("priority") or (work_type or {}).get("default_priority") or 3,
+            )
             unassigned.append({"ticket_id": tid, "reason": reason, "candidates": candidates})
         else:
             tickets.append(ticket)

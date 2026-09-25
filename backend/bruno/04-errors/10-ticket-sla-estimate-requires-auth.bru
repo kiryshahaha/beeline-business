@@ -1,0 +1,22 @@
+meta {
+  name: Оценка SLA требует авторизацию
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/sla-estimate
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "previous_ticket_end_at": "2026-09-24T10:00:00+03:00",
+    "travel_minutes": 15
+  }
+}
+
+assert {
+  res.status: eq 401
+}

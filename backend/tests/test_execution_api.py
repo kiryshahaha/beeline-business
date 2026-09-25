@@ -120,7 +120,7 @@ class ExecutionApiTests(DatabaseTestCase):
                 "location_id": self.destination_location_id,
                 "title": title,
                 "description": "Проверка execution API",
-                "work_type": "Монтаж",
+                "work_type_id": 1,
                 "status": "planned",
                 "visit_window_start": "2030-01-15T08:00:00+00:00",
                 "visit_window_end": "2030-01-15T16:00:00+00:00",

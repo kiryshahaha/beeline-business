@@ -240,6 +240,12 @@ def find_recent_activity(
             feed.occurred_at,
             feed.ticket_id,
             t.title AS ticket_title,
+            t.work_type_id,
+            COALESCE(wt.name, t.work_type) AS work_type,
+            t.category,
+            t.priority,
+            t.received_at,
+            t.sla_deadline_at,
             t.status AS ticket_status,
             feed.previous_status,
             feed.new_status,
@@ -256,6 +262,7 @@ def find_recent_activity(
             assignee.role AS assignee_role
         FROM ({ACTIVITY_FEED_SQL}) AS feed
         JOIN tickets AS t ON t.id = feed.ticket_id
+        LEFT JOIN work_types AS wt ON wt.id = t.work_type_id
         LEFT JOIN users AS actor ON actor.id = feed.actor_id
         LEFT JOIN users AS assignee ON assignee.id = feed.worker_id
         {scope}
