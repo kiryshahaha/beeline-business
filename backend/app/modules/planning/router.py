@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from app.core import oplog
 from app.core.config import get_settings
 from app.db.session import get_engine, get_session
 from app.modules.appliances.inventory import InventoryError
@@ -107,7 +108,25 @@ async def preview(
     if not _preview_slots.acquire(blocking=False):
         raise HTTPException(503, detail={"code": "planning_busy"}, headers={"Retry-After": "5"})
     try:
-        result = await service.preview(engine, data, actor.id, settings, provider, planner, clock)
+        with oplog.operation(
+            "planning.preview",
+            route_date=data.route_date,
+            service_area_id=data.service_area_id,
+            requested_tickets=len(data.ticket_ids),
+            requested_workers=len(data.worker_ids),
+        ) as fields:
+            result = await service.preview(
+                engine, data, actor.id, settings, provider, planner, clock
+            )
+            metrics = result.get("metrics") or {}
+            oplog.merge_stages((metrics.get("routing") or {}).get("stages"))
+            fields.update(
+                plan_id=result["plan_id"],
+                plan_outcome=result["outcome"],
+                solver_status=result.get("solver_status"),
+                assigned_tickets=metrics.get("assigned_tickets"),
+                unassigned_tickets=metrics.get("unassigned_tickets"),
+            )
         response.headers["Location"] = f"/api/v1/planning/plans/{result['plan_id']}"
         return result
     except (PlanningError, OperationalError) as error:
@@ -177,7 +196,15 @@ async def apply_plan(
     clock=Depends(get_clock),
 ):
     try:
-        return await asyncio.to_thread(service.apply_plan, engine, plan_id, clock)
+        with oplog.operation("planning.apply", plan_id=plan_id) as fields:
+            result = await asyncio.to_thread(service.apply_plan, engine, plan_id, clock)
+            fields.update(
+                day_revision=result.get("day_revision"),
+                already_applied=result.get("already_applied"),
+                routes=len(result.get("routes") or []),
+                assigned_tickets=len(result.get("assigned_ticket_ids") or []),
+            )
+        return result
     except (PlanningError, InventoryError, OperationalError) as error:
         fail(error)
 

@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     planning_solve_time_limit_seconds: int = Field(default=5, ge=1, le=10)
     planning_total_timeout_seconds: float = Field(default=60, gt=0, le=300)
     planning_preview_ttl_seconds: int = Field(default=300, ge=1, le=3600)
+    # Bounded wait for the shared planning lock; see app/core/planning_guard.py.
+    planning_lock_timeout_seconds: float = Field(default=5, gt=0, le=60)
+    operation_log_level: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR)$")
+    # Retention (app/modules/maintenance/retention.py); 0 minutes disables the periodic
+    # pass, 0 days keeps notification deliveries forever.
+    retention_interval_minutes: int = Field(default=60, ge=0, le=1440)
+    preview_retention_hours: int = Field(default=24, ge=1, le=720)
+    notification_retention_days: int = Field(default=90, ge=0, le=3650)
     planning_max_tickets: int = Field(default=100, ge=1, le=100)
     planning_max_workers: int = Field(default=20, ge=1, le=20)
     planning_max_matrix_cells_total: int = Field(default=100000, ge=1, le=100000)

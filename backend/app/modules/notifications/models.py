@@ -57,6 +57,11 @@ class NotificationEvent(IntegerIdMixin, Base):
     websocket_delivered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Nobody was connected when the event was offered to live sockets; the recipient
+    # gets it from history on reconnect. Exactly one of the two WebSocket marks is set.
+    websocket_missed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     push_delivered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -69,5 +74,9 @@ class NotificationEvent(IntegerIdMixin, Base):
     __table_args__ = (
         CheckConstraint("kind IN ('ticket_assigned', 'ticket_status_changed')", name="kind_valid"),
         CheckConstraint("attempt_count >= 0", name="attempt_count_nonnegative"),
+        CheckConstraint(
+            "websocket_delivered_at IS NULL OR websocket_missed_at IS NULL",
+            name="websocket_outcome_single",
+        ),
         Index("ix_notification_events_pending_push", push_delivered_at, next_attempt_at, "id"),
     )

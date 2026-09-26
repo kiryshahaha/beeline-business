@@ -11,7 +11,9 @@ from app.db.session import get_engine
 
 config = context.config
 if config.config_file_name:
-    fileConfig(config.config_file_name)
+    # Keep loggers the application already created (operation log, planner warnings)
+    # working when migrations run inside the same process, as they do in tests.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

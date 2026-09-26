@@ -64,12 +64,27 @@ def _description(ticket: Mapping, location: LocationRead, ticket_url: str | None
     return "\n".join(lines)
 
 
+def _released_event(ticket: Mapping, stamp: datetime) -> Event:
+    """Same UID as before, status CANCELLED, nothing about the client or the address."""
+    event = Event()
+    event.add("uid", f"ticket-{ticket['id']}@beeline-business")
+    event.add("dtstamp", stamp)
+    event.add("last-modified", ticket["updated_at"].astimezone(UTC))
+    event.add("dtstart", ticket["planned_start_at"].astimezone(UTC))
+    event.add("dtend", ticket["planned_end_at"].astimezone(UTC))
+    event.add("summary", f"Заявка #{ticket['id']} снята с вас")
+    event.add("status", "CANCELLED")
+    return event
+
+
 def build_calendar(
     owner_name: str,
     tickets: list[Mapping],
     *,
     frontend_url: str | None,
     now: datetime | None = None,
+    released: list[Mapping] = (),
+    truncated: bool = False,
 ) -> bytes:
     calendar = Calendar()
     calendar.add("prodid", "-//Beeline Business//Field Service//RU")
@@ -81,7 +96,15 @@ def build_calendar(
     calendar.add("refresh-interval", REFRESH_INTERVAL, parameters={"VALUE": "DURATION"})
     calendar.add("x-published-ttl", "PT15M")
 
+    if truncated:
+        calendar.add(
+            "x-wr-caldesc",
+            f"Показаны {len(tickets)} ближайших визитов: остальные не поместились в файл. "
+            "Полный план — в приложении.",
+        )
     stamp = (now or datetime.now(UTC)).astimezone(UTC)
+    for ticket in released:
+        calendar.add_component(_released_event(ticket, stamp))
     base_url = frontend_url.rstrip("/") if frontend_url else None
     for ticket in tickets:
         location = _location(ticket)
@@ -101,5 +124,8 @@ def build_calendar(
         if ticket_url:
             event.add("url", ticket_url)
         event.add("status", "CANCELLED" if ticket["status"] == "wont_fix" else "CONFIRMED")
+        if ticket["status"] == "completed":
+            # A done visit stays in the calendar as history; the mark makes it obvious.
+            event["summary"] = f"✓ {event['summary']}"
         calendar.add_component(event)
     return calendar.to_ical()

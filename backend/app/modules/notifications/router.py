@@ -25,10 +25,13 @@ from app.modules.notifications.schemas import (
     PushSubscriptionDelete,
     PushSubscriptionRead,
 )
+from app.modules.notifications.topology import delivery_state
 from app.modules.users import service as users_service
 from app.modules.users.schemas import UserRead
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
+# Events replayed on reconnect before the client is told to page the rest over HTTP.
+REPLAY_LIMIT = 200
 DatabaseSession = Annotated[Session, Depends(get_session)]
 CurrentUser = Annotated[UserRead, Depends(get_current_user)]
 
@@ -39,9 +42,20 @@ def list_notifications(
     current_user: CurrentUser,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0, le=2_147_483_647)] = 0,
+    after_id: Annotated[
+        int | None,
+        Query(
+            ge=0,
+            le=2_147_483_647,
+            description="Вернуть события новее этого id по возрастанию — для догонки после "
+            "переподключения без пропусков. offset при этом не используется.",
+        ),
+    ] = None,
 ) -> list[NotificationRead]:
-    """Return the current user's durable event history, newest first."""
-    return service.list_notifications(session, current_user.id, limit=limit, offset=offset)
+    """История событий пользователя: новые сверху или, с after_id, по порядку после id."""
+    return service.list_notifications(
+        session, current_user.id, limit=limit, offset=offset, after_id=after_id
+    )
 
 
 @router.post("/push-subscriptions", response_model=PushSubscriptionRead, status_code=201)
@@ -80,6 +94,30 @@ def _authenticate_websocket(payload: object, session: Session) -> UserRead:
     return users_service.get_user(session, int(decoded["sub"]))
 
 
+def _last_event_id(payload: dict) -> int | None:
+    value = payload.get("last_event_id")
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 2_147_483_647:
+        raise ValueError("last_event_id must be a non-negative integer")
+    return value
+
+
+async def _replay(session: Session, websocket: WebSocket, user_id: int, after_id: int) -> None:
+    """Send what the client missed since its last seen id, oldest first.
+
+    The socket is registered before this runs, so an event created meanwhile arrives
+    live or here; the connection manager sends each id to a socket once.
+    """
+    events = service.events_after(session, user_id, after_id, limit=REPLAY_LIMIT + 1)
+    for event in events[:REPLAY_LIMIT]:
+        await connection_manager.send(user_id, websocket, service.live_payload(event))
+    if len(events) > REPLAY_LIMIT:
+        await websocket.send_json(
+            {"type": "replay_truncated", "next_after_id": events[REPLAY_LIMIT - 1]["id"]}
+        )
+
+
 @router.websocket("/ws")
 async def notifications_websocket(
     websocket: WebSocket,
@@ -90,13 +128,20 @@ async def notifications_websocket(
     try:
         payload = await websocket.receive_json()
         user = _authenticate_websocket(payload, session)
+        last_event_id = _last_event_id(payload)
     except (jwt.PyJWTError, KeyError, TypeError, ValueError, users_service.UserNotFoundError):
         await websocket.close(code=1008, reason="Недействительный токен авторизации")
+        return
+    if not delivery_state.accepts_live_sockets():
+        # Another process delivers live events; a socket here would silently get none.
+        await websocket.close(code=1013, reason="Уведомления обслуживает другой процесс")
         return
 
     await connection_manager.connect(user.id, websocket)
     try:
         await websocket.send_json({"type": "authenticated", "user_id": user.id})
+        if last_event_id is not None:
+            await _replay(session, websocket, user.id, last_event_id)
         while True:
             message = await websocket.receive_json()
             if isinstance(message, dict) and message.get("type") == "ping":

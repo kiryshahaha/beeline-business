@@ -11,6 +11,10 @@ from app.modules.calendar_feed.schemas import CalendarLinkStatus
 
 # Past tickets stay visible for a month so a worker can look back at recent visits.
 FEED_HISTORY = timedelta(days=30)
+# Assignments further ahead are not published: a plan that far out still changes.
+FEED_HORIZON = timedelta(days=60)
+# A ticket taken away from the worker is published as cancelled for this long.
+RELEASE_GRACE = timedelta(days=14)
 
 
 class CalendarNotFoundError(Exception):
@@ -36,14 +40,32 @@ def revoke_token(session: Session, user_id: int) -> None:
         repository.delete_token(session, user_id)
 
 
-def render_feed(session: Session, token: str, *, frontend_url: str | None) -> bytes:
+def render_feed(
+    session: Session, token: str, *, frontend_url: str | None, now: datetime | None = None
+) -> bytes:
+    """The worker's current visits for a read-only calendar subscription.
+
+    A calendar client polls the file on its own schedule, so a change reaches it only at
+    the next refresh; the feed is an extra channel, not the source of truth.
+    """
+    now = now or datetime.now(UTC)
     with session.begin():
         owner = repository.find_feed_owner(session, hash_token(token))
         if owner is None:
             raise CalendarNotFoundError
-        tickets = repository.find_feed_tickets(
-            session, owner["id"], datetime.now(UTC) - FEED_HISTORY
+        tickets, truncated = repository.find_feed_tickets(
+            session,
+            owner["id"],
+            now=now,
+            since=now - FEED_HISTORY,
+            until=now + FEED_HORIZON,
         )
+        released = repository.find_released_tickets(session, owner["id"], now - RELEASE_GRACE)
     return ics.build_calendar(
-        f"{owner['surname']} {owner['name']}", tickets, frontend_url=frontend_url
+        f"{owner['surname']} {owner['name']}",
+        tickets,
+        frontend_url=frontend_url,
+        now=now,
+        released=released,
+        truncated=truncated,
     )

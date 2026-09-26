@@ -255,6 +255,73 @@ class CalendarFeedApiTests(DatabaseTestCase):
             str(events[self.upcoming]["location"]), "Москва, Тверская улица, д. 4, корпус 2"
         )
 
+    def test_ticket_taken_away_is_cancelled_for_the_old_worker_only(self):
+        self.connection.execute(
+            text("UPDATE tickets SET assigned_worker_id = :other WHERE id = :id"),
+            {"other": self.other_worker.id, "id": self.upcoming},
+        )
+        self.session.commit()
+
+        old = parse(self.feed(self.issue()["url"]).content)[self.upcoming]
+        self.assertEqual(str(old["status"]), "CANCELLED")
+        self.assertIn("снята с вас", str(old["summary"]))
+        # The ticket belongs to someone else now: no address or client details leak.
+        self.assertNotIn("location", old)
+        self.assertNotIn("description", old)
+
+        new = parse(self.feed(self.issue(self.other_worker)["url"]).content)[self.upcoming]
+        self.assertEqual(str(new["status"]), "CONFIRMED")
+        self.assertIn("location", new)
+
+    def test_completed_visit_stays_as_marked_history(self):
+        self.connection.execute(
+            text("UPDATE tickets SET status = 'completed' WHERE id = :id"), {"id": self.recent}
+        )
+        self.session.commit()
+
+        event = parse(self.feed(self.issue()["url"]).content)[self.recent]
+        self.assertTrue(str(event["summary"]).startswith("✓ "))
+        self.assertEqual(str(event["status"]), "CONFIRMED")
+
+    def test_visits_beyond_the_horizon_are_not_published(self):
+        far = self.new_ticket([self.worker], datetime.now(UTC) + timedelta(days=90))
+        self.session.commit()
+
+        self.assertNotIn(far, parse(self.feed(self.issue()["url"]).content))
+
+    def test_more_than_a_thousand_events_keep_the_nearest_future(self):
+        now = datetime.now(UTC)
+        # A month of dense history would fill the file on its own.
+        self.connection.execute(
+            text(
+                "INSERT INTO tickets (location_id, title, work_type, status, "
+                "visit_window_start, visit_window_end, planned_start_at, planned_end_at, "
+                "estimated_duration_minutes, assigned_worker_id) "
+                "SELECT :location, 'История', 'Ремонт', 'completed', :window_start, "
+                ":window_end, :now - n * interval '40 minutes', "
+                ":now - n * interval '40 minutes' + interval '30 minutes', 30, :worker "
+                "FROM generate_series(2, 1001) AS n"
+            ),
+            {
+                "location": self.location_id,
+                "window_start": datetime(2026, 9, 1, tzinfo=UTC),
+                "window_end": datetime(2027, 9, 1, tzinfo=UTC),
+                "now": now,
+                "worker": self.worker.id,
+            },
+        )
+        future = [
+            self.new_ticket([self.worker], now + timedelta(days=days)) for days in (3, 10, 30)
+        ]
+        self.session.commit()
+
+        content = self.feed(self.issue()["url"]).content
+        events = parse(content)
+        self.assertEqual(len(events), 1000)
+        for ticket_id in [self.upcoming, self.cancelled, *future]:
+            self.assertIn(ticket_id, events, "near future must never be cut silently")
+        self.assertIn("ближайших визитов", str(Calendar.from_ical(content)["x-wr-caldesc"]))
+
     def test_only_token_hash_is_stored(self):
         token = self.token_of(self.issue()["url"])
 

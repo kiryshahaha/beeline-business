@@ -60,11 +60,8 @@ def find_feed_owner(session: Session, token_hash: str) -> RowMapping | None:
     )
 
 
-def find_feed_tickets(session: Session, worker_id: int, since: datetime) -> list[RowMapping]:
-    return list(
-        session.execute(
-            text("""
-                SELECT
+FEED_TICKET_SQL = """
+    SELECT
                     t.id, t.title, t.description,
                     COALESCE(wt.name, t.work_type) AS work_type,
                     t.work_type_id, t.category, t.priority, t.received_at,
@@ -88,10 +85,82 @@ def find_feed_tickets(session: Session, worker_id: int, since: datetime) -> list
                 JOIN service_areas AS sa ON sa.id = b.service_area_id
                 LEFT JOIN districts AS d ON sa.code = 'district_' || d.id
                 LEFT JOIN entrances AS e ON e.id = l.entrance_id
-                WHERE t.assigned_worker_id = :worker_id
-                  AND t.planned_start_at IS NOT NULL
-                  AND t.planned_end_at >= :since
-                ORDER BY t.planned_start_at, t.id
+"""
+
+
+def find_feed_tickets(
+    session: Session,
+    worker_id: int,
+    *,
+    now: datetime,
+    since: datetime,
+    until: datetime,
+    limit: int = FEED_LIMIT,
+) -> tuple[list[RowMapping], bool]:
+    """The worker's visits in `[since, until)`, nearest future first when there are too many.
+
+    Ordering by start time and cutting at the limit would silently drop the days
+    that matter most once a month of history fills the file. Future visits are taken
+    first, from the nearest one, and only the remaining room goes to past visits,
+    newest first. The second value says whether anything was left out.
+    """
+    parameters = {
+        "worker_id": worker_id,
+        "now": now,
+        "since": since,
+        "until": until,
+        "limit": limit + 1,
+    }
+    rows = list(
+        session.execute(
+            text(f"""
+                WITH candidates AS (
+                    {FEED_TICKET_SQL}
+                    WHERE t.assigned_worker_id = :worker_id
+                      AND t.planned_start_at IS NOT NULL
+                      AND t.planned_end_at >= :since
+                      AND t.planned_start_at < :until
+                )
+                SELECT *
+                FROM candidates
+                ORDER BY (planned_end_at < :now),
+                         CASE WHEN planned_end_at >= :now THEN planned_start_at END ASC,
+                         planned_start_at DESC,
+                         id
+                LIMIT :limit
+            """),
+            parameters,
+        )
+        .mappings()
+        .all()
+    )
+    truncated = len(rows) > limit
+    rows = rows[:limit]
+    rows.sort(key=lambda row: (row["planned_start_at"], row["id"]))
+    return rows, truncated
+
+
+def find_released_tickets(session: Session, worker_id: int, since: datetime) -> list[RowMapping]:
+    """Tickets taken away from this worker that are not theirs any more.
+
+    A subscribed client may keep an event after it vanishes from the file, so these are
+    published once more as cancelled — by UID and time only, without address or
+    description, because the ticket no longer belongs to this worker.
+    """
+    return list(
+        session.execute(
+            text("""
+                SELECT DISTINCT ON (t.id)
+                    t.id, t.title,
+                    COALESCE(t.planned_start_at, t.visit_window_start) AS planned_start_at,
+                    COALESCE(t.planned_end_at, t.visit_window_end) AS planned_end_at,
+                    released.occurred_at AS updated_at
+                FROM ticket_assignment_events AS released
+                JOIN tickets AS t ON t.id = released.ticket_id
+                WHERE released.previous_worker_id = :worker_id
+                  AND released.occurred_at >= :since
+                  AND t.assigned_worker_id IS DISTINCT FROM :worker_id
+                ORDER BY t.id, released.occurred_at DESC
                 LIMIT :limit
             """),
             {"worker_id": worker_id, "since": since, "limit": FEED_LIMIT},

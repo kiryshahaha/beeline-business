@@ -45,4 +45,22 @@ tests {
       });
     });
   });
+
+  test("План дня исполнителя: смена планировщика, время и конфликты", function () {
+    body.brigades.forEach(function (brigade) {
+      brigade.workers.forEach(function (worker) {
+        const plan = worker.day_plan;
+        expect(new Date(plan.shift_end) > new Date(plan.shift_start)).to.equal(true);
+        expect(plan.availability.available).to.be.a("boolean");
+        ["service_minutes", "travel_minutes", "waiting_minutes", "free_minutes"].forEach(
+          function (field) {
+            expect(plan[field]).to.be.a("number").and.at.least(0);
+          }
+        );
+        expect(plan.conflicts).to.be.an("array");
+      });
+    });
+    expect(body.unassigned_tickets).to.be.an("array");
+    expect(body.plan_revisions).to.be.an("array");
+  });
 }

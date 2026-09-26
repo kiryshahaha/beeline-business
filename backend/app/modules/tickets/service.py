@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import RowMapping, text
 from sqlalchemy.orm import Session
 
+from app.core.audit import set_assignment_origin
 from app.core.planning_guard import lock_planning_mutation
 from app.db.models import WorkType, WorkTypePlanningRule
 from app.modules.execution import repository as execution_repository
@@ -351,7 +352,7 @@ def update_assignment(
     with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         return update_assignment_in_transaction(
-            session, ticket_id, worker_id, is_pinned, actor_id=actor_id
+            session, ticket_id, worker_id, is_pinned, actor_id=actor_id, source="manual"
         )
 
 
@@ -362,7 +363,13 @@ def update_assignment_in_transaction(
     is_pinned: bool,
     *,
     actor_id: int | None = None,
+    source: str | None = None,
 ) -> TicketRead:
+    """Change the assignee inside the caller's transaction.
+
+    The manual endpoint states `source="manual"`; applying a plan is the only other
+    caller, so an unstated source is recorded as `plan`.
+    """
     ticket = repository.lock_ticket(session, ticket_id)
     if ticket is None:
         raise TicketNotFoundError
@@ -419,6 +426,7 @@ def update_assignment_in_transaction(
     from app.modules.appliances import inventory
 
     inventory.check_reassignment(session, ticket_id, [worker_id] if worker_id else [])
+    set_assignment_origin(session, actor_id=actor_id, source=source or "plan")
     old_worker_id, new_worker_id = repository.update_assignment(
         session, ticket_id, worker_id, is_pinned
     )

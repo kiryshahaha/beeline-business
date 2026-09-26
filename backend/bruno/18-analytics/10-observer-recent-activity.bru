@@ -26,7 +26,14 @@ tests {
   const kinds = [
     "ticket_created",
     "ticket_assigned",
+    "ticket_reassigned",
+    "ticket_unassigned",
+    "plan_applied",
     "ticket_status_changed",
+    "ticket_cancelled",
+    "ticket_rescheduled",
+    "ticket_delayed",
+    "worker_redirected",
     "comment_added",
     "comment_edited"
   ];
@@ -59,6 +66,7 @@ tests {
 }
 
 docs {
-  Лента собирается из заявок, событий уведомлений и комментариев.
-  Одна смена статуса показывается один раз, даже если диспетчеров несколько.
+  Лента собирается из доменных записей: журнала жизненного цикла, истории назначений
+  (кто, кому, каким путём) и комментариев. Очередь уведомлений — это доставка, а не
+  история, поэтому в ленту не входит. У комментария хранится только текущий текст.
 }
