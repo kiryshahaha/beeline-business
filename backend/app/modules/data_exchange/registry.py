@@ -88,5 +88,6 @@ def describe_tables() -> dict:
             "planning_plan_routes",
             "day_plan_revisions.plan_id",
             "ticket_work_type_migration_issues",
+            "ticket_assignment_events",
         ],
     }

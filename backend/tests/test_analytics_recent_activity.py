@@ -1,4 +1,4 @@
-"""HTTP coverage for the global activity feed and role-based visibility."""
+"""The activity feed is built from domain records, not from the notification queue."""
 
 import json
 from datetime import UTC, datetime, timedelta
@@ -64,14 +64,16 @@ class RecentActivityApiTests(DatabaseTestCase):
 
         self.ticket_one = self.add_ticket("Монтаж оборудования", minutes(0), self.worker_one.id)
         self.ticket_two = self.add_ticket("Ремонт у клиента", minutes(1), self.worker_two.id)
-        self.add_event(
+        self.add_assignment(self.ticket_one, None, self.worker_one.id, minutes(2))
+        self.add_work_event(
             self.ticket_one,
-            NotificationKind.TICKET_ASSIGNED,
-            minutes(2),
-            {"title": "Монтаж оборудования", "worker_id": self.worker_one.id},
-            [self.worker_one.id],
+            "start",
+            minutes(5),
+            actor_id=self.worker_one.id,
+            previous_state="assigned",
+            new_state="in_progress",
         )
-        # One status change is stored once per observer; the feed must show it once.
+        # The same change pushed to two observers: delivery rows, not history.
         self.add_event(
             self.ticket_one,
             NotificationKind.TICKET_STATUS_CHANGED,
@@ -158,14 +160,16 @@ class RecentActivityApiTests(DatabaseTestCase):
         return brigade_id
 
     def add_ticket(self, title: str, created_at: datetime, worker_id: int | None = None) -> int:
-        ticket_id = self.connection.execute(
+        # Inserted with its assignee: the assignment history below is written explicitly.
+        return self.connection.execute(
             text(
                 "INSERT INTO tickets ("
-                "location_id, title, work_type, status, visit_window_start, visit_window_end, "
-                "estimated_duration_minutes, created_at, updated_at"
+                "location_id, title, work_type, status, lifecycle_state, visit_window_start, "
+                "visit_window_end, estimated_duration_minutes, assigned_worker_id, "
+                "created_at, updated_at"
                 ") VALUES ("
-                ":location_id, :title, 'Настройка сети', 'planned', :visit_start, :visit_end, "
-                "60, :created_at, :created_at"
+                ":location_id, :title, 'Настройка сети', 'planned', 'assigned', :visit_start, "
+                ":visit_end, 60, :worker_id, :created_at, :created_at"
                 ") RETURNING id"
             ),
             {
@@ -173,15 +177,56 @@ class RecentActivityApiTests(DatabaseTestCase):
                 "title": title,
                 "visit_start": created_at,
                 "visit_end": created_at + timedelta(hours=4),
+                "worker_id": worker_id,
                 "created_at": created_at,
             },
         ).scalar_one()
-        if worker_id is not None:
-            self.connection.execute(
-                text("UPDATE tickets SET assigned_worker_id = :worker_id WHERE id = :ticket_id"),
-                {"ticket_id": ticket_id, "worker_id": worker_id},
-            )
-        return ticket_id
+
+    def add_assignment(
+        self, ticket_id: int, previous: int | None, new: int | None, occurred_at: datetime
+    ) -> None:
+        self.connection.execute(
+            text(
+                "INSERT INTO ticket_assignment_events "
+                "(ticket_id, previous_worker_id, new_worker_id, actor_id, source, occurred_at) "
+                "VALUES (:ticket_id, :previous, :new, :actor_id, 'manual', :occurred_at)"
+            ),
+            {
+                "ticket_id": ticket_id,
+                "previous": previous,
+                "new": new,
+                "actor_id": self.observer.id,
+                "occurred_at": occurred_at,
+            },
+        )
+
+    def add_work_event(
+        self,
+        ticket_id: int,
+        event_type: str,
+        occurred_at: datetime,
+        *,
+        actor_id: int,
+        previous_state: str,
+        new_state: str,
+    ) -> None:
+        self.connection.execute(
+            text(
+                "INSERT INTO work_events (event_type, ticket_id, occurred_at, actor_id, "
+                "previous_state, new_state, idempotency_key, payload) "
+                "VALUES (:event_type, :ticket_id, :occurred_at, :actor_id, :previous_state, "
+                ":new_state, :key, '{}'::jsonb)"
+            ),
+            {
+                "event_type": event_type,
+                "ticket_id": ticket_id,
+                "occurred_at": occurred_at,
+                "actor_id": actor_id,
+                "previous_state": previous_state,
+                "new_state": new_state,
+                "key": f"test:{ticket_id}:{event_type}:{occurred_at.isoformat()}",
+            },
+        )
 
     def add_event(
         self,
@@ -273,16 +318,73 @@ class RecentActivityApiTests(DatabaseTestCase):
         )
         self.assertEqual(item["details"]["previous_status"], "planned")
         self.assertEqual(item["details"]["status"], "in_progress")
+        self.assertEqual(item["details"]["previous_state"], "assigned")
+        self.assertEqual(item["details"]["state"], "in_progress")
         self.assertIsNone(item["details"]["comment_id"])
 
-    def test_assignment_names_the_worker_without_an_actor(self):
+    def test_assignment_names_the_worker_and_who_assigned(self):
         (item,) = [item for item in self.feed() if item["kind"] == "ticket_assigned"]
 
-        self.assertIsNone(item["actor"])
+        self.assertEqual(item["actor"]["id"], self.observer.id)
         self.assertEqual(
             item["details"]["worker"],
             {"id": self.worker_one.id, "full_name": "Worker_one Иван", "role": "worker"},
         )
+        self.assertIsNone(item["details"]["previous_worker"])
+        self.assertEqual(item["details"]["assignment_source"], "manual")
+
+    def test_notification_queue_alone_creates_no_history(self):
+        self.add_event(
+            self.ticket_two,
+            NotificationKind.TICKET_ASSIGNED,
+            minutes(9),
+            {"title": "Ремонт у клиента", "worker_id": self.worker_two.id},
+            [self.worker_two.id],
+        )
+        self.session.commit()
+
+        kinds = [item["kind"] for item in self.feed() if item["ticket"]["id"] == self.ticket_two]
+        self.assertNotIn("ticket_assigned", kinds)
+
+    def test_reassignment_and_release_record_author_path_and_previous_worker(self):
+        url = f"/api/v1/tickets/{self.ticket_two}/assignees"
+        self.assertEqual(
+            self.client.put(url, json={"worker_id": self.worker_one.id}).status_code, 200
+        )
+        self.assertEqual(self.client.put(url, json={"worker_id": None}).status_code, 200)
+
+        items = [item for item in self.feed() if item["ticket"]["id"] == self.ticket_two]
+        released, reassigned = items[0], items[1]
+        self.assertEqual(reassigned["kind"], "ticket_reassigned")
+        self.assertEqual(reassigned["actor"]["id"], self.observer.id)
+        self.assertEqual(reassigned["details"]["previous_worker"]["id"], self.worker_two.id)
+        self.assertEqual(reassigned["details"]["worker"]["id"], self.worker_one.id)
+        self.assertEqual(reassigned["details"]["assignment_source"], "manual")
+        self.assertEqual(released["kind"], "ticket_unassigned")
+        self.assertEqual(released["details"]["previous_worker"]["id"], self.worker_one.id)
+        self.assertIsNone(released["details"]["worker"])
+
+    def test_direct_database_change_is_still_recorded(self):
+        self.connection.execute(
+            text("UPDATE tickets SET assigned_worker_id = NULL WHERE id = :id"),
+            {"id": self.ticket_one},
+        )
+        self.session.commit()
+
+        (item,) = [item for item in self.feed() if item["kind"] == "ticket_unassigned"]
+        self.assertEqual(item["details"]["assignment_source"], "direct")
+        self.assertIsNone(item["actor"])
+        self.assertEqual(item["details"]["previous_worker"]["id"], self.worker_one.id)
+
+    def test_foreman_keeps_seeing_a_ticket_moved_out_of_the_brigade(self):
+        url = f"/api/v1/tickets/{self.ticket_one}/assignees"
+        self.assertEqual(
+            self.client.put(url, json={"worker_id": self.worker_two.id}).status_code, 200
+        )
+        self.current_user = self.foreman_one
+
+        kinds = {item["kind"] for item in self.feed() if item["ticket"]["id"] == self.ticket_one}
+        self.assertIn("ticket_reassigned", kinds)
 
     def test_created_ticket_has_no_actor_because_it_is_not_recorded(self):
         items = [item for item in self.feed() if item["kind"] == "ticket_created"]

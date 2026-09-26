@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.audit import set_assignment_origin
 from app.core.planning_guard import lock_planning_mutation
 from app.modules.execution import repository
 from app.modules.execution.enums import TicketLifecycleState, WorkEventType
@@ -518,6 +519,9 @@ def reopen_ticket(
             ),
             {"ticket_id": ticket_id},
         )
+        # A reopened ticket goes back to the queue; the dispatcher who reopened it
+        # is recorded as the one who released the engineer.
+        set_assignment_origin(session, actor_id=actor_id, source="manual")
         session.execute(
             text("UPDATE tickets SET assigned_worker_id = NULL WHERE id = :ticket_id"),
             {"ticket_id": ticket_id},

@@ -26,11 +26,24 @@ tests {
       expect(brigade.brigade_name).to.be.a("string").and.not.empty;
       expect(brigade.active_tickets).to.be.a("number").and.at.least(0);
       expect(brigade.completed_today).to.be.a("number").and.at.least(0);
+      [
+        "shift_minutes",
+        "service_minutes",
+        "travel_minutes",
+        "waiting_minutes",
+        "free_minutes",
+        "overtime_minutes"
+      ].forEach(function (field) {
+        expect(brigade[field]).to.be.a("number").and.at.least(0);
+      });
+      expect(brigade.available_workers).to.be.at.most(brigade.workers);
     });
   });
 }
 
 docs {
-  active_tickets включает заявки со статусами planned и in_progress.
-  completed_today считает заявки completed, обновлённые сегодня.
+  Загрузка считается по сменам даты (по умолчанию сегодня по Москве): работа, дорога
+  и ожидание из сохранённых маршрутов, свободное время смены. Отмеченный недоступным на
+  эту дату исполнитель ёмкости не даёт. completed_today — по фактическому времени
+  завершения, а не по updated_at.
 }

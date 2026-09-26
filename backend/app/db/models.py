@@ -32,6 +32,7 @@ from app.modules.source_import.models import SourceAddress, SourceImport, Source
 from app.modules.streets.models import Street
 from app.modules.tickets.models import (
     Ticket,
+    TicketAssignmentEvent,
     TicketWorkTypeMigrationIssue,
 )
 from app.modules.users.models import (
@@ -78,6 +79,7 @@ __all__ = [
     "Street",
     "Ticket",
     "TicketAppliance",
+    "TicketAssignmentEvent",
     "TicketWorkTypeMigrationIssue",
     "TicketComment",
     "User",

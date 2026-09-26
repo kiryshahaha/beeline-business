@@ -26,6 +26,17 @@ tests {
       expect(brigade.brigade_name).to.be.a("string").and.not.empty;
       expect(brigade.active_tickets).to.be.a("number").and.at.least(0);
       expect(brigade.completed_today).to.be.a("number").and.at.least(0);
+      [
+        "shift_minutes",
+        "service_minutes",
+        "travel_minutes",
+        "waiting_minutes",
+        "free_minutes",
+        "overtime_minutes"
+      ].forEach(function (field) {
+        expect(brigade[field]).to.be.a("number").and.at.least(0);
+      });
+      expect(brigade.available_workers).to.be.at.most(brigade.workers);
     });
   });
 }
