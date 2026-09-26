@@ -108,7 +108,9 @@ class T19BusinessScenariosTests(DatabaseTestCase):
         self.assertTrue(isinstance(routes, list))
         # Validate invariants
         for old_t_id, expected_reason in metadata["invariants"].items():
-            t_id = receipt["tickets"].get(old_t_id, old_t_id)
+            t_id = receipt["id_map"]["tickets"].get(str(old_t_id), old_t_id)
+            if t_id not in unassigned:
+                t_id = receipt["id_map"]["tickets"].get(int(old_t_id), old_t_id)
             self.assertIn(t_id, unassigned)
             self.assertEqual(unassigned[t_id], expected_reason)
 
@@ -122,7 +124,9 @@ class T19BusinessScenariosTests(DatabaseTestCase):
                 unassigned[t["ticket_id"]] = t["reason"]["code"]
 
         for old_t_id, expected_reason in metadata["invariants"].items():
-            t_id = receipt["tickets"].get(old_t_id, old_t_id)
+            t_id = receipt["id_map"]["tickets"].get(str(old_t_id), old_t_id)
+            if t_id not in unassigned:
+                t_id = receipt["id_map"]["tickets"].get(int(old_t_id), old_t_id)
             self.assertIn(t_id, unassigned)
             if expected_reason == "missing_skill":
                 # Check it's unassigned due to nobody having the skill
