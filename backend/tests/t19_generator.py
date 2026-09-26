@@ -57,8 +57,12 @@ def generate_t19_dataset(variant="base", seed=1900):
         # 1 Office per area
         add("offices", id=i, location_id=i * 100 + 1, name=f"Office {i}")
         # 1 Brigade per area
-        foreman_id = add("users", username=f"foreman_{i}", name=f"F{i}", surname=f"A{i}", role="foreman")["id"]
-        add("brigades", id=i, division_id=i, office_id=i, foreman_id=foreman_id, name=f"Brigade {i}")
+        foreman_id = add(
+            "users", username=f"foreman_{i}", name=f"F{i}", surname=f"A{i}", role="foreman"
+        )["id"]
+        add(
+            "brigades", id=i, division_id=i, office_id=i, foreman_id=foreman_id, name=f"Brigade {i}"
+        )
 
     # Skills
     skills = ["Copper", "Fiber", "Radio"]
@@ -74,7 +78,13 @@ def generate_t19_dataset(variant="base", seed=1900):
     ]
     for area_idx in range(1, 4):
         for w_idx in range(1, 13):
-            user_id = add("users", username=f"worker_{area_idx}_{w_idx}", name=f"W{w_idx}", surname=f"A{area_idx}", role="worker")["id"]
+            user_id = add(
+                "users",
+                username=f"worker_{area_idx}_{w_idx}",
+                name=f"W{w_idx}",
+                surname=f"A{area_idx}",
+                role="worker",
+            )["id"]
             trans = transport_profiles[w_idx % 4]
             add(
                 "workers",
@@ -94,13 +104,24 @@ def generate_t19_dataset(variant="base", seed=1900):
 
     # 4 Canonical Categories
     # emergency, connection, repair, additional
-    add("work_types", id=1, code="EM_1", name="EM", category=TicketCategory.EMERGENCY.value, default_priority=1, travel_minutes=15, work_minutes=30, documents_minutes=10, norm_minutes=55)
+    add(
+        "work_types",
+        id=1,
+        code="EM_1",
+        name="EM",
+        category=TicketCategory.EMERGENCY.value,
+        default_priority=1,
+        travel_minutes=15,
+        work_minutes=30,
+        documents_minutes=10,
+        norm_minutes=55,
+    )
     add(
         "work_type_planning_rules",
         work_type_id=1,
         service_duration_source="fixed",
         fixed_duration_minutes=60,
-        configured_by=1
+        configured_by=1,
     )
     add("work_type_required_skills", work_type_id=1, skill_id=1)  # requires Copper
 
@@ -111,29 +132,57 @@ def generate_t19_dataset(variant="base", seed=1900):
         name="CONN",
         category=TicketCategory.CONNECTION.value,
         default_priority=2,
-        travel_minutes=15, work_minutes=30, documents_minutes=10, norm_minutes=55
+        travel_minutes=15,
+        work_minutes=30,
+        documents_minutes=10,
+        norm_minutes=55,
     )
     add(
         "work_type_planning_rules",
         work_type_id=2,
         service_duration_source="fixed",
         fixed_duration_minutes=90,
-        configured_by=1
+        configured_by=1,
     )
     add("work_type_required_skills", work_type_id=2, skill_id=2)  # requires Fiber
 
-    add("work_types", id=3, code="REP_3", name="REP", category=TicketCategory.REPAIR.value, default_priority=3, travel_minutes=15, work_minutes=30, documents_minutes=10, norm_minutes=55)
-    add("work_type_planning_rules", work_type_id=3, service_duration_source="ticket_estimate", configured_by=1)
+    add(
+        "work_types",
+        id=3,
+        code="REP_3",
+        name="REP",
+        category=TicketCategory.REPAIR.value,
+        default_priority=3,
+        travel_minutes=15,
+        work_minutes=30,
+        documents_minutes=10,
+        norm_minutes=55,
+    )
+    add(
+        "work_type_planning_rules",
+        work_type_id=3,
+        service_duration_source="ticket_estimate",
+        configured_by=1,
+    )
 
     add(
-        "work_types", id=4, code="ADD_4", name="ADD", category=TicketCategory.ADDITIONAL.value, default_priority=4, travel_minutes=15, work_minutes=30, documents_minutes=10, norm_minutes=55
+        "work_types",
+        id=4,
+        code="ADD_4",
+        name="ADD",
+        category=TicketCategory.ADDITIONAL.value,
+        default_priority=4,
+        travel_minutes=15,
+        work_minutes=30,
+        documents_minutes=10,
+        norm_minutes=55,
     )
     add(
         "work_type_planning_rules",
         work_type_id=4,
         service_duration_source="fixed",
         fixed_duration_minutes=30,
-        configured_by=1
+        configured_by=1,
     )
 
     # Tickets
