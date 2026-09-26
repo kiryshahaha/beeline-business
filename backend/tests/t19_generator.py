@@ -189,7 +189,7 @@ def generate_t19_dataset(variant="base", seed=1900):
                 execution_cycle=1,
                 work_type="WT",
                 work_type_id=wt_id,
-                category=TicketCategory(wt_id).name.lower()
+                category=["emergency", "connection", "repair", "additional"][wt_id - 1]
                 if wt_id <= 4
                 else TicketCategory.REPAIR.value,
                 priority=1,
