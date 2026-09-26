@@ -265,13 +265,23 @@ def generate_t19_dataset(variant="base", seed=1900):
                     vw_end = stamp - timedelta(hours=1)
                 elif c == 7:
                     loc_id = 1000 + ticket_idx
+                    b_id = area_id * 100 + 99
+                    add(
+                        "buildings",
+                        id=b_id,
+                        city_id=area_id,
+                        street_id=area_id,
+                        service_area_id=100 + area_id,
+                        number="99",
+                    )
+                    add("entrances", id=b_id, building_id=b_id, number="1")
                     add(
                         "locations",
                         id=loc_id,
-                        building_id=area_id * 100 + 39,
+                        building_id=b_id,
                         latitude=56.0,
                         longitude=38.0,
-                        entrance_id=area_id * 100 + 39,
+                        entrance_id=b_id,
                     )
                 elif c == 8:
                     # Stock shortage for work type 4
