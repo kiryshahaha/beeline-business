@@ -17,12 +17,13 @@ from tests.support import DatabaseTestCase
 
 
 class FakeConnectionManager:
-    def __init__(self):
+    def __init__(self, receivers=1):
         self.messages = []
+        self.receivers = receivers
 
     async def publish(self, user_id, payload):
         self.messages.append((user_id, payload))
-        return 1
+        return self.receivers
 
 
 class FakePushGateway:
@@ -127,8 +128,8 @@ class NotificationsDeliveryTests(DatabaseTestCase):
         return (
             self.session.execute(
                 text("""
-                SELECT websocket_delivered_at, push_delivered_at, attempt_count,
-                       next_attempt_at, last_error
+                SELECT websocket_delivered_at, websocket_missed_at, push_delivered_at,
+                       attempt_count, next_attempt_at, last_error
                 FROM notification_events
                 WHERE id = :event_id
             """),
@@ -138,8 +139,8 @@ class NotificationsDeliveryTests(DatabaseTestCase):
             .one()
         )
 
-    def dispatch(self, gateway):
-        manager = FakeConnectionManager()
+    def dispatch(self, gateway, manager=None):
+        manager = manager or FakeConnectionManager()
         dispatcher = NotificationDispatcher(
             self.session_factory,
             connection_manager=manager,
@@ -216,3 +217,22 @@ class NotificationsDeliveryTests(DatabaseTestCase):
         second_processed, second_manager = self.dispatch(gateway)
         self.assertEqual(second_processed, 0)
         self.assertEqual(second_manager.messages, [])
+
+    def test_event_nobody_received_live_is_missed_not_delivered(self):
+        event_id = self.add_event()
+        nobody = FakeConnectionManager(receivers=0)
+
+        self.dispatch(FakePushGateway(), nobody)
+
+        stored = self.read_event(event_id)
+        self.assertIsNone(stored["websocket_delivered_at"])
+        self.assertIsNotNone(stored["websocket_missed_at"])
+        # Settled: the next cycle does not offer it to live sockets again.
+        self.session.execute(
+            text("UPDATE notification_events SET next_attempt_at = now() WHERE id = :id"),
+            {"id": event_id},
+        )
+        self.session.commit()
+        again = FakeConnectionManager()
+        processed, _manager = self.dispatch(FakePushGateway(), again)
+        self.assertEqual((processed, again.messages), (0, []))

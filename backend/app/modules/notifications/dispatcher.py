@@ -13,6 +13,7 @@ from app.modules.notifications import repository
 from app.modules.notifications.connections import connection_manager as default_connection_manager
 from app.modules.notifications.enums import NotificationKind
 from app.modules.notifications.firebase import create_push_gateway
+from app.modules.notifications.topology import DeliveryLease
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +68,17 @@ class NotificationDispatcher:
             events = repository.claim_pending_events(session, self._batch_size)
 
         for event in events:
-            if event["websocket_delivered_at"] is None:
-                await self._connections.publish(event["recipient_id"], _event_payload(event))
+            if event["websocket_delivered_at"] is None and event["websocket_missed_at"] is None:
+                delivered = await self._connections.publish(
+                    event["recipient_id"], _event_payload(event)
+                )
+                # Only a socket that received it counts; otherwise the recipient gets the
+                # event from history when they reconnect with their last seen id.
                 with self._session_factory() as session, session.begin():
-                    repository.mark_websocket_delivered(session, event["id"])
+                    if delivered:
+                        repository.mark_websocket_delivered(session, event["id"])
+                    else:
+                        repository.mark_websocket_missed(session, event["id"])
 
             if event["push_delivered_at"] is not None:
                 continue
@@ -106,15 +114,25 @@ class NotificationDispatcher:
                 repository.mark_push_delivered(session, event["id"])
         return len(events)
 
-    async def run(self, poll_interval_seconds: float) -> None:
+    async def run(self, poll_interval_seconds: float, lease: DeliveryLease | None = None) -> None:
+        """Deliver while this process holds the delivery role; retry taking it otherwise."""
         while True:
             try:
-                await self.dispatch_once()
+                if lease is None or await self._still_delivering(lease):
+                    await self.dispatch_once()
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception("Notification delivery cycle failed")
             await asyncio.sleep(poll_interval_seconds)
+
+    async def _still_delivering(self, lease: DeliveryLease) -> bool:
+        if lease.held and await asyncio.to_thread(lease.alive):
+            return True
+        if not lease.held:
+            # Sockets of a process without the role would never get a live event.
+            await self._connections.close_all(1012, "Доставка уведомлений перезапускается")
+        return await asyncio.to_thread(lease.acquire)
 
 
 def create_dispatcher() -> NotificationDispatcher:
