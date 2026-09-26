@@ -26,6 +26,7 @@ class TicketCollaborationMigrationTests(DatabaseTestCase):
                 "data",
                 "created_at",
                 "websocket_delivered_at",
+                "websocket_missed_at",
                 "push_delivered_at",
                 "attempt_count",
                 "next_attempt_at",

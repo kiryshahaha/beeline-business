@@ -63,7 +63,10 @@ def claim_pending_events(session: Session, limit: int) -> list[RowMapping]:
                 WITH claimed AS (
                     SELECT id
                     FROM notification_events
-                    WHERE (websocket_delivered_at IS NULL OR push_delivered_at IS NULL)
+                    WHERE (
+                        (websocket_delivered_at IS NULL AND websocket_missed_at IS NULL)
+                        OR push_delivered_at IS NULL
+                    )
                       AND next_attempt_at <= now()
                     ORDER BY id
                     LIMIT :limit
@@ -75,8 +78,8 @@ def claim_pending_events(session: Session, limit: int) -> list[RowMapping]:
                 WHERE event.id = claimed.id
                 RETURNING
                     event.id, event.recipient_id, event.ticket_id, event.kind, event.data,
-                    event.created_at, event.websocket_delivered_at, event.push_delivered_at,
-                    event.attempt_count
+                    event.created_at, event.websocket_delivered_at, event.websocket_missed_at,
+                    event.push_delivered_at, event.attempt_count
             """),
             {"limit": limit},
         )
@@ -99,12 +102,50 @@ def list_subscription_tokens(session: Session, user_id: int) -> list[str]:
     )
 
 
+def mark_websocket_missed(session: Session, event_id: int) -> None:
+    """Nobody was connected to receive it live; the history replay will carry it."""
+    session.execute(
+        text("""
+            UPDATE notification_events
+            SET websocket_missed_at = now()
+            WHERE id = :event_id
+              AND websocket_delivered_at IS NULL
+              AND websocket_missed_at IS NULL
+        """),
+        {"event_id": event_id},
+    )
+
+
+def list_events_after(
+    session: Session, recipient_id: int, after_id: int, *, limit: int
+) -> list[RowMapping]:
+    """The recipient's events newer than `after_id`, oldest first, without gaps.
+
+    Ids only grow, so a client that remembers the last id it saw can page forward from
+    it; offset paging from the newest end shifts under new events and can skip one.
+    """
+    return list(
+        session.execute(
+            text("""
+                SELECT id, recipient_id, ticket_id, kind, data, created_at
+                FROM notification_events
+                WHERE recipient_id = :recipient_id AND id > :after_id
+                ORDER BY id
+                LIMIT :limit
+            """),
+            {"recipient_id": recipient_id, "after_id": after_id, "limit": limit},
+        )
+        .mappings()
+        .all()
+    )
+
+
 def mark_websocket_delivered(session: Session, event_id: int) -> None:
     session.execute(
         text("""
             UPDATE notification_events
             SET websocket_delivered_at = COALESCE(websocket_delivered_at, now())
-            WHERE id = :event_id
+            WHERE id = :event_id AND websocket_missed_at IS NULL
         """),
         {"event_id": event_id},
     )

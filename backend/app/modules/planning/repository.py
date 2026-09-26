@@ -3,6 +3,7 @@
 from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.orm import Session
 
+from app.core import oplog
 from app.db.models import (
     Appliance,
     ApplianceStock,
@@ -94,6 +95,7 @@ def load_area_scope(session: Session, service_area_id: int | None, route_date) -
     return {"tickets": tickets, "events": {"count": count, "last_id": last_id}}
 
 
+@oplog.timed("snapshot")
 def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=None) -> dict:
     ticket_ids, worker_ids = request.ticket_ids, request.worker_ids
     tickets = rows(session, Ticket, Ticket.id.in_(ticket_ids))

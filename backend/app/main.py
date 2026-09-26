@@ -8,14 +8,17 @@ import httpx
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from app.core import oplog
 from app.core.access_log import install_access_log_redaction
 from app.core.body_limit import BodyLimitMiddleware
 from app.core.config import get_settings
+from app.core.planning_guard import PlanningLockTimeout
+from app.core.request_id import RequestIdMiddleware
 from app.db.session import get_engine
 from app.modules.analytics.router import router as analytics_router
 from app.modules.appliances.router import (
@@ -34,8 +37,10 @@ from app.modules.calendar_feed.router import router as calendar_router
 from app.modules.comments.router import router as comments_router
 from app.modules.data_exchange.router import router as data_exchange_router
 from app.modules.locations.router import router as locations_router
+from app.modules.maintenance import periodic as retention_periodic
 from app.modules.notifications.dispatcher import create_dispatcher
 from app.modules.notifications.router import router as notifications_router
+from app.modules.notifications.topology import DeliveryLease, delivery_state
 from app.modules.offices.router import router as offices_router
 from app.modules.planning.router import router as planning_router
 from app.modules.reports.router import router as reports_router
@@ -66,19 +71,34 @@ async def lifespan(_app: FastAPI):
 
     install_access_log_redaction()
     settings = get_settings()
-    task = None
+    oplog.configure(settings.operation_log_level)
+    task = lease = cleanup = None
+    if settings.retention_interval_minutes:
+        cleanup = asyncio.create_task(retention_periodic.run_periodically(get_engine(), settings))
     if settings.notification_dispatcher_enabled:
+        # Only the process holding the delivery role sends live events; see
+        # notifications/topology.py for the supported single-process mode.
+        lease = DeliveryLease(get_engine())
+        await asyncio.to_thread(lease.acquire)
+        delivery_state.lease = lease
         dispatcher = create_dispatcher()
-        task = asyncio.create_task(dispatcher.run(settings.notification_poll_interval_seconds))
+        task = asyncio.create_task(
+            dispatcher.run(settings.notification_poll_interval_seconds, lease)
+        )
     try:
         yield
     finally:
-        if task is not None:
-            task.cancel()
+        for background in (task, cleanup):
+            if background is None:
+                continue
+            background.cancel()
             try:
-                await task
+                await background
             except asyncio.CancelledError:
                 pass
+        if lease is not None:
+            delivery_state.lease = None
+            await asyncio.to_thread(lease.release)
 
 
 app = FastAPI(
@@ -111,6 +131,28 @@ else:
     )
 
 app.add_middleware(BodyLimitMiddleware, prefix="/api/v1/planning", max_bytes=64 * 1024)
+# Outermost, so every log record of a request, including the body-limit rejection,
+# carries the same ID the client receives in X-Request-ID.
+app.add_middleware(RequestIdMiddleware)
+
+
+@app.exception_handler(PlanningLockTimeout)
+async def planning_lock_timeout(_request: Request, error: PlanningLockTimeout) -> JSONResponse:
+    """Contention on the shared planning lock is temporary; say so and when to retry."""
+    return JSONResponse(
+        status_code=503,
+        headers={"Retry-After": "2"},
+        content={
+            "detail": {
+                "code": error.code,
+                "retryable": True,
+                "waited_ms": error.waited_ms,
+                "timeout_ms": error.timeout_ms,
+            }
+        },
+    )
+
+
 app.include_router(locations_router)
 app.include_router(routing_router)
 app.include_router(analytics_router)
