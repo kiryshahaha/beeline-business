@@ -194,7 +194,15 @@ def generate_t19_dataset(variant="base", seed=1900):
     )
     add("work_type_required_skills", work_type_id=4, skill_id=1)
 
-    add("appliances", id=1, code="ROUTER", name="Router")
+    add(
+        "appliances",
+        id=1,
+        code="ROUTER",
+        name="Router",
+        type="CLIENT_ROUTER",
+        unit="шт",
+        is_active=True,
+    )
     add("work_type_required_appliances", work_type_id=4, appliance_id=1, quantity=1)
 
     if variant == "base":
