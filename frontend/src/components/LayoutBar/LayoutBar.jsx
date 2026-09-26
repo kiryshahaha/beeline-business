@@ -14,6 +14,8 @@ const LayoutBar = () => {
   const pathname = usePathname();
   const router = useRouter();
 
+  if (pathname === "/login") return null;
+
   const activeIndex = icons.findIndex(icon => pathname === icon.href);
   const safeIndex = activeIndex === -1 ? 0 : activeIndex;
 
