@@ -1,5 +1,6 @@
 """Ticket analytics HTTP endpoints."""
 
+import datetime as dt
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -37,13 +38,27 @@ def tickets_summary(
         int | None,
         Query(ge=1, le=2_147_483_647, description="ID офиса для отчёта наблюдателя."),
     ] = None,
+    date: Annotated[
+        dt.date | None,
+        Query(
+            ge=dt.date(2000, 1, 1),
+            le=dt.date(2100, 12, 31),
+            description="Дата по Москве; по умолчанию сегодня.",
+        ),
+    ] = None,
 ) -> TicketsSummary:
-    """Return ticket counts for the requested period and visible scope."""
+    """Текущая очередь, созданные и завершённые за период и обещанные на дату заявки.
+
+    Период — полуинтервал [начало, конец) по Москве. Очередь без исполнителя относится
+    к участку офиса; назначенная работа — к офису бригады исполнителя. Бригадир видит
+    работу своей бригады и очередь участка её офиса.
+    """
     return service.get_tickets_summary(
         session,
         period=period,
         office_id=office_id,
         current_user=current_user,
+        plan_date=date,
     )
 
 
@@ -68,9 +83,21 @@ def fast_stats(
 def brigades_workload(
     session: DatabaseSession,
     current_user: CurrentAnalyticsUser,
+    date: Annotated[
+        dt.date | None,
+        Query(
+            ge=dt.date(2000, 1, 1),
+            le=dt.date(2100, 12, 31),
+            description="Дата по Москве; по умолчанию сегодня.",
+        ),
+    ] = None,
 ) -> list[BrigadeWorkloadItem]:
-    """Return workload counts for every visible brigade."""
-    return service.get_brigades_workload(session, current_user=current_user)
+    """Загрузка бригад на дату по сменам: работа, дорога, ожидание, свободное время.
+
+    Считается по тем же сменам, сохранённым маршрутам и отметкам недоступности, что
+    использует планировщик и показывает расписание.
+    """
+    return service.get_brigades_workload(session, current_user=current_user, day=date)
 
 
 @router.get("/recent-activity", response_model=list[ActivityItem])

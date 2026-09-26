@@ -1,6 +1,6 @@
-"""HTTP coverage for ticket status summaries and role-based scoping."""
+"""Ticket summary: current queue, created, completed and planned are different numbers."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_session
 from app.main import app
+from app.modules.analytics.schemas import AnalyticsPeriod
+from app.modules.analytics.service import get_tickets_summary
 from app.modules.auth.dependencies import get_current_user
 from app.modules.tickets.enums import TicketStatus
 from app.modules.users.enums import UserRole
@@ -130,100 +132,165 @@ class TicketsSummaryApiTests(DatabaseTestCase):
         status: TicketStatus,
         created_at: datetime,
         worker_id: int | None = None,
+        *,
+        completed_at: datetime | None = None,
+        updated_at: datetime | None = None,
+        planned_start_at: datetime | None = None,
     ) -> int:
-        ticket_id = self.connection.execute(
+        return self.connection.execute(
             text(
                 "INSERT INTO tickets ("
-                "location_id, title, work_type, status, visit_window_start, "
-                "visit_window_end, estimated_duration_minutes, created_at, updated_at"
+                "location_id, title, work_type, status, visit_window_start, visit_window_end, "
+                "estimated_duration_minutes, assigned_worker_id, actual_completed_at, "
+                "planned_start_at, planned_end_at, created_at, updated_at"
                 ") VALUES ("
-                ":location_id, :title, 'Настройка сети', :status, :visit_start, "
-                ":visit_end, 60, :created_at, :created_at"
+                ":location_id, :title, 'Настройка сети', :status, :created_at, :window_end, "
+                "60, :worker_id, :completed_at, :planned_start, :planned_end, :created_at, "
+                ":updated_at"
                 ") RETURNING id"
             ),
             {
                 "location_id": location_id,
                 "title": f"Заявка {status.value} {created_at.timestamp()}",
                 "status": status.value,
-                "visit_start": created_at,
-                "visit_end": created_at + timedelta(hours=1),
                 "created_at": created_at,
+                "window_end": created_at + timedelta(hours=1),
+                "worker_id": worker_id,
+                "completed_at": completed_at,
+                "planned_start": planned_start_at,
+                "planned_end": planned_start_at + timedelta(hours=1) if planned_start_at else None,
+                "updated_at": updated_at or created_at,
             },
         ).scalar_one()
-        if worker_id is not None:
-            self.connection.execute(
-                text("UPDATE tickets SET assigned_worker_id = :worker_id WHERE id = :ticket_id"),
-                {"ticket_id": ticket_id, "worker_id": worker_id},
-            )
-        return ticket_id
 
     def seed_tickets(self, location_id: int) -> None:
         now = datetime.now(UTC).replace(microsecond=0)
-        self.add_ticket(location_id, TicketStatus.PLANNED, now)
+        self.now = now
+        # Open queue opened long ago: it must not vanish from a "today" board (A31).
+        self.add_ticket(location_id, TicketStatus.PLANNED, now - timedelta(days=40))
         self.add_ticket(location_id, TicketStatus.PLANNED, now, self.worker_one.id)
         self.add_ticket(location_id, TicketStatus.IN_PROGRESS, now, self.worker_one.id)
-        self.add_ticket(location_id, TicketStatus.COMPLETED, now, self.worker_one.id)
+        self.add_ticket(
+            location_id, TicketStatus.COMPLETED, now, self.worker_one.id, completed_at=now
+        )
         self.add_ticket(location_id, TicketStatus.PLANNED, now, self.worker_two.id)
+        # Closed forty days ago and edited today: an edit is not a completion (A31).
         self.add_ticket(
             location_id,
             TicketStatus.COMPLETED,
             now - timedelta(days=40),
             self.worker_one.id,
+            completed_at=now - timedelta(days=40),
+            updated_at=now,
         )
 
-    def test_observer_counts_all_recent_tickets(self):
-        self.current_user = self.observer
-        response = self.client.get("/api/v1/analytics/tickets-summary?period=month")
-
+    def summary(self, **params):
+        response = self.client.get("/api/v1/analytics/tickets-summary", params=params)
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(
-            response.json(),
-            {"open": 1, "assigned": 2, "in_progress": 1, "completed": 1},
-        )
+        return response.json()
 
-    def test_all_supported_periods_return_summary(self):
+    @staticmethod
+    def counts(body: dict) -> dict:
+        keys = ("open", "assigned", "in_progress", "created_in_period", "completed")
+        return {key: body[key] for key in keys}
+
+    def test_observer_sees_current_queue_and_period_counts_separately(self):
+        self.current_user = self.observer
+        body = self.summary(period="today")
+
+        self.assertEqual(
+            self.counts(body),
+            {"open": 1, "assigned": 2, "in_progress": 1, "created_in_period": 4, "completed": 1},
+        )
+        self.assertEqual(body["open_unassigned"], body["open"])
+        self.assertEqual(body["open_assigned"], body["assigned"])
+        self.assertEqual(body["completed_in_period"], body["completed"])
+
+    def test_every_period_reports_moscow_bounds_and_the_same_current_state(self):
         self.current_user = self.observer
         for period in ("today", "week", "month"):
             with self.subTest(period=period):
-                response = self.client.get(f"/api/v1/analytics/tickets-summary?period={period}")
-                self.assertEqual(response.status_code, 200, response.text)
-                self.assertEqual(
-                    set(response.json()), {"open", "assigned", "in_progress", "completed"}
-                )
+                body = self.summary(period=period)
+                start = datetime.fromisoformat(body["period_start"])
+                end = datetime.fromisoformat(body["period_end"])
+                self.assertEqual(start.utcoffset(), timedelta(hours=3))
+                self.assertEqual((start.hour, start.minute), (0, 0))
+                self.assertLess(start, end)
+                self.assertEqual(body["open"], 1, "current state must not depend on the period")
 
-    def test_observer_office_filter_uses_assigned_brigade_office(self):
+    def test_office_filter_keeps_the_area_queue_and_own_brigade_work(self):
         self.current_user = self.observer
-        response = self.client.get(
-            f"/api/v1/analytics/tickets-summary?period=month&office_id={self.office_one}"
-        )
+        body = self.summary(period="month", office_id=self.office_one)
 
-        self.assertEqual(response.status_code, 200, response.text)
+        # The unassigned ticket has no area of its own; its building's area is the office's.
         self.assertEqual(
-            response.json(),
-            {"open": 0, "assigned": 1, "in_progress": 1, "completed": 1},
+            self.counts(body),
+            {"open": 1, "assigned": 1, "in_progress": 1, "created_in_period": 3, "completed": 1},
         )
 
-    def test_foreman_scope_ignores_requested_office(self):
+    def test_foreman_sees_own_brigade_and_the_queue_of_its_office_area(self):
         self.current_user = self.foreman_one
-        response = self.client.get(
-            f"/api/v1/analytics/tickets-summary?period=month&office_id={self.office_two}"
-        )
+        body = self.summary(period="month", office_id=self.office_two)
 
-        self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(
-            response.json(),
-            {"open": 0, "assigned": 1, "in_progress": 1, "completed": 1},
+            self.counts(body),
+            {"open": 1, "assigned": 1, "in_progress": 1, "created_in_period": 3, "completed": 1},
         )
 
     def test_foreman_without_brigade_gets_zero_summary(self):
         self.current_user = self.foreman_without_brigade
-        response = self.client.get("/api/v1/analytics/tickets-summary?period=today")
+        body = self.summary(period="today")
 
-        self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(
-            response.json(),
-            {"open": 0, "assigned": 0, "in_progress": 0, "completed": 0},
+            self.counts(body),
+            {"open": 0, "assigned": 0, "in_progress": 0, "created_in_period": 0, "completed": 0},
         )
+
+    def test_planned_for_date_counts_promises_of_that_moscow_day(self):
+        self.current_user = self.observer
+        location = self.connection.execute(text("SELECT id FROM locations LIMIT 1")).scalar_one()
+        day = date(2030, 5, 20)
+        midnight = datetime(2030, 5, 19, 21, 0, tzinfo=UTC)  # 00:00 MSK on the 20th
+        self.add_ticket(location, TicketStatus.PLANNED, self.now, planned_start_at=midnight)
+        self.add_ticket(
+            location,
+            TicketStatus.PLANNED,
+            self.now,
+            planned_start_at=midnight - timedelta(minutes=1),
+        )
+        self.session.commit()
+
+        body = self.summary(period="today", date=day.isoformat())
+        self.assertEqual(body["plan_date"], day.isoformat())
+        self.assertEqual(body["planned_for_date"], 1)
+
+    def test_day_boundary_is_moscow_midnight_even_when_the_database_runs_in_utc(self):
+        location = self.connection.execute(text("SELECT id FROM locations LIMIT 1")).scalar_one()
+        self.connection.execute(text("SET TIME ZONE 'UTC'"))
+        midnight = datetime(2030, 5, 19, 21, 0, tzinfo=UTC)  # 00:00 MSK on the 20th
+        # 23:50 MSK yesterday and 00:10 MSK today; in UTC both are the same date.
+        self.add_ticket(location, TicketStatus.PLANNED, midnight - timedelta(minutes=10))
+        self.add_ticket(location, TicketStatus.PLANNED, midnight + timedelta(minutes=10))
+        self.add_ticket(
+            location,
+            TicketStatus.COMPLETED,
+            midnight - timedelta(hours=2),
+            completed_at=midnight - timedelta(seconds=1),
+        )
+        self.add_ticket(
+            location, TicketStatus.COMPLETED, midnight - timedelta(hours=2), completed_at=midnight
+        )
+
+        summary = get_tickets_summary(
+            self.session,
+            period=AnalyticsPeriod.TODAY,
+            office_id=None,
+            current_user=self.observer,
+            now=midnight + timedelta(hours=10),
+        )
+        self.assertEqual(summary.period_start, midnight)
+        self.assertEqual(summary.created_in_period, 1)
+        self.assertEqual(summary.completed_in_period, 1)
 
     def test_worker_is_forbidden_and_invalid_period_is_rejected(self):
         self.current_user = self.worker_one

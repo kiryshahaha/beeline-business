@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -154,3 +155,41 @@ class TicketWorkTypeMigrationIssue(Base):
     reason: Mapped[str] = mapped_column(String(40))
     candidate_work_type_ids: Mapped[list[int]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TicketAssignmentEvent(IntegerIdMixin, Base):
+    """Who took a ticket from whom and gave it to whom, through which path.
+
+    Rows are written by the `tickets_record_assignment` trigger (migration 0027), not by
+    the ORM: any UPDATE of `tickets.assigned_worker_id` leaves one. The service passes the
+    actor and source in `app.actor_id`/`app.assignment_source`; without them the change is
+    still recorded with the source `direct`.
+    """
+
+    __tablename__ = "ticket_assignment_events"
+
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"))
+    previous_worker_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workers.user_id", ondelete="RESTRICT")
+    )
+    new_worker_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workers.user_id", ondelete="RESTRICT")
+    )
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    source: Mapped[str] = mapped_column(String(20))
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("clock_timestamp()")
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('manual', 'plan', 'line_status', 'direct', 'backfill')",
+            name="assignment_source_known",
+        ),
+        CheckConstraint(
+            "previous_worker_id IS DISTINCT FROM new_worker_id", name="assignment_changes"
+        ),
+        Index("ix_ticket_assignment_events_ticket", "ticket_id", "occurred_at"),
+        Index("ix_ticket_assignment_events_previous_worker", "previous_worker_id", "occurred_at"),
+        Index("ix_ticket_assignment_events_occurred_at", "occurred_at"),
+    )

@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.audit import set_assignment_origin
 from app.core.planning_guard import lock_planning_mutation
 from app.modules.execution import repository
 from app.modules.execution.enums import TicketLifecycleState, WorkEventType
@@ -563,6 +564,7 @@ def mark_worker_unavailable(
             raise ValueError("Ожидаемое время доступности должно быть позже события")
         from app.modules.users import repository as users_repository
 
+        set_assignment_origin(session, actor_id=actor_id, source="line_status")
         released_ticket_ids = users_repository.release_planned_assignments(session, worker_id)
         users_repository.clear_planned_times_without_assignees(session, released_ticket_ids)
         session.execute(

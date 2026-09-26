@@ -42,6 +42,8 @@ curl.exe -H "Authorization: Bearer $token" -F 'file=@all-data.xlsx' `
 `users.password_hash`, `refresh_tokens`, `calendar_tokens`, `push_subscriptions`
 и `data_imports` исключены. Из `day_plan_revisions` исключён `plan_id`: он ссылается
 на preview, а `planning_plans` не переносятся, поэтому UUID указывал бы в пустоту.
+`ticket_assignment_events` тоже не переносится: это журнал действий именно этой базы,
+его пишет её триггер, и перенесённые заявки начинают историю назначений заново.
 Импортированные пользователи получают случайный неизвестный пароль;
 диспетчер задаёт пароль через существующий PATCH пользователя. Для тестовых схем
 `seed_synthetic.py` отдельно устанавливает документированный тестовый пароль.

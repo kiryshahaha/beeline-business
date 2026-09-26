@@ -1,9 +1,10 @@
-"""Day timeline: shift intervals, planned tickets, office filter and role scoping."""
+"""Day timeline: shifts, planned tickets, day plans, open queue, office filter and roles."""
 
 import unittest
 from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token
@@ -15,6 +16,7 @@ from app.db.models import (
     District,
     Location,
     Office,
+    ServiceArea,
     Street,
     Ticket,
 )
@@ -68,14 +70,23 @@ class ScheduleApiTests(DatabaseTestCase):
         city = self.save(City(name="Москва"))
         district = self.save(District(city_id=city.id, name="Район"))
         street = self.save(Street(city_id=city.id, name="Улица"))
+        self.area_id = self.service_area_for_district(district.id)
         building = self.save(
             Building(
                 city_id=city.id,
-                service_area_id=self.service_area_for_district(district.id),
+                service_area_id=self.area_id,
                 street_id=street.id,
                 number="1",
             )
         )
+        # A second, independent area whose queue the north office must not see.
+        self.other_area_id = self.save(ServiceArea(code="other_area", name="Другой участок")).id
+        other_building = self.save(
+            Building(
+                city_id=city.id, service_area_id=self.other_area_id, street_id=street.id, number="2"
+            )
+        )
+        self.other_location_id = self.save(Location(building_id=other_building.id)).id
         self.location_id = self.save(Location(building_id=building.id)).id
         self.north = self.save(Office(location_id=self.location_id, name="Офис Север")).id
         self.south = self.save(Office(location_id=self.location_id, name="Офис Юг")).id
@@ -151,10 +162,12 @@ class ScheduleApiTests(DatabaseTestCase):
             self.save(BrigadeMember(brigade_id=brigade.id, worker_id=worker.id))
         return brigade.id
 
-    def new_ticket(self, workers, planned_start, planned_end, status=TicketStatus.PLANNED):
+    def new_ticket(
+        self, workers, planned_start, planned_end, status=TicketStatus.PLANNED, location_id=None
+    ):
         ticket = self.save(
             Ticket(
-                location_id=self.location_id,
+                location_id=location_id or self.location_id,
                 title="Заявка",
                 work_type="Подключение клиентов Базовая",
                 status=status,
@@ -226,6 +239,81 @@ class ScheduleApiTests(DatabaseTestCase):
             },
         )
         self.assertEqual([ticket["id"] for ticket in night["tickets"]], [self.night_ticket])
+
+    def test_open_queue_is_scoped_by_area(self):
+        own = self.new_ticket([], None, None)
+        foreign = self.new_ticket([], None, None, location_id=self.other_location_id)
+        self.session.commit()
+
+        everything = self.schedule(self.observer, date="2026-09-17")
+        self.assertEqual({row["id"] for row in everything["unassigned_tickets"]}, {own, foreign})
+        north = self.schedule(self.observer, date="2026-09-17", office_id=self.north)
+        self.assertEqual([row["id"] for row in north["unassigned_tickets"]], [own])
+        self.assertEqual(north["unassigned_tickets"][0]["service_area_id"], self.area_id)
+        foreman = self.schedule(self.north_foreman, date="2026-09-17")
+        self.assertEqual([row["id"] for row in foreman["unassigned_tickets"]], [own])
+        self.assertEqual(
+            foreman["plan_revisions"],
+            [{"service_area_id": self.area_id, "current_revision": None}],
+        )
+        other_day = self.schedule(self.observer, date="2026-09-20")
+        self.assertEqual(other_day["unassigned_tickets"], [])
+
+    def test_night_shift_day_plan_matches_the_planner(self):
+        # The night ticket at 23:30 on the 16th belongs to the 16th's shift, as the
+        # planner's route date does, not to the shift that starts on the 17th.
+        today = self.workers(self.schedule(self.observer, date="2026-09-17")["brigades"][0])
+        night = today[self.night_worker.id]["day_plan"]
+        self.assertEqual(
+            (night["shift_start"], night["shift_end"]),
+            (moscow(17, 22).isoformat(), moscow(18, 6).isoformat()),
+        )
+        self.assertEqual(night["visits"], [])
+
+        yesterday = self.workers(self.schedule(self.observer, date="2026-09-16")["brigades"][0])
+        night = yesterday[self.night_worker.id]["day_plan"]
+        self.assertEqual(len(night["visits"]), 2)
+        codes = {conflict["code"] for conflict in night["conflicts"]}
+        self.assertEqual(codes, {"visits_overlap"})
+
+    def test_dated_absence_is_shown_with_its_conflicting_visit(self):
+        self.connection.execute(
+            text(
+                "INSERT INTO worker_day_states "
+                "(worker_id, service_area_id, route_date, available, unavailable_at, "
+                "expected_available_at, reason) "
+                "VALUES (:worker, :area, :day, false, :since, :until, 'Больничный')"
+            ),
+            {
+                "worker": self.day_worker.id,
+                "area": self.area_id,
+                "day": DAY,
+                "since": moscow(17, 8),
+                "until": moscow(18, 8),
+            },
+        )
+        brigade = self.schedule(self.observer, date="2026-09-17", office_id=self.north)
+        plan = self.workers(brigade["brigades"][0])[self.day_worker.id]["day_plan"]
+
+        self.assertFalse(plan["availability"]["available"])
+        self.assertEqual(plan["availability"]["reason"], "Больничный")
+        self.assertEqual(plan["free_minutes"], 0)
+        self.assertEqual(
+            [(item["code"], item["ticket_ids"]) for item in plan["conflicts"]],
+            [("during_absence", [self.day_ticket])],
+        )
+
+    def test_day_plan_without_a_route_uses_ticket_times(self):
+        brigade = self.schedule(self.observer, date="2026-09-17", office_id=self.north)
+        plan = self.workers(brigade["brigades"][0])[self.day_worker.id]["day_plan"]
+
+        self.assertIsNone(plan["route"])
+        self.assertEqual(
+            [(visit["ticket_id"], visit["source"]) for visit in plan["visits"]],
+            [(self.day_ticket, "ticket")],
+        )
+        self.assertEqual((plan["service_minutes"], plan["travel_minutes"]), (90, 0))
+        self.assertEqual(plan["free_minutes"], 9 * 60 - 90)
 
     def test_observer_without_office_sees_every_brigade_and_workers_without_one(self):
         data = self.schedule(self.observer, date="2026-09-17")

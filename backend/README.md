@@ -95,12 +95,12 @@
     доступно роли `observer`;
   - `GET /health` — liveness процесса; `GET /ready` — PostgreSQL, миграции и planner.
 - **Аналитика заявок:**
-  - `GET /api/v1/analytics/tickets-summary` — количество заявок по статусам за `today`, `week` или `month`;
-    доступно ролям `observer` и `foreman`.
-  - `GET /api/v1/analytics/brigades-workload` — активные заявки и завершённые сегодня по бригадам;
-    `observer` видит все бригады, `foreman` — только свою.
-  - `GET /api/v1/analytics/recent-activity` — общая лента последних изменений по заявкам;
-    `observer` видит все заявки, `foreman` — только заявки своей бригады.
+  - `GET /api/v1/analytics/tickets-summary` — текущая очередь, созданные и завершённые за
+    `today`/`week`/`month` по Москве и обещанные на дату заявки; `observer` и `foreman`.
+  - `GET /api/v1/analytics/brigades-workload` — загрузка бригад на дату по сменам: работа,
+    дорога, ожидание, свободное время; `observer` видит все бригады, `foreman` — только свою.
+  - `GET /api/v1/analytics/recent-activity` — лента доменных событий по заявкам с автором;
+    `observer` видит все заявки, `foreman` — работу своей бригады и очередь участка её офиса.
 - **Уведомления:**
   - `GET /api/v1/notifications` — личная история событий;
   - `POST, DELETE /api/v1/notifications/push-subscriptions` — зарегистрировать или удалить Firebase-токен браузера;
@@ -814,114 +814,102 @@ XLSX содержит лист `tickets` с одинаковым набором 
 `401`, а токен роли `foreman` или `worker` — `403`.
 ## Сводка заявок
 
-`GET /api/v1/analytics/tickets-summary` возвращает четыре счётчика по заявкам:
+`GET /api/v1/analytics/tickets-summary` отвечает на четыре разных вопроса и не сводит их
+в одно число:
 
 ```http
-GET /api/v1/analytics/tickets-summary?period=month&office_id=1
+GET /api/v1/analytics/tickets-summary?period=month&office_id=1&date=2026-09-20
 Authorization: Bearer <access token>
 ```
 
-Параметр `period` обязателен и принимает значения `today`, `week` и `month`.
-Период начинается с полуночи текущего дня, понедельника текущей недели или первого
-дня текущего месяца соответственно; граница считается по `tickets.created_at` и часовому
-поясу сессии PostgreSQL. `office_id` необязателен и применяется для `observer`.
+| Поле | Что считает |
+| --- | --- |
+| `open` (= `open_unassigned`) | Сейчас: `planned` без исполнителя. От периода не зависит |
+| `assigned` (= `open_assigned`) | Сейчас: `planned` с исполнителем |
+| `in_progress` | Сейчас: работа идёт |
+| `created_in_period` | Созданы внутри периода |
+| `completed` (= `completed_in_period`) | Завершены внутри периода по `actual_completed_at`, иначе по событию `complete`. `updated_at` не используется: правка закрытой заявки не считается завершением |
+| `planned_for_date` | Плановое начало визита приходится на `date` (по умолчанию сегодня) |
 
-```json
-{
-  "open": 12,
-  "assigned": 5,
-  "in_progress": 8,
-  "completed": 45
-}
-```
+`period` обязателен: `today`, `week` (с понедельника) или `month`. Границы — полуинтервал
+`[period_start, period_end)` по Москве; ответ их возвращает. Часовой пояс сессии PostgreSQL
+не используется, поэтому сервер в UTC не сдвигает сутки на три часа.
 
-`open` — заявки со статусом `planned` без исполнителей. `assigned` — заявки со статусом
-`planned`, у которых есть хотя бы один исполнитель. `in_progress` и `completed` считают
-одноимённые статусы.
-
-Наблюдатель получает сводку по всей базе; при `office_id` сервер оставляет заявки,
-назначенные исполнителям бригад этого офиса. У заявки без назначения нет связи с офисом,
-поэтому она попадает в общий отчёт, но не в отчёт с фильтром офиса.
-
-Для `foreman` сервер находит `brigades.id` по `brigades.foreman_id` текущего пользователя,
-игнорирует переданный `office_id` и считает только назначенные заявки своей бригады.
-Если бригада не найдена, API возвращает четыре нулевых счётчика. Роль `worker` получает `403`.
+Область заявки — её собственный участок, иначе участок её здания. С `office_id` в отчёт
+попадает назначенная работа исполнителей бригад этого офиса и очередь без исполнителя в
+участке офиса (`offices.service_area_id`, иначе участок здания офиса) — независимо от того,
+кто её потом возьмёт. `foreman` видит работу своей бригады и очередь участка её офиса,
+переданный `office_id` его область не расширяет; без бригады — нули. `worker` получает `403`.
 
 ## Загруженность бригад
 
-`GET /api/v1/analytics/brigades-workload` возвращает список бригад с двумя счётчиками:
-
-```http
-GET /api/v1/analytics/brigades-workload
-Authorization: Bearer <access token>
-```
+`GET /api/v1/analytics/brigades-workload?date=2026-09-20` возвращает загрузку каждой
+видимой бригады на дату (по умолчанию сегодня по Москве):
 
 ```json
 [
   {
+    "brigade_id": 1,
     "brigade_name": "Альфа",
-    "active_tickets": 3,
-    "completed_today": 10
+    "date": "2026-09-20",
+    "workers": 3,
+    "available_workers": 2,
+    "tickets": 7,
+    "shift_minutes": 1080,
+    "service_minutes": 420,
+    "travel_minutes": 95,
+    "waiting_minutes": 10,
+    "free_minutes": 555,
+    "overtime_minutes": 0,
+    "conflicts": 1,
+    "active_tickets": 7,
+    "completed_today": 4
   }
 ]
 ```
 
-`active_tickets` включает назначенные бригаде заявки со статусами `planned` и `in_progress`.
-`completed_today` включает заявки со статусом `completed`, у которых `updated_at` попадает
-в текущий календарный день. Бригады без заявок возвращаются с нулевыми значениями.
+Считается не число активных строк в базе, а смена даты — тем же кодом, что строит
+`day_plan` расписания (`schedule/timeline.py`): смена в модели планировщика, визиты и
+дорога из последнего сохранённого маршрута исполнителя, ожидание открытия окна,
+отметки недоступности `worker_day_states`. Недоступный на дату исполнитель ёмкости не
+даёт. `overtime_minutes` — визиты за пределами смены: политики переработки нет, поэтому
+это нарушение плана, а не дополнительная ёмкость. `active_tickets` оставлен синонимом
+`tickets`; `completed_today` считается по фактическому времени завершения.
 
-`observer` получает все бригады. `foreman` получает только собственную бригаду;
-если бригада не найдена, API возвращает `[]`. Роль `worker` и запрос без токена получают
-`403` и `401` соответственно.
+`observer` получает все бригады, `foreman` — только свою (без бригады — `[]`).
 
 ## Лента последних действий
 
-`GET /api/v1/analytics/recent-activity` возвращает общую ленту изменений по заявкам,
-новые события сверху. Параметры `limit` (1–100, по умолчанию 20) и `offset` листают ленту.
+`GET /api/v1/analytics/recent-activity` возвращает ленту изменений по заявкам, новые
+сверху. `limit` (1–100, по умолчанию 20) и `offset` листают её.
 
-```http
-GET /api/v1/analytics/recent-activity?limit=20
-Authorization: Bearer <access token>
-```
-
-```json
-[
-  {
-    "kind": "ticket_status_changed",
-    "occurred_at": "2026-09-20T09:05:00Z",
-    "ticket": {"id": 42, "title": "Монтаж оборудования", "status": "in_progress"},
-    "actor": {"id": 7, "full_name": "Кузнецов Дмитрий", "role": "worker"},
-    "details": {
-      "previous_status": "planned",
-      "status": "in_progress",
-      "worker": null,
-      "comment_id": null,
-      "comment_excerpt": null
-    }
-  }
-]
-```
-
-Отдельной таблицы журнала в системе нет, поэтому лента собирается из уже существующих
-данных одним запросом:
+Лента читает доменные записи, а не очередь уведомлений: `notification_events` — это
+доставка (строка на каждого получателя), а не история.
 
 | `kind` | Источник | Автор в `actor` |
 | --- | --- | --- |
-| `ticket_created` | `tickets.created_at` | Нет: создание заявки не требует токена и автор не сохраняется |
-| `ticket_assigned` | `notification_events` | Нет; назначенный исполнитель приходит в `details.worker` |
-| `ticket_status_changed` | `notification_events` | Да, из `data.actor_id` |
-| `comment_added` | `ticket_comments.created_at` | Да, автор комментария |
-| `comment_edited` | `ticket_comments.updated_at` | Да, автор комментария |
+| `ticket_created` | Событие `new_ticket`, для старых заявок — `tickets.created_at` | Если записан |
+| `ticket_assigned`, `ticket_reassigned`, `ticket_unassigned` | `ticket_assignment_events` | Кто изменил; `details.worker` и `details.previous_worker` — кому и от кого |
+| `plan_applied` | `ticket_assignment_events` с `source=plan` | Автор расчёта |
+| `ticket_status_changed` | `work_events` жизненного цикла | Да |
+| `ticket_cancelled`, `ticket_rescheduled`, `ticket_delayed`, `worker_redirected` | `work_events` | Да |
+| `comment_added`, `comment_edited` | `ticket_comments` | Автор комментария |
 
-Событие смены статуса сохраняется отдельной строкой для каждого диспетчера, поэтому
-одинаковые строки группируются и показываются одним событием. `ticket.status` — текущий
-статус заявки, а не статус на момент события; сам переход виден в `details`.
-`comment_excerpt` содержит начало комментария, длинный текст обрезается многоточием.
-Правки комментария видны последней версией: история текста в базе не хранится.
+`ticket_assignment_events` пишет триггер `tickets_record_assignment` (миграция 0027) при
+любом изменении `tickets.assigned_worker_id`: ручное назначение, применение плана, снятие
+инженера с линии, повторное открытие заявки или прямой SQL. Сервис передаёт автора и путь
+(`details.assignment_source`: `manual`, `plan`, `line_status`, `direct`, `backfill`);
+изменение без них всё равно записывается с источником `direct`. Назначения, сделанные до
+миграции, перенесены из `work_events` с источником `backfill`.
 
-`observer` получает ленту по всем заявкам. `foreman` получает события только по заявкам,
-назначенным исполнителям его бригады; без бригады — `[]`. Роль `worker` получает `403`,
-запрос без токена — `401`.
+`details` содержит этап жизненного цикла (`previous_state`, `state`) и соответствующий
+ему статус. У комментария хранится только текущий текст: `comment_excerpt` у события
+правки — сегодняшний текст, а не тот, что был в момент правки, поэтому лента не обещает
+полного аудита формулировок. Применение плана, не сменившее исполнителя, в ленте не
+появляется: изменение времени визита отдельной записью пока не хранится.
+
+`observer` видит все заявки, `foreman` — работу своей бригады, очередь участка её офиса
+и заявки, которые ушли от исполнителя бригады; без бригады — `[]`. `worker` — `403`.
 
 ## Маршрутизация Geoapify
 
