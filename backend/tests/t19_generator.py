@@ -293,7 +293,7 @@ def generate_t19_dataset(variant="base", seed=1900):
                     metadata["invariants"][ticket_idx] = "missing_skill"
                 elif c == 1:
                     loc_id = area_id * 100 + 10  # Unreachable point (lat/lon None)
-                    metadata["invariants"][ticket_idx] = "ticket_without_coordinates"
+                    metadata["invariants"][ticket_idx] = "missing_coordinates"
 
             add(
                 "tickets",

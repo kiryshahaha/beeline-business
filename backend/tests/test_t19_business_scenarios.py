@@ -128,8 +128,4 @@ class T19BusinessScenariosTests(DatabaseTestCase):
             if t_id not in unassigned:
                 t_id = receipt["id_map"]["tickets"].get(int(old_t_id), old_t_id)
             self.assertIn(t_id, unassigned)
-            if expected_reason == "missing_skill":
-                # Check it's unassigned due to nobody having the skill
-                self.assertIn(unassigned[t_id], ["skill_nobody_has", "no_eligible_worker"])
-            else:
-                self.assertEqual(unassigned[t_id], expected_reason)
+            self.assertEqual(unassigned[t_id], expected_reason)
