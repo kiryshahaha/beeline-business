@@ -119,8 +119,7 @@ def generate_t19_dataset(variant="base", seed=1900):
     add(
         "work_type_planning_rules",
         work_type_id=1,
-        service_duration_source="fixed",
-        fixed_duration_minutes=60,
+        service_duration_source="work_norm",
         configured_by=1,
     )
     add("work_type_required_skills", work_type_id=1, skill_id=1)  # requires Copper
@@ -140,8 +139,7 @@ def generate_t19_dataset(variant="base", seed=1900):
     add(
         "work_type_planning_rules",
         work_type_id=2,
-        service_duration_source="fixed",
-        fixed_duration_minutes=90,
+        service_duration_source="work_norm",
         configured_by=1,
     )
     add("work_type_required_skills", work_type_id=2, skill_id=2)  # requires Fiber
@@ -180,8 +178,7 @@ def generate_t19_dataset(variant="base", seed=1900):
     add(
         "work_type_planning_rules",
         work_type_id=4,
-        service_duration_source="fixed",
-        fixed_duration_minutes=30,
+        service_duration_source="work_norm",
         configured_by=1,
     )
 
