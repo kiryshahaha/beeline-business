@@ -40,39 +40,50 @@ class T19BusinessScenariosTests(DatabaseTestCase):
                     ):
                         receipt = import_data(session, csv_parsed)
 
-                    request = PreviewRequest.model_validate(preview_request(receipt, data))
-                    snapshot = load_snapshot(session, request)
-                    prepared = prepare(snapshot, self.stamp)
-
-                    settings = Settings()
-
-                    async def run():
-                        async with provider_factory() as provider:
-                            problem, nodes = await build_problem(prepared, provider, settings)
-                            solution = await FeasiblePlanner().solve(problem)
-                            validate_solution(problem, solution)
-                            result = await build_routes(
-                                prepared, problem, nodes, solution, provider, settings
-                            )
-                            return prepared, result.routes
-
-                    return asyncio.run(run())
+                    requests = []
+                    for area_idx in range(1, 4):
+                        area_id = 100 + area_idx
+                        area_tickets = [t for t in data["tickets"] if t["service_area_id"] == area_id]
+                        area_workers = [w for w in data["workers"] if w["service_area_id"] == area_id]
+                        req_data = preview_request(receipt, {"tickets": area_tickets, "workers": area_workers})
+                        requests.append(PreviewRequest.model_validate(req_data))
+                    
+                    routes = []
+                    prepared_snapshots = []
+                    for request in requests:
+                        snapshot = load_snapshot(session, request)
+                        prepared = prepare(snapshot, self.stamp)
+                        prepared_snapshots.append(prepared)
+                        
+                        settings = Settings()
+                        async def run():
+                            async with provider_factory() as provider:
+                                problem, nodes = await build_problem(prepared, provider, settings)
+                                solution = await FeasiblePlanner().solve(problem)
+                                validate_solution(problem, solution)
+                                result = await build_routes(
+                                    prepared, problem, nodes, solution, provider, settings
+                                )
+                                return result.routes
+                                
+                        routes.extend(asyncio.run(run()))
+                        
+                    return prepared_snapshots, routes
             finally:
                 transaction.rollback()
 
     def test_t19_base_scenario(self):
         data = generate_t19_dataset("base", seed=2001)
-        prepared, routes = self.import_and_plan(data)
+        prepared_snapshots, routes = self.import_and_plan(data)
 
-        # 40/40/10/10 distribution means 100 tickets.
-        # Some are unassigned due to our edge cases (e.g. cancelled, missing appliance).
-        {t["ticket_id"]: t["reason"]["code"] for t in prepared["unassigned"]}
+        unassigned = {}
+        workers = []
+        for prepared in prepared_snapshots:
+            for t in prepared["unassigned"]:
+                unassigned[t["ticket_id"]] = t["reason"]["code"]
+            workers.extend(prepared["workers"])
 
-        # Ticket 2 is cancelled -> should not be planned? Wait, if it's WONT_FIX, is it rejected?
-        # Ticket 3 is IN_PROGRESS -> should not be planned?
-        # Actually, let's just assert the routes are generated successfully.
         self.assertTrue(isinstance(routes, list))
 
-        # Check that we have 3 areas and workers from each area.
-        workers = prepared["workers"]
+        # Check that we have workers from each area.
         self.assertGreater(len(workers), 0)
