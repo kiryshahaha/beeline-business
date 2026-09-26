@@ -43,19 +43,26 @@ class T19BusinessScenariosTests(DatabaseTestCase):
                     requests = []
                     for area_idx in range(1, 4):
                         area_id = 100 + area_idx
-                        area_tickets = [t for t in data["tickets"] if t["service_area_id"] == area_id]
-                        area_workers = [w for w in data["workers"] if w["service_area_id"] == area_id]
-                        req_data = preview_request(receipt, {"tickets": area_tickets, "workers": area_workers})
+                        area_tickets = [
+                            t for t in data["tickets"] if t["service_area_id"] == area_id
+                        ]
+                        area_workers = [
+                            w for w in data["workers"] if w["service_area_id"] == area_id
+                        ]
+                        req_data = preview_request(
+                            receipt, {"tickets": area_tickets, "workers": area_workers}
+                        )
                         requests.append(PreviewRequest.model_validate(req_data))
-                    
+
                     routes = []
                     prepared_snapshots = []
                     for request in requests:
                         snapshot = load_snapshot(session, request)
                         prepared = prepare(snapshot, self.stamp)
                         prepared_snapshots.append(prepared)
-                        
+
                         settings = Settings()
+
                         async def run():
                             async with provider_factory() as provider:
                                 problem, nodes = await build_problem(prepared, provider, settings)
@@ -65,9 +72,9 @@ class T19BusinessScenariosTests(DatabaseTestCase):
                                     prepared, problem, nodes, solution, provider, settings
                                 )
                                 return result.routes
-                                
+
                         routes.extend(asyncio.run(run()))
-                        
+
                     return prepared_snapshots, routes
             finally:
                 transaction.rollback()
