@@ -25,5 +25,8 @@ tests {
     expect(data.at_risk_tickets_count).to.be.a("number");
     expect(data.average_delay_minutes).to.be.a("number");
     expect(data.idle_workers_count).to.be.a("number");
+    expect(data.at_risk_tickets_ids).to.be.an("array");
+    expect(data.idle_workers_ids).to.be.an("array");
+    expect(data.active_brigades_count).to.be.a("number");
   });
 }

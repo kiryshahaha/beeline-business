@@ -86,6 +86,16 @@ export const BrigadesPanel = ({ onClose }) => {
     return (
         <div className={styles.brigadesPanel}>
             <div className={styles.brigadesCloseHeader}>
+                <div className={styles.dragHandle}>
+                    <svg width="12" height="18" viewBox="0 0 12 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="4" cy="3" r="1.5" fill="currentColor"/>
+                        <circle cx="8" cy="3" r="1.5" fill="currentColor"/>
+                        <circle cx="4" cy="9" r="1.5" fill="currentColor"/>
+                        <circle cx="8" cy="9" r="1.5" fill="currentColor"/>
+                        <circle cx="4" cy="15" r="1.5" fill="currentColor"/>
+                        <circle cx="8" cy="15" r="1.5" fill="currentColor"/>
+                    </svg>
+                </div>
                 <button className={styles.closeBtn} onClick={onClose}>
                     <Image src="/icons/Frame 33.svg" alt="close" width={16} height={16} />
                 </button>

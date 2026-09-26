@@ -65,6 +65,9 @@ def get_fast_stats(
                 at_risk_tickets_count=0,
                 average_delay_minutes=0,
                 idle_workers_count=0,
+                at_risk_tickets_ids=[],
+                idle_workers_ids=[],
+                active_brigades_count=0,
             )
 
     data = repository.find_fast_stats(
