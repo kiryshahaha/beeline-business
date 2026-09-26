@@ -103,52 +103,7 @@ def find_tickets_summary(
         "plan_start": plan_start,
         "plan_end": plan_end,
     }
-<<<<<<< HEAD
 
-    if brigade_id is not None:
-        conditions.append(
-            """
-            EXISTS (
-                SELECT 1
-                FROM brigade_members AS scope_member
-                WHERE scope_member.worker_id = t.assigned_worker_id
-                  AND scope_member.brigade_id = :brigade_id
-            )
-            """
-        )
-        parameters["brigade_id"] = brigade_id
-    elif office_id is not None:
-        conditions.append(
-            """
-            (
-                EXISTS (
-                    SELECT 1
-                    FROM brigade_members AS scope_member
-                    JOIN brigades AS scope_brigade
-                        ON scope_brigade.id = scope_member.brigade_id
-                    WHERE scope_member.worker_id = t.assigned_worker_id
-                      AND scope_brigade.office_id = :office_id
-                )
-                OR (
-                    t.assigned_worker_id IS NULL
-                    AND t.service_area_id IN (
-                        SELECT bld_sa.id
-                        FROM offices AS off
-                        JOIN locations AS off_loc ON off_loc.id = off.location_id
-                        JOIN buildings AS off_bld ON off_bld.id = off_loc.building_id
-                        JOIN service_areas AS bld_sa
-                          ON bld_sa.id = off_bld.service_area_id
-                        WHERE off.id = :office_id
-                    )
-                )
-            )
-            """
-        )
-        parameters["office_id"] = office_id
-
-=======
-    # Only fixed SQL fragments are joined; every value is a bound parameter.
->>>>>>> origin/main
     query = text(
         f"""
         SELECT
