@@ -43,8 +43,14 @@ def generate_t19_dataset(variant="base", seed=1900):
             )
             add("entrances", id=b_id, building_id=b_id, number="1")
 
-            lat = round(55.75 + b_id * 0.0001, 6)
-            lon = round(37.61 + b_id * 0.0001, 6)
+            # Create a specific unreachable point in negative variant
+            if variant == "negative" and b == 10:
+                lat = None
+                lon = None
+            else:
+                lat = round(55.75 + b_id * 0.0001, 6)
+                lon = round(37.61 + b_id * 0.0001, 6)
+
             add(
                 "locations",
                 id=b_id,
@@ -54,9 +60,7 @@ def generate_t19_dataset(variant="base", seed=1900):
                 entrance_id=b_id,
             )
 
-        # 1 Office per area
         add("offices", id=i, location_id=i * 100 + 1, name=f"Office {i}")
-        # 1 Brigade per area
         foreman_id = add(
             "users", username=f"foreman_{i}", name=f"F{i}", surname=f"A{i}", role="foreman"
         )["id"]
@@ -64,12 +68,10 @@ def generate_t19_dataset(variant="base", seed=1900):
             "brigades", id=i, division_id=i, office_id=i, foreman_id=foreman_id, name=f"Brigade {i}"
         )
 
-    # Skills
     skills = ["Copper", "Fiber", "Radio"]
     for i, s in enumerate(skills, 1):
         add("worker_skills", id=i, skill=s)
 
-    # Workers (10-15 per area -> let's do 12 per area = 36 workers)
     transport_profiles = [
         TransportType.CAR,
         TransportType.WALKING,
@@ -86,24 +88,32 @@ def generate_t19_dataset(variant="base", seed=1900):
                 role="worker",
             )["id"]
             trans = transport_profiles[w_idx % 4]
+            is_offline = variant == "negative" and w_idx == 1
+            is_night = variant == "edge_cases" and w_idx == 2
+
+            w_start = time(22) if is_night else time(8)
+            w_end = time(6) if is_night else time(18)
+
             add(
                 "workers",
                 user_id=user_id,
                 service_area_id=100 + area_idx,
                 transport_type=trans.value,
-                workshift_start=time(8),
-                workshift_end=time(18),
-                is_on_line=True,
+                workshift_start=w_start,
+                workshift_end=w_end,
+                is_on_line=not is_offline,
             )
             add("brigade_members", brigade_id=area_idx, worker_id=user_id)
 
-            # Unequal skill sets: 1/2/3 skills
-            num_skills = (w_idx % 3) + 1
+            # For negative variant, we omit some skills on purpose
+            if variant == "negative":
+                num_skills = 1  # Only Copper
+            else:
+                num_skills = (w_idx % 3) + 1
             for s_id in range(1, num_skills + 1):
                 add("worker_skill_assignments", worker_id=user_id, skill_id=s_id)
 
     # 4 Canonical Categories
-    # emergency, connection, repair, additional
     add(
         "work_types",
         id=1,
@@ -122,7 +132,7 @@ def generate_t19_dataset(variant="base", seed=1900):
         service_duration_source="work_norm",
         configured_by=1,
     )
-    add("work_type_required_skills", work_type_id=1, skill_id=1)  # requires Copper
+    add("work_type_required_skills", work_type_id=1, skill_id=1)
 
     add(
         "work_types",
@@ -142,7 +152,7 @@ def generate_t19_dataset(variant="base", seed=1900):
         service_duration_source="work_norm",
         configured_by=1,
     )
-    add("work_type_required_skills", work_type_id=2, skill_id=2)  # requires Fiber
+    add("work_type_required_skills", work_type_id=2, skill_id=2)
 
     add(
         "work_types",
@@ -162,6 +172,7 @@ def generate_t19_dataset(variant="base", seed=1900):
         service_duration_source="ticket_estimate",
         configured_by=1,
     )
+    add("work_type_required_skills", work_type_id=3, skill_id=3)  # Require Radio
 
     add(
         "work_types",
@@ -181,53 +192,108 @@ def generate_t19_dataset(variant="base", seed=1900):
         service_duration_source="work_norm",
         configured_by=1,
     )
+    add("work_type_required_skills", work_type_id=4, skill_id=1)
 
-    # Tickets
-    # 40/40/10/10 distribution for base variant
+    add(
+        "appliances",
+        id=1,
+        code="ROUTER",
+        name="Router",
+        type="CLIENT_ROUTER",
+        unit="шт",
+        is_active=True,
+    )
+    add("work_type_required_appliances", work_type_id=4, appliance_id=1, quantity=1)
+
     if variant == "base":
-        distribution = [(1, 40), (3, 40), (2, 10), (4, 10)]  # EM:40, REP:40, CONN:10, ADD:10
+        distribution = [(1, 40), (2, 40), (3, 10), (4, 10)]
     elif variant == "negative":
-        distribution = [(1, 20)]  # Fewer tickets for negative testing
+        distribution = [(3, 5)]  # Require Radio, but workers only have Copper
     else:
-        distribution = [(1, 25), (2, 25), (3, 25), (4, 25)]
+        distribution = [(1, 15)]
+
+    metadata = {
+        "variant": variant,
+        "seed": seed,
+        "versions": {"schema": "1.0", "policy": "case_policy_v1"},
+        "invariants": {},
+    }
 
     ticket_idx = 1
     for wt_id, count in distribution:
-        for _ in range(count):
+        for c in range(count):
+            ticket_wt_id = wt_id
             area_id = (ticket_idx % 3) + 1
             loc_id = area_id * 100 + ((ticket_idx % 38) + 2)
 
-            # Events and specific conditions logic
             status = TicketStatus.PLANNED.value
             lifecycle = "waiting_assignment"
             comments = []
             req_transport = None
 
-            vw_start = stamp + timedelta(days=1, hours=1)  # 2030-01-15 09:00
-            vw_end = vw_start + timedelta(hours=2)  # 2030-01-15 11:00
+            vw_start = stamp + timedelta(days=1, hours=1)
+            vw_end = vw_start + timedelta(hours=2)
+            recv_at = stamp
 
-            if ticket_idx == 1:
-                # Emergency at 12:17
-                comments.append(
-                    {"text": "Urgent leak", "created_at": datetime(2030, 1, 15, 12, 17, tzinfo=UTC)}
-                )
-            elif ticket_idx == 2:
-                # Cancelled before departure
-                status = TicketStatus.WONT_FIX.value
-                lifecycle = "cancelled"
-            elif ticket_idx == 3:
-                # Extending work with status in_progress
-                status = TicketStatus.IN_PROGRESS.value
-                lifecycle = "in_progress"
-            elif ticket_idx == 4:
-                # Mandatory transport type
-                req_transport = TransportType.BICYCLE.value
-            elif ticket_idx == 5:
-                # Unreachable point (will be handled by coordinates)
+            if variant == "base":
                 pass
-            elif ticket_idx in (6, 7):
-                # Two separate visits with identical coordinates
-                loc_id = area_id * 100 + 5  # same location
+            elif variant == "edge_cases":
+                if c == 0:
+                    recv_at = datetime(2030, 1, 15, 12, 17, tzinfo=UTC)
+                    comments.append(
+                        {
+                            "text": "Аварийная заявка",
+                            "created_at": datetime(2030, 1, 15, 12, 17, tzinfo=UTC),
+                        }
+                    )
+                elif c == 1:
+                    status = TicketStatus.WONT_FIX.value
+                    lifecycle = "cancelled"
+                    metadata["invariants"][ticket_idx] = "ticket_not_planned"
+                elif c == 2:
+                    status = TicketStatus.IN_PROGRESS.value
+                    lifecycle = "in_progress"
+                    metadata["invariants"][ticket_idx] = "ticket_not_planned"
+                elif c == 3:
+                    req_transport = TransportType.BICYCLE.value
+                elif c == 4:
+                    loc_id = area_id * 100 + 5
+                elif c == 5:
+                    loc_id = area_id * 100 + 5  # identical coordinate visit
+                elif c == 6:
+                    vw_start = stamp - timedelta(hours=2)  # early/late windows
+                    vw_end = stamp - timedelta(hours=1)
+                elif c == 7:
+                    loc_id = 1000 + ticket_idx
+                    b_id = area_id * 100 + 99
+                    add(
+                        "buildings",
+                        id=b_id,
+                        city_id=area_id,
+                        street_id=area_id,
+                        service_area_id=100 + area_id,
+                        number="99",
+                    )
+                    add("entrances", id=b_id, building_id=b_id, number="1")
+                    add(
+                        "locations",
+                        id=loc_id,
+                        building_id=b_id,
+                        latitude=56.0,
+                        longitude=38.0,
+                        entrance_id=b_id,
+                    )
+                elif c == 8:
+                    # Stock shortage for work type 4
+                    ticket_wt_id = 4
+                    metadata["invariants"][ticket_idx] = "equipment_not_reserved"
+
+            elif variant == "negative":
+                if c == 0:
+                    metadata["invariants"][ticket_idx] = "missing_skill"
+                elif c == 1:
+                    loc_id = area_id * 100 + 10  # Unreachable point (lat/lon None)
+                    metadata["invariants"][ticket_idx] = "missing_coordinates"
 
             add(
                 "tickets",
@@ -239,12 +305,12 @@ def generate_t19_dataset(variant="base", seed=1900):
                 revision=1,
                 execution_cycle=1,
                 work_type="WT",
-                work_type_id=wt_id,
-                category=["emergency", "connection", "repair", "additional"][wt_id - 1]
-                if wt_id <= 4
+                work_type_id=ticket_wt_id,
+                category=["emergency", "connection", "repair", "additional"][ticket_wt_id - 1]
+                if ticket_wt_id <= 4
                 else TicketCategory.REPAIR.value,
                 priority=1,
-                received_at=stamp,
+                received_at=recv_at,
                 title=f"T19 Ticket {ticket_idx}",
                 visit_window_start=vw_start,
                 visit_window_end=vw_end,
@@ -261,7 +327,6 @@ def generate_t19_dataset(variant="base", seed=1900):
                     text=comment["text"],
                     created_at=comment["created_at"],
                 )
-
             ticket_idx += 1
 
-    return tables
+    return tables, metadata

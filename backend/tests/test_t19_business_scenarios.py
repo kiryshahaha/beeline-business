@@ -75,13 +75,16 @@ class T19BusinessScenariosTests(DatabaseTestCase):
 
                         routes.extend(asyncio.run(run()))
 
-                    return prepared_snapshots, routes
+                    return prepared_snapshots, routes, receipt
             finally:
                 transaction.rollback()
 
     def test_t19_base_scenario(self):
-        data = generate_t19_dataset("base", seed=2001)
-        prepared_snapshots, routes = self.import_and_plan(data)
+        data, metadata = generate_t19_dataset("base", seed=2001)
+        prepared_snapshots, routes, receipt = self.import_and_plan(data)
+
+        self.assertEqual(metadata["seed"], 2001)
+        self.assertEqual(metadata["versions"]["schema"], "1.0")
 
         unassigned = {}
         workers = []
@@ -91,6 +94,38 @@ class T19BusinessScenariosTests(DatabaseTestCase):
             workers.extend(prepared["workers"])
 
         self.assertTrue(isinstance(routes, list))
-
-        # Check that we have workers from each area.
         self.assertGreater(len(workers), 0)
+
+    def test_t19_edge_cases_scenario(self):
+        data, metadata = generate_t19_dataset("edge_cases", seed=2002)
+        prepared_snapshots, routes, receipt = self.import_and_plan(data)
+
+        unassigned = {}
+        for prepared in prepared_snapshots:
+            for t in prepared["unassigned"]:
+                unassigned[t["ticket_id"]] = t["reason"]["code"]
+
+        self.assertTrue(isinstance(routes, list))
+        # Validate invariants
+        for old_t_id, expected_reason in metadata["invariants"].items():
+            t_id = receipt["id_map"]["tickets"].get(str(old_t_id), old_t_id)
+            if t_id not in unassigned:
+                t_id = receipt["id_map"]["tickets"].get(int(old_t_id), old_t_id)
+            self.assertIn(t_id, unassigned)
+            self.assertEqual(unassigned[t_id], expected_reason)
+
+    def test_t19_negative_scenario(self):
+        data, metadata = generate_t19_dataset("negative", seed=2003)
+        prepared_snapshots, routes, receipt = self.import_and_plan(data)
+
+        unassigned = {}
+        for prepared in prepared_snapshots:
+            for t in prepared["unassigned"]:
+                unassigned[t["ticket_id"]] = t["reason"]["code"]
+
+        for old_t_id, expected_reason in metadata["invariants"].items():
+            t_id = receipt["id_map"]["tickets"].get(str(old_t_id), old_t_id)
+            if t_id not in unassigned:
+                t_id = receipt["id_map"]["tickets"].get(int(old_t_id), old_t_id)
+            self.assertIn(t_id, unassigned)
+            self.assertEqual(unassigned[t_id], expected_reason)
