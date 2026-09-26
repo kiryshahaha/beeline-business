@@ -63,9 +63,12 @@ export function AuthProvider({ children }) {
     updateToken(null);
   }, []);
 
+  const isLoginPage = pathname === "/login";
+  const ready = !loading && (token || isLoginPage);
+
   return (
     <AuthContext.Provider value={{ token, login, logout, loading }}>
-      {children}
+      {ready ? children : null}
     </AuthContext.Provider>
   );
 }

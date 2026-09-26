@@ -1,0 +1,217 @@
+/* ── Full-page layout ── */
+.page {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: #0a0a0a;
+  overflow: hidden;
+}
+
+/* ── Card ── */
+.card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 400px;
+  background: #1C1C1E;
+  border: 1px solid #2C2C2E;
+  border-radius: 20px;
+  padding: 36px 32px 28px;
+  box-shadow:
+    0 0 0 1px rgba(255,200,0,0.06),
+    0 32px 64px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  animation: slideUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Logo block ── */
+.logoBlock {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logoCircle {
+  width: 44px;
+  height: 44px;
+  background: rgba(255, 200, 0, 0.1);
+  border: 1px solid rgba(255, 200, 0, 0.2);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logoText {
+  font-size: 16px;
+  font-weight: 600;
+  color: #FFFFFF;
+  letter-spacing: -0.3px;
+}
+
+/* ── Heading ── */
+.heading {
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+  /* gap: 4px; */
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #FFFFFF;
+  letter-spacing: -0.5px;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: rgba(235,235,245,0.45);
+}
+
+/* ── Form ── */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(235,235,245,0.5);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.input {
+  background: #2C2C2E;
+  border: 1px solid #3A3A3C;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 15px;
+  color: #FFFFFF;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  width: 100%;
+}
+
+.inputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.inputWrapper .input {
+  padding-right: 42px;
+}
+
+.eyeBtn {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(235,235,245,0.35);
+  display: flex;
+  align-items: center;
+  padding: 0;
+  transition: color 0.2s;
+}
+
+.eyeBtn:hover {
+  color: rgba(235,235,245,0.7);
+}
+
+.input::placeholder {
+  color: rgba(235,235,245,0.25);
+}
+
+.input:focus {
+  border-color: rgba(255, 200, 0, 0.5);
+  box-shadow: 0 0 0 3px rgba(255, 200, 0, 0.08);
+}
+
+/* ── Error ── */
+.errorBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 68, 68, 0.08);
+  border: 1px solid rgba(255, 68, 68, 0.25);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #FF6B6B;
+}
+
+/* ── Submit button ── */
+.submitBtn {
+  margin-top: 4px;
+  background: #FFC800;
+  color: #000000;
+  border: none;
+  border-radius: 10px;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  letter-spacing: -0.2px;
+}
+
+.submitBtn:hover:not(:disabled) {
+  background: #FFD740;
+  box-shadow: 0 4px 20px rgba(255, 200, 0, 0.3);
+  transform: translateY(-1px);
+}
+
+.submitBtn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.submitBtn.loading {
+  background: rgba(255, 200, 0, 0.5);
+  cursor: not-allowed;
+}
+
+/* ── Spinner ── */
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(0,0,0,0.2);
+  border-top-color: #000;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Hint ── */
+.hint {
+  font-size: 12px;
+  color: rgba(235,235,245,0.25);
+  text-align: center;
+  line-height: 1.5;
+}

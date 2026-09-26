@@ -49,6 +49,9 @@ class FastStats(BaseModel):
     at_risk_tickets_count: int
     average_delay_minutes: int
     idle_workers_count: int
+    at_risk_tickets_ids: list[int]
+    idle_workers_ids: list[int]
+    active_brigades_count: int
 
 
 class BrigadeWorkloadItem(BaseModel):

@@ -103,7 +103,7 @@ def find_tickets_summary(
         "plan_start": plan_start,
         "plan_end": plan_end,
     }
-    # Only fixed SQL fragments are joined; every value is a bound parameter.
+
     query = text(
         f"""
         SELECT
@@ -368,6 +368,7 @@ def find_fast_stats(
 
     scope_cond_tickets = ""
     scope_cond_workers = ""
+    scope_cond_brigades = ""
     parameters = {}
 
     if office_id is not None:
@@ -398,11 +399,13 @@ def find_fast_stats(
                 WHERE bm.worker_id = w.user_id AND b.office_id = :office_id
             )
         """
+        scope_cond_brigades = " WHERE b.office_id = :office_id "
         parameters["office_id"] = office_id
 
     query = f"""
     WITH today_tickets AS (
         SELECT 
+            t.id AS ticket_id,
             t.status,
             t.sla_deadline_at,
             t.visit_window_end,
@@ -438,11 +441,14 @@ def find_fast_stats(
                    OR (sla_deadline_at IS NULL OR sla_deadline_at >= CURRENT_TIMESTAMP)
             ) AS compliant_today,
             COUNT(*) FILTER (WHERE delay_minutes > 0) AS at_risk_count,
-            COALESCE(AVG(delay_minutes) FILTER (WHERE delay_minutes > 0), 0) AS avg_delay
+            COALESCE(AVG(delay_minutes) FILTER (WHERE delay_minutes > 0), 0) AS avg_delay,
+            ARRAY_AGG(ticket_id) FILTER (WHERE delay_minutes > 0) AS at_risk_ids
         FROM today_tickets
     ),
     idle_workers AS (
-        SELECT COUNT(*) AS idle_count
+        SELECT 
+            COUNT(*) AS idle_count,
+            ARRAY_AGG(w.user_id) AS idle_ids
         FROM workers w
         WHERE w.is_on_line = TRUE
           {scope_cond_workers}
@@ -450,15 +456,24 @@ def find_fast_stats(
               SELECT 1 FROM tickets t 
               WHERE t.assigned_worker_id = w.user_id AND t.status IN ('planned', 'in_progress')
           )
+    ),
+    active_brigades AS (
+        SELECT COUNT(DISTINCT b.id) AS active_count
+        FROM brigades b
+        {scope_cond_brigades}
     )
     SELECT 
         ts.total_today,
         ts.compliant_today,
         ts.at_risk_count,
         ts.avg_delay,
-        iw.idle_count
+        ts.at_risk_ids,
+        iw.idle_count,
+        iw.idle_ids,
+        ab.active_count
     FROM ticket_stats ts
-    CROSS JOIN idle_workers iw;
+    CROSS JOIN idle_workers iw
+    CROSS JOIN active_brigades ab;
     """
 
     row = session.execute(text(query), parameters).mappings().one()
@@ -472,4 +487,7 @@ def find_fast_stats(
         "at_risk_tickets_count": row["at_risk_count"],
         "average_delay_minutes": int(row["avg_delay"]),
         "idle_workers_count": row["idle_count"],
+        "at_risk_tickets_ids": list(row["at_risk_ids"] or []),
+        "idle_workers_ids": list(row["idle_ids"] or []),
+        "active_brigades_count": row["active_count"],
     }

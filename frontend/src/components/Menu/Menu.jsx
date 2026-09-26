@@ -4,11 +4,12 @@ import { useState, useRef, useEffect } from "react";
 import styles from "./Menu.module.css";
 import Image from "next/image";
 import { BrigadesPanel } from "./BrigadesPanel";
+import { FastStatsPanel } from "./FastStatsPanel";
 
 const Menu = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState("");
-    const [usersStage, setUsersStage] = useState(0); // 0=default, 1=wide, 2=tall
+    const [stage, setStage] = useState(0); // 0=default, 1=wide, 2=tall
     const menuRef = useRef(null);
     const transitionRef = useRef(null);
 
@@ -17,7 +18,7 @@ const Menu = () => {
     const dragStart = useRef({ x: 0, y: 0 });
 
     const handleMouseDown = (e) => {
-        if (usersStage !== 2) return;
+        if (stage !== 2) return;
 
         const target = e.target;
         if (
@@ -66,33 +67,49 @@ const Menu = () => {
 
     // Reset position when not in tall modal mode
     useEffect(() => {
-        if (usersStage === 0 || !isOpen) {
+        if (stage === 0 || !isOpen) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
             setPosition({ x: 0, y: 0 });
         }
-    }, [usersStage, isOpen]);
+    }, [stage, isOpen]);
+
+    const handleClosePanel = (e) => {
+        if (e) e.stopPropagation();
+        setStage(1);
+        if (transitionRef.current) clearTimeout(transitionRef.current);
+        transitionRef.current = setTimeout(() => {
+            setStage(0);
+            setActiveTab("");
+        }, 400);
+    };
 
     const handleVectorTab = (e) => {
         if (e) e.stopPropagation();
-        if (activeTab === "vector") return;
+        if (activeTab === "vector" && stage === 2) {
+            handleClosePanel(e);
+            return;
+        }
 
-        setUsersStage(1);
+        setActiveTab("vector");
+        setStage(1);
         if (transitionRef.current) clearTimeout(transitionRef.current);
         transitionRef.current = setTimeout(() => {
-            setUsersStage(0);
-            setActiveTab("vector");
+            setStage(2);
         }, 400);
     };
 
     const handleUsersTab = (e) => {
         if (e) e.stopPropagation();
-        if (activeTab === "users") return;
+        if (activeTab === "users" && stage === 2) {
+            handleClosePanel(e);
+            return;
+        }
 
         setActiveTab("users");
-        setUsersStage(1);
+        setStage(1);
         if (transitionRef.current) clearTimeout(transitionRef.current);
         transitionRef.current = setTimeout(() => {
-            setUsersStage(2);
+            setStage(2);
         }, 400);
     };
 
@@ -105,15 +122,15 @@ const Menu = () => {
     const handleClose = (e) => {
         e.stopPropagation();
         setIsOpen(false);
-        setActiveTab("vector");
-        setUsersStage(0);
+        setActiveTab("");
+        setStage(0);
         if (transitionRef.current) clearTimeout(transitionRef.current);
     };
 
     return (
         <div
             ref={menuRef}
-            className={`${styles.menuContainer} ${isOpen ? styles.open : ""} ${isOpen && usersStage > 0 ? styles.usersWide : ""} ${isOpen && usersStage === 2 ? styles.usersTall : ""}`}
+            className={`${styles.menuContainer} ${isOpen ? styles.open : ""} ${isOpen && stage > 0 ? styles.panelWide : ""} ${isOpen && stage === 2 && activeTab === 'users' ? styles.usersTall : ""} ${isOpen && stage === 2 && activeTab === 'vector' ? styles.vectorTall : ""}`}
             style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
             onClick={handleOpen}
             onMouseDown={handleMouseDown}
@@ -163,10 +180,13 @@ const Menu = () => {
                 </button>
             </div>
 
-            {/* Expanded Users Panel */}
-            <div className={styles.usersPanelWrapper}>
-                {isOpen && usersStage === 2 && (
-                    <BrigadesPanel onClose={handleVectorTab} />
+            {/* Expanded Panel */}
+            <div className={styles.panelWrapper}>
+                {isOpen && stage === 2 && activeTab === 'users' && (
+                    <BrigadesPanel onClose={handleClosePanel} />
+                )}
+                {isOpen && stage === 2 && activeTab === 'vector' && (
+                    <FastStatsPanel onClose={handleClosePanel} />
                 )}
             </div>
         </div>

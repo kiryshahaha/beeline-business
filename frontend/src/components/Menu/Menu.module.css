@@ -89,7 +89,7 @@
     background-color: var(--beeline);
 }
 
-.menuContainer.usersWide {
+.menuContainer.panelWide {
     max-width: 320px;
     min-width: 320px;
     cursor: default;
@@ -100,24 +100,30 @@
     padding: 0;
 }
 
-.menuContainer.usersWide .iconWrapper,
-.menuContainer.usersWide .menuItems {
+.menuContainer.vectorTall {
+    height: 280px;
+    padding: 0;
+}
+
+.menuContainer.panelWide .iconWrapper,
+.menuContainer.panelWide .menuItems {
     opacity: 0;
     pointer-events: none;
 }
 
-.usersPanelWrapper {
+.panelWrapper {
     display: none;
 }
 
-.menuContainer.usersWide .usersPanelWrapper {
+.menuContainer.panelWide .panelWrapper {
     display: block;
     position: absolute;
     inset: 0;
 }
 
-/* Brigades Panel inside is only rendered during usersTall, so animation starts then */
-.menuContainer.usersTall .usersPanelWrapper {
+/* Panel inside is only rendered during tall states, so animation starts then */
+.menuContainer.usersTall .panelWrapper,
+.menuContainer.vectorTall .panelWrapper {
     animation: fadeIn 0.4s ease forwards;
 }
 
@@ -132,7 +138,7 @@
 }
 
 /* Brigades Panel Styles */
-.brigadesPanel {
+.brigadesPanel, .fastStatsPanel {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -142,8 +148,22 @@
 
 .brigadesCloseHeader {
     display: flex;
-    justify-content: flex-end;
-    /* margin-bottom: 8px; */
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.dragHandle {
+    color: #888888;
+    cursor: grab;
+    display: flex;
+    /* padding: 4px; */
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+.dragHandle:hover {
+    opacity: 0.8;
 }
 
 .closeBtn {
@@ -177,7 +197,7 @@
 }
 
 .brigadesContent::-webkit-scrollbar-thumb {
-    background-color: var(--stroke);
+    background-color: var(--tertiary);
     border-radius: 4px;
 }
 
@@ -496,4 +516,107 @@
     height: 100%;
     background-color: var(--beeline);
     border-radius: 3px;
+}
+
+/* FastStatsPanel Styles */
+.statsContent {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    padding-right: 4px;
+}
+
+.statsContent::-webkit-scrollbar {
+    width: 4px;
+}
+
+.statsContent::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.statsContent::-webkit-scrollbar-thumb {
+    background: var(--tertiary);
+    border-radius: 4px;
+}
+
+.statsContent::-webkit-scrollbar-thumb:hover {
+    background: #718096;
+}
+
+.statsMonitoringContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.monitoringCard {
+    background-color: var(--tertiary);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.monitoringTitle {
+    font-size: 13px;
+    font-weight: 700;
+    color: rgba(235,235,245, 0.7);
+    letter-spacing: 0.5px;
+}
+
+.monitoringList {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.monitoringItem {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.monitoringDot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.monitoringName {
+    font-size: 15px;
+    color: #FFFFFF;
+}
+
+.brigadesCountBadge {
+    border: 1px solid #4A5568;
+    background-color: transparent;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 15px;
+    color: #A0AEC0;
+    text-align: left;
+}
+
+.slaBadge {
+    background-color: transparent;
+    border-radius: 6px;
+    padding: 8px 12px;
+    border: 1px solid transparent;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    width: max-content;
+}
+
+.slaDot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
 }
