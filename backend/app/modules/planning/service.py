@@ -61,13 +61,24 @@ def recorded_policy(snapshot):
     return {key: snapshot[key] for key in ("policy_version", "planning_policy") if key in snapshot}
 
 
-async def preview(engine, request, actor, settings, provider_factory, planner, clock=utc_now):
+async def preview(
+    engine,
+    request,
+    actor,
+    settings,
+    provider_factory,
+    planner,
+    clock=utc_now,
+    snapshot_transform=None,
+):
     if (
         len(request.ticket_ids) > settings.planning_max_tickets
         or len(request.worker_ids) > settings.planning_max_workers
     ):
         raise PlanningError("planning_limit_exceeded")
     snapshot = await asyncio.to_thread(read_snapshot, engine, request, execution_policy(settings))
+    if snapshot_transform is not None:
+        snapshot = snapshot_transform(snapshot)
     prepared = prepare(snapshot, clock())
     if not request.allow_partial and prepared["unassigned"]:
         raise PlanningError("incomplete_plan", unassigned=prepared["unassigned"])

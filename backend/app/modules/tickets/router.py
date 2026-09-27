@@ -6,12 +6,21 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.session import get_session
 from app.modules.appliances.inventory import InventoryError
 from app.modules.auth.dependencies import get_current_user, require_roles
 from app.modules.execution import service as execution_service
 from app.modules.execution.enums import WorkEventType
 from app.modules.execution.schemas import ExecutionCommand, WindowChangeCommand
+from app.modules.planning.errors import PlanningError
+from app.modules.planning.planner_client import PlannerClient
+from app.modules.planning.router import (
+    get_clock,
+    get_planning_engine,
+)
+from app.modules.routing.cache import GEOAPIFY_RESULT_CACHE
+from app.modules.routing.client import AsyncGeoapifyRoutingClient
 from app.modules.tickets import service
 from app.modules.tickets.enums import TicketStatus
 from app.modules.tickets.schemas import (
@@ -26,19 +35,38 @@ from app.modules.tickets.schemas import (
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
 
-from app.modules.planning.router import (
-    get_clock,
-    get_planner_client,
-    get_planning_engine,
-    get_provider_factory,
-    planning_settings,
-)
-
 router = APIRouter(prefix="/api/v1/tickets", tags=["tickets"])
 DatabaseSession = Annotated[Session, Depends(get_session)]
 CurrentUser = Annotated[UserRead, Depends(get_current_user)]
 CurrentObserver = Annotated[UserRead, Depends(require_roles(UserRole.OBSERVER))]
 IdempotencyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
+
+
+def optional_planning_settings():
+    return get_settings()
+
+
+def optional_planner_client(settings=Depends(optional_planning_settings)):
+    if not settings.planning_enabled:
+        return None
+    if not settings.planner_base_url or not settings.planner_service_token.get_secret_value():
+        raise HTTPException(503, detail={"code": "planner_not_configured"})
+    return PlannerClient(settings)
+
+
+def optional_provider_factory(settings=Depends(optional_planning_settings)):
+    if not settings.planning_enabled:
+        return None
+    if not settings.geoapify_api_key:
+        raise HTTPException(503, detail={"code": "routing_not_configured"})
+    return lambda: AsyncGeoapifyRoutingClient(
+        settings.geoapify_api_key,
+        timeout=settings.geoapify_timeout_seconds,
+        max_retries=settings.geoapify_max_retries,
+        cache=GEOAPIFY_RESULT_CACHE,
+        cache_ttl_seconds=settings.geoapify_cache_ttl_seconds,
+        coordinate_precision=settings.geoapify_cache_coordinate_precision,
+    )
 
 
 def _idempotency_key(value: str | None) -> str:
@@ -189,16 +217,24 @@ async def update_ticket_assignment(
     session: DatabaseSession,
     _current_user: CurrentObserver,
     engine=Depends(get_planning_engine),
-    settings=Depends(planning_settings),
-    provider=Depends(get_provider_factory),
-    planner=Depends(get_planner_client),
+    settings=Depends(optional_planning_settings),
+    provider=Depends(optional_provider_factory),
+    planner=Depends(optional_planner_client),
     clock=Depends(get_clock),
 ) -> TicketRead:
     """Replace the assigned worker; newly assigned workers receive an event."""
     try:
         return await service.update_assignment(
-            session, id, data.worker_id, data.is_pinned, actor_id=_current_user.id,
-            engine=engine, settings=settings, provider=provider, planner=planner, clock=clock
+            session,
+            id,
+            data.worker_id,
+            data.is_pinned,
+            actor_id=_current_user.id,
+            engine=engine,
+            settings=settings,
+            provider=provider,
+            planner=planner,
+            clock=clock,
         )
     except service.TicketNotFoundError as error:
         raise HTTPException(status_code=404, detail="Заявка не найдена") from error
@@ -216,6 +252,15 @@ async def update_ticket_assignment(
             status_code=422,
             detail="Исполнитель принадлежит другому участку обслуживания",
         ) from error
+    except service.AssignmentValidationError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "manual_assignment_rejected", "violations": error.violations},
+        ) from error
+    except PlanningError as error:
+        raise HTTPException(
+            status_code=error.status, detail={"code": error.code, **error.details}
+        ) from error
     except InventoryError as error:
         raise HTTPException(status_code=error.status, detail=error.detail()) from error
 
@@ -227,20 +272,32 @@ async def preview_ticket_assignment(
     session: DatabaseSession,
     _current_user: CurrentObserver,
     engine=Depends(get_planning_engine),
-    settings=Depends(planning_settings),
-    provider=Depends(get_provider_factory),
-    planner=Depends(get_planner_client),
+    settings=Depends(optional_planning_settings),
+    provider=Depends(optional_provider_factory),
+    planner=Depends(optional_planner_client),
     clock=Depends(get_clock),
 ) -> AssignmentPreviewResponse:
     """Preview the assignment of a worker to a ticket without saving."""
     try:
         return await service.preview_assignment(
-            session, id, data.worker_id, engine, settings, provider, planner, clock
+            session,
+            id,
+            data.worker_id,
+            engine,
+            settings,
+            provider,
+            planner,
+            clock,
+            actor_id=_current_user.id,
         )
     except service.TicketNotFoundError as error:
         raise HTTPException(status_code=404, detail="Заявка не найдена") from error
     except service.WorkerNotFoundError as error:
         raise HTTPException(status_code=422, detail="Исполнитель не найден") from error
+    except PlanningError as error:
+        raise HTTPException(
+            status_code=error.status, detail={"code": error.code, **error.details}
+        ) from error
 
 
 @router.patch("/{id}/status", response_model=TicketRead)
