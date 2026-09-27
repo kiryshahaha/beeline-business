@@ -26,6 +26,14 @@ from app.modules.tickets.schemas import (
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
 
+from app.modules.planning.router import (
+    get_clock,
+    get_planner_client,
+    get_planning_engine,
+    get_provider_factory,
+    planning_settings,
+)
+
 router = APIRouter(prefix="/api/v1/tickets", tags=["tickets"])
 DatabaseSession = Annotated[Session, Depends(get_session)]
 CurrentUser = Annotated[UserRead, Depends(get_current_user)]
@@ -175,16 +183,22 @@ def estimate_ticket_sla(
 
 
 @router.put("/{id}/assignees", response_model=TicketRead)
-def update_ticket_assignment(
+async def update_ticket_assignment(
     id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     data: TicketAssignmentUpdate,
     session: DatabaseSession,
     _current_user: CurrentObserver,
+    engine=Depends(get_planning_engine),
+    settings=Depends(planning_settings),
+    provider=Depends(get_provider_factory),
+    planner=Depends(get_planner_client),
+    clock=Depends(get_clock),
 ) -> TicketRead:
     """Replace the assigned worker; newly assigned workers receive an event."""
     try:
-        return service.update_assignment(
-            session, id, data.worker_id, data.is_pinned, actor_id=_current_user.id
+        return await service.update_assignment(
+            session, id, data.worker_id, data.is_pinned, actor_id=_current_user.id,
+            engine=engine, settings=settings, provider=provider, planner=planner, clock=clock
         )
     except service.TicketNotFoundError as error:
         raise HTTPException(status_code=404, detail="Заявка не найдена") from error
@@ -207,15 +221,22 @@ def update_ticket_assignment(
 
 
 @router.post("/{id}/assign/preview", response_model=AssignmentPreviewResponse)
-def preview_ticket_assignment(
+async def preview_ticket_assignment(
     id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     data: AssignmentPreviewRequest,
     session: DatabaseSession,
     _current_user: CurrentObserver,
+    engine=Depends(get_planning_engine),
+    settings=Depends(planning_settings),
+    provider=Depends(get_provider_factory),
+    planner=Depends(get_planner_client),
+    clock=Depends(get_clock),
 ) -> AssignmentPreviewResponse:
     """Preview the assignment of a worker to a ticket without saving."""
     try:
-        return service.preview_assignment(session, id, data.worker_id)
+        return await service.preview_assignment(
+            session, id, data.worker_id, engine, settings, provider, planner, clock
+        )
     except service.TicketNotFoundError as error:
         raise HTTPException(status_code=404, detail="Заявка не найдена") from error
     except service.WorkerNotFoundError as error:
