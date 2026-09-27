@@ -26,7 +26,7 @@ class ExecutionPolicy(BaseModel):
     travel: Literal["provider_minutes_rounded_up_no_norm_floor"] = (
         "provider_minutes_rounded_up_no_norm_floor"
     )
-    route_end: Literal["return_to_brigade_office", "open_end"] = "return_to_brigade_office"
+    route_end: Literal["return_to_brigade_office", "open_end"] = "open_end"
     shift_end: Literal["hard_including_return"] = "hard_including_return"
     eligible_tickets: Literal["unassigned_planned"] = "unassigned_planned"
     eligible_workers: Literal["unstarted_shift_without_overlapping_assignment"] = (
@@ -79,7 +79,7 @@ class ExecutionPolicy(BaseModel):
 
 
 def execution_policy(settings=None) -> ExecutionPolicy:
-    open_end = getattr(settings, "planning_open_end", False) if settings else False
+    open_end = getattr(settings, "planning_open_end", True) if settings else True
     return ExecutionPolicy(
         visit_window="service_start_in_window",
         route_end="open_end" if open_end else "return_to_brigade_office",
