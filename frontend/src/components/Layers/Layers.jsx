@@ -27,7 +27,7 @@ const MAP_STYLES = {
   },
 };
 
-export default function Layers({ mapRef }) {
+export default function Layers({ mapRef, layers, counts, onToggleLayer, error, points = [] }) {
   const [activeStyle, setActiveStyle] = useState("standard");
   const [isGlobe, setIsGlobe] = useState(false);
 
@@ -52,6 +52,25 @@ export default function Layers({ mapRef }) {
   const resetCamera = () => {
     const map = getMap();
     if (!map) return;
+
+    const validPoints = points.filter(
+      ([longitude, latitude]) => Number.isFinite(longitude) && Number.isFinite(latitude),
+    );
+    if (validPoints.length) {
+      const bounds = validPoints.reduce(
+        (result, point) => [
+          [Math.min(result[0][0], point[0]), Math.min(result[0][1], point[1])],
+          [Math.max(result[1][0], point[0]), Math.max(result[1][1], point[1])],
+        ],
+        [[Infinity, Infinity], [-Infinity, -Infinity]],
+      );
+      map.fitBounds(bounds, {
+        padding: { top: 80, right: 70, bottom: 100, left: 70 },
+        maxZoom: validPoints.length === 1 ? 15 : 13,
+        duration: 600,
+      });
+      return;
+    }
 
     map.flyTo({
       ...DEFAULT_VIEW,
@@ -102,6 +121,34 @@ export default function Layers({ mapRef }) {
             </button>
           ))}
         </div>
+        <div className={styles.objectLayers}>
+          <p className={styles.sectionLabel}>Объекты на карте</p>
+          {[
+            ["tickets", "Заявки", counts.tickets, styles.ticketDot],
+            ["workers", "Точки старта", counts.workers, styles.workerDot],
+            ["offices", "Офисы", counts.offices, styles.officeDot],
+          ].map(([id, label, count, dotClass]) => (
+            <button
+              type="button"
+              className={`${styles.layerToggle} ${layers[id] ? styles.layerEnabled : ""}`}
+              key={id}
+              aria-pressed={layers[id]}
+              onClick={() => onToggleLayer(id)}
+            >
+              <i className={dotClass} />
+              <span>{label}</span>
+              <span className={styles.layerCount}>{count}</span>
+            </button>
+          ))}
+          <p className={styles.sectionLabel}>Статус заявки</p>
+          <div className={styles.statusKey}>
+            <span><i className={styles.ticketDot} /> Ожидает</span>
+            <span><i className={styles.progressDot} /> В работе</span>
+            <span><i className={styles.completedDot} /> Выполнена</span>
+            <span><i className={styles.cancelledDot} /> Отменена</span>
+          </div>
+          {error && <p className={styles.mapError}>{error}</p>}
+        </div>
         <div className={styles.quickActions}>
           <button
             type="button"
@@ -115,9 +162,9 @@ export default function Layers({ mapRef }) {
             type="button"
             className={styles.quickAction}
             onClick={resetCamera}
-            aria-label="Сбросить приближение и угол обзора"
+            aria-label={points.length ? "Показать все объекты на карте" : "Сбросить приближение и угол обзора"}
           >
-            Сброс
+            Все объекты
           </button>
         </div>
       </div>

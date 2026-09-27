@@ -11,7 +11,7 @@ import { useTickets } from "@/hooks/useTickets";
 
 const ALL_FILTERS = ['бригады', 'работники', 'заявки'];
 
-const Search = () => {
+const Search = ({ onSelectResult }) => {
   const [activeFilters, setActiveFilters] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -19,7 +19,8 @@ const Search = () => {
 
   const { brigades = [] } = useBrigades();
   const { users = [] } = useUsers();
-  const { tickets = [] } = useTickets();
+  const { tickets = [] } = useTickets({ limit: 100 });
+  const [unavailableMessage, setUnavailableMessage] = useState("");
 
   useClickOutside(containerRef, () => setIsFocused(false));
 
@@ -42,7 +43,10 @@ const Search = () => {
     });
   }
 
-  const hasMatches = searchQuery && allData.some(r => r.title.toLowerCase().includes(searchQuery.toLowerCase()));
+  const matchingData = allData.filter((result) =>
+    result.title.toLocaleLowerCase("ru").includes(searchQuery.trim().toLocaleLowerCase("ru")),
+  );
+  const hasMatches = matchingData.length > 0;
 
   const showSuggestions = isFocused && searchQuery.length > 0;
 
@@ -61,6 +65,18 @@ const Search = () => {
       setActiveFilters(ALL_FILTERS);
     }
   };
+
+  const selectResult = (result) => {
+    const selected = onSelectResult?.(result);
+    if (selected === false) {
+      setUnavailableMessage("Для этого объекта пока нет доступной точки на карте.");
+      return;
+    }
+    setUnavailableMessage("");
+    setSearchQuery("");
+    setIsFocused(false);
+  };
+
   return (
     <div className={styles.container}>
       <div 
@@ -77,29 +93,35 @@ const Search = () => {
           />
           <input
             type="text"
-            placeholder="Поиск бригады или задачи..."
+            placeholder="Поиск заявки, бригады или сотрудника..."
             className={styles.input}
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setUnavailableMessage("");
+            }}
             onFocus={() => setIsFocused(true)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setIsFocused(false);
+            }}
           />
         </div>
         <div className={styles.suggestionsWrapper}>
           <div className={styles.suggestions}>
-            {allData.map(res => {
-              const isMatch = !searchQuery || res.title.toLowerCase().includes(searchQuery.toLowerCase());
-              return (
-                <div 
-                  key={res.id} 
-                  className={`${styles.suggestionItem} ${isMatch ? '' : styles.hidden}`}
-                >
-                  {res.title}
-                </div>
-              );
-            })}
+            {matchingData.slice(0, 12).map((result) => (
+              <button
+                key={result.id}
+                type="button"
+                className={styles.suggestionItem}
+                onClick={() => selectResult(result)}
+              >
+                {result.title}
+              </button>
+            ))}
             <div className={`${styles.noResults} ${hasMatches || !searchQuery ? styles.hidden : ''}`}>
               Ничего не найдено
             </div>
+            {unavailableMessage && <div className={styles.noResults}>{unavailableMessage}</div>}
           </div>
         </div>
       </div>
