@@ -1,0 +1,41 @@
+meta {
+  name: Перепланировать остаток дня
+  type: http
+  seq: 24
+}
+
+post {
+  url: {{base_url}}/api/v1/planning/areas/{{planning_service_area_id}}/2030-01-15/replan/preview
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"base_day_revision":{{planning_day_revision}},"allow_partial":true}
+}
+
+assert {
+  res.status: eq 201
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("planning_replan_id", res.getBody().plan_id);
+    bru.setVar("planning_replan_from_revision", res.getBody().replan_diff.from_revision);
+  }
+}
+
+tests {
+  test("Предложение содержит изменения относительно текущей ревизии", () => {
+    const body = res.getBody();
+    expect(body.state).to.equal("ready");
+    expect(body.replan_diff.from_revision).to.equal(bru.getVar("planning_day_revision"));
+    expect(body.replan_diff.added).to.be.an("array");
+    expect(body.replan_diff.changed).to.be.an("array");
+    expect(body.replan_diff.unchanged_ticket_ids).to.be.an("array");
+  });
+}

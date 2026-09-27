@@ -1,0 +1,32 @@
+meta {
+  name: Применить перепланирование дня
+  type: http
+  seq: 25
+}
+
+post {
+  url: {{base_url}}/api/v1/planning/plans/{{planning_replan_id}}/apply
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    bru.setVar("planning_day_revision", res.getBody().day_revision);
+  }
+}
+
+tests {
+  test("Применение выпускает одну новую ревизию дня", () => {
+    const body = res.getBody();
+    expect(body.already_applied).to.equal(false);
+    expect(body.day_revision).to.equal(bru.getVar("planning_replan_from_revision") + 1);
+  });
+}

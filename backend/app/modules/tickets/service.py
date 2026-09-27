@@ -759,6 +759,7 @@ def update_assignment_in_transaction(
     *,
     actor_id: int | None = None,
     source: str | None = None,
+    planned_at: datetime | None = None,
 ) -> TicketRead:
     """Change the assignee inside the caller's transaction.
 
@@ -773,7 +774,44 @@ def update_assignment_in_transaction(
         if worker_id not in worker_line_statuses:
             raise WorkerNotFoundError
         if not worker_line_statuses[worker_id]:
-            raise WorkerOffLineError
+            can_return_before_visit = False
+            if source == "plan" and planned_at is not None:
+                t_area = ticket.get("service_area_id")
+                if t_area is None and ticket.get("location_id"):
+                    t_area = session.execute(
+                        text(
+                            """
+                            SELECT building.service_area_id
+                            FROM locations AS location
+                            JOIN buildings AS building ON building.id = location.building_id
+                            WHERE location.id = :location_id
+                            """
+                        ),
+                        {"location_id": ticket["location_id"]},
+                    ).scalar_one_or_none()
+                can_return_before_visit = session.execute(
+                    text(
+                        """
+                        SELECT EXISTS (
+                            SELECT 1 FROM worker_day_states
+                            WHERE worker_id = :worker_id
+                              AND service_area_id = :service_area_id
+                              AND route_date = :route_date
+                              AND NOT available
+                              AND expected_available_at IS NOT NULL
+                              AND expected_available_at <= :planned_at
+                        )
+                        """
+                    ),
+                    {
+                        "worker_id": worker_id,
+                        "service_area_id": t_area,
+                        "route_date": planned_at.astimezone(MOSCOW).date(),
+                        "planned_at": planned_at,
+                    },
+                ).scalar_one()
+            if not can_return_before_visit:
+                raise WorkerOffLineError
 
         t_area = ticket.get("service_area_id")
         if t_area is None and ticket.get("location_id"):

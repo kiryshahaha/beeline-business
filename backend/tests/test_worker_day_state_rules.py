@@ -42,6 +42,35 @@ class WorkerDayStateRuleTests(unittest.TestCase):
         self.assertEqual(state["last_location_id"], 101)
         self.assertEqual(state["current_destination_id"], 202)
 
+    def test_cancelling_an_en_route_ticket_keeps_the_in_flight_leg(self):
+        state = reduce_worker_day_events(
+            [
+                {
+                    "event_type": "start_route",
+                    "occurred_at": datetime(2026, 9, 17, 12, tzinfo=UTC),
+                    "payload": {
+                        "ticket_id": 202,
+                        "location_id": 101,
+                        "destination_id": 202,
+                    },
+                },
+                {
+                    "event_type": "cancel_ticket",
+                    "occurred_at": datetime(2026, 9, 17, 12, 30, tzinfo=UTC),
+                    "reason": "Клиент отменил заявку",
+                    "payload": {
+                        "ticket_id": 202,
+                        "expected_available_at": "2026-09-17T14:00:00+00:00",
+                    },
+                },
+            ]
+        )
+
+        self.assertEqual(state["last_location_id"], 101)
+        self.assertEqual(state["current_ticket_id"], 202)
+        self.assertEqual(state["current_destination_id"], 202)
+        self.assertEqual(state["expected_available_at"].hour, 14)
+
     def test_unavailable_is_terminal_for_the_shift(self):
         state = reduce_worker_day_events(
             [

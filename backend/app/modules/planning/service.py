@@ -10,7 +10,13 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
-from app.modules.planning.day_plans import build_plan_state, publish_revision
+from app.modules.planning.day_models import DayPlanRevision
+from app.modules.planning.day_plans import (
+    build_plan_state,
+    build_replan_state,
+    diff_states,
+    publish_revision,
+)
 from app.modules.planning.diagnostics import (
     diagnose_dropped,
     estimate_resources,
@@ -25,7 +31,7 @@ from app.modules.planning.matrices import build_problem
 from app.modules.planning.models import PlanningPlan, PlanningPlanRoute
 from app.modules.planning.policy import execution_policy, snapshot_policy
 from app.modules.planning.reasons import legacy_public
-from app.modules.planning.repository import load_snapshot
+from app.modules.planning.repository import TICKET_LOCAL_DAY, load_snapshot
 from app.modules.planning.schemas import PreviewRequest
 from app.modules.planning.snapshot import fingerprint, normalize
 from app.modules.planning.validation import validate_solution
@@ -57,6 +63,103 @@ def read_snapshot(engine, request, policy):
         )
 
 
+def validate_replan_limits(ticket_count, worker_count, *, max_tickets, max_workers):
+    if ticket_count > max_tickets or worker_count > max_workers:
+        raise PlanningError(
+            "planning_limit_exceeded",
+            requested_tickets=ticket_count,
+            requested_workers=worker_count,
+            max_tickets=max_tickets,
+            max_workers=max_workers,
+        )
+
+
+def read_replan_snapshot(
+    engine,
+    service_area_id,
+    route_date,
+    command,
+    policy,
+    *,
+    max_tickets=100,
+    max_workers=20,
+):
+    """Select the area-day remainder and capture it with one repeatable-read snapshot."""
+    with Session(engine) as session, session.begin():
+        session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
+        current_revision = session.execute(
+            select(DayPlanRevision.revision).where(
+                DayPlanRevision.service_area_id == service_area_id,
+                DayPlanRevision.route_date == route_date,
+                DayPlanRevision.is_current.is_(True),
+            )
+        ).scalar_one_or_none()
+        if current_revision is None:
+            raise PlanningError("day_plan_not_found", 404)
+        if command.base_day_revision is not None and command.base_day_revision != current_revision:
+            raise PlanningError("day_revision_stale", 409, current_revision=current_revision)
+        ticket_ids = list(
+            session.execute(
+                text(
+                    """
+                    SELECT tickets.id
+                    FROM tickets
+                    JOIN locations AS location ON location.id = tickets.location_id
+                    JOIN buildings AS building ON building.id = location.building_id
+                    WHERE COALESCE(tickets.service_area_id, building.service_area_id) = :area_id
+                      AND tickets.status = 'planned'
+                      AND tickets.lifecycle_state <> 'en_route'
+                    AND """
+                    + TICKET_LOCAL_DAY
+                    + " = :route_date ORDER BY tickets.id"
+                ),
+                {"area_id": service_area_id, "route_date": route_date},
+            ).scalars()
+        )
+        worker_ids = list(
+            session.execute(
+                text(
+                    """
+                    SELECT DISTINCT worker.user_id
+                    FROM workers AS worker
+                    JOIN users AS user_account ON user_account.id = worker.user_id
+                    LEFT JOIN brigade_members AS membership ON membership.worker_id = worker.user_id
+                    LEFT JOIN brigades AS brigade ON brigade.id = membership.brigade_id
+                    LEFT JOIN divisions AS division ON division.id = brigade.division_id
+                    WHERE user_account.role = 'worker'
+                      AND COALESCE(worker.service_area_id, division.service_area_id) = :area_id
+                    ORDER BY worker.user_id
+                    """
+                ),
+                {"area_id": service_area_id},
+            ).scalars()
+        )
+        validate_replan_limits(
+            len(ticket_ids),
+            len(worker_ids),
+            max_tickets=max_tickets,
+            max_workers=max_workers,
+        )
+        request = PreviewRequest(
+            route_date=route_date,
+            service_area_id=service_area_id,
+            base_day_revision=current_revision,
+            ticket_ids=ticket_ids,
+            worker_ids=worker_ids,
+            allow_partial=command.allow_partial,
+            replan=True,
+        )
+        snapshot = load_snapshot(
+            session,
+            request,
+            policy_snapshot={
+                "policy_version": policy.policy_version,
+                "planning_policy": policy.model_dump(mode="json"),
+            },
+        )
+        return request, snapshot
+
+
 def recorded_policy(snapshot):
     return {key: snapshot[key] for key in ("policy_version", "planning_policy") if key in snapshot}
 
@@ -69,16 +172,20 @@ async def preview(
     provider_factory,
     planner,
     clock=utc_now,
-    snapshot_transform=None,
+    *,
+    snapshot_override=None,
 ):
     if (
         len(request.ticket_ids) > settings.planning_max_tickets
         or len(request.worker_ids) > settings.planning_max_workers
     ):
         raise PlanningError("planning_limit_exceeded")
-    snapshot = await asyncio.to_thread(read_snapshot, engine, request, execution_policy(settings))
-    if snapshot_transform is not None:
-        snapshot = snapshot_transform(snapshot)
+    if snapshot_override is None:
+        snapshot = await asyncio.to_thread(
+            read_snapshot, engine, request, execution_policy(settings)
+        )
+    else:
+        snapshot = snapshot_override
     prepared = prepare(snapshot, clock())
     if not request.allow_partial and prepared["unassigned"]:
         raise PlanningError("incomplete_plan", unassigned=prepared["unassigned"])
@@ -197,6 +304,18 @@ async def preview(
             else [],
         }
     )
+    if request.replan:
+        if public["outcome"] == "empty" and public["unassigned"]:
+            public["outcome"] = "partial"
+        previous_state = snapshot.get("current_day_state") or {}
+        lifecycle_by_ticket = {
+            item["id"]: item["lifecycle_state"] for item in snapshot["area_scope"]["tickets"]
+        }
+        proposed_state = build_replan_state(public, previous_state, lifecycle_by_ticket)
+        public["replan_diff"] = {
+            "from_revision": snapshot.get("current_day_revision"),
+            **diff_states(previous_state, proposed_state),
+        }
 
     def persist():
         with Session(engine) as session, session.begin():
@@ -316,14 +435,15 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
             raise PlanningError("plan_not_found", 404)
         if plan.state == "applied":
             return {**plan.apply_result, "already_applied": True}
-        if not plan.result_snapshot["route_creates"]:
-            raise PlanningError("plan_has_no_assignments", 409)
         snapshot_policy(plan.input_snapshot)
         request = PreviewRequest.model_validate(plan.input_snapshot["request"])
+        if not plan.result_snapshot["route_creates"] and not request.replan:
+            raise PlanningError("plan_has_no_assignments", 409)
         current = load_snapshot(
             session, request, policy_snapshot=recorded_policy(plan.input_snapshot)
         )
-        if plan.state == "expired" or plan.expires_at <= clock():
+        apply_at = clock()
+        if plan.state == "expired" or plan.expires_at <= apply_at:
             plan.state = "expired"
             error = PlanningError("plan_expired", 409)
         elif (
@@ -340,11 +460,17 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
             plan.state = "stale"
             error = PlanningError("plan_stale", 409)
         else:
-            prepared = prepare(current, clock())
+            prepared = prepare(current, apply_at)
             selected = {r["worker_id"] for r in plan.result_snapshot["route_creates"]}
             if selected & {w["worker_id"] for w in prepared["excluded_workers"]}:
                 plan.state = "stale"
                 error = PlanningError("shift_already_started", 409)
+            elif request.replan and any(
+                datetime.fromisoformat(route["departure_at"]) < apply_at
+                for route in plan.result_snapshot["public"]["routes"]
+            ):
+                plan.state = "stale"
+                error = PlanningError("plan_stale", 409, reason="replan_departure_elapsed")
         if error is None:
             data = [RouteCreate.model_validate(r) for r in plan.result_snapshot["route_creates"]]
             ticket_ids = sorted(s.ticket_id for r in data for s in r.stops if s.ticket_id)
@@ -370,6 +496,10 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                         route.worker_id,
                         is_pinned=False,
                         actor_id=plan.created_by,
+                        source="plan",
+                        planned_at=datetime.fromisoformat(
+                            visits[stop.ticket_id]["service_start_at"]
+                        ),
                     )
                     ticket = session.get(Ticket, stop.ticket_id)
                     ticket.planned_start_at = datetime.fromisoformat(
@@ -385,6 +515,44 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                     )
                 )
             session.flush()
+            if request.replan:
+                assigned_ids = set(ticket_ids)
+                unassigned_reasons = {
+                    item["ticket_id"]: item["reason"].get("code")
+                    for item in plan.result_snapshot["public"].get("unassigned", [])
+                }
+                from app.modules.execution import service as execution_service
+                from app.modules.execution.enums import TicketLifecycleState, WorkEventType
+                from app.modules.execution.schemas import ExecutionCommand
+
+                for ticket_id in sorted(set(request.ticket_ids) - assigned_ids):
+                    ticket = session.get(Ticket, ticket_id)
+                    if ticket is None or ticket.lifecycle_state not in {
+                        TicketLifecycleState.ASSIGNED,
+                        TicketLifecycleState.DISPATCHED,
+                    }:
+                        continue
+                    command = ExecutionCommand.model_construct(
+                        expected_revision=ticket.revision,
+                        occurred_at=clock(),
+                        reason="remaining_day_replan",
+                        expected_available_at=None,
+                        payload={
+                            "assignment_source": "plan",
+                            "plan_id": str(plan_id),
+                            "unassigned_reason": unassigned_reasons.get(ticket_id),
+                        },
+                    )
+                    execution_service.apply_ticket_event(
+                        session,
+                        ticket_id,
+                        WorkEventType.UNASSIGN,
+                        command,
+                        actor_id=plan.created_by,
+                        idempotency_key=(
+                            f"replan-unassign:{plan_id}:{ticket_id}:{ticket.revision}"
+                        ),
+                    )
             result = {
                 "plan_id": str(plan_id),
                 "state": "applied",
@@ -405,14 +573,29 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                     service_area_id=current.get("service_area_id"),
                     route_date=request.route_date,
                     actor_id=plan.created_by,
-                    reason="plan_applied",
+                    reason="event_replan" if request.replan else "plan_applied",
                     fingerprint="pending",
-                    plan_state=build_plan_state(
-                        plan.result_snapshot["public"],
-                        {
-                            route.worker_id: stored.id
-                            for route, stored in zip(data, saved, strict=True)
-                        },
+                    plan_state=(
+                        build_replan_state(
+                            plan.result_snapshot["public"],
+                            current.get("current_day_state") or {},
+                            {
+                                item["id"]: item["lifecycle_state"]
+                                for item in current["area_scope"]["tickets"]
+                            },
+                            {
+                                route.worker_id: stored.id
+                                for route, stored in zip(data, saved, strict=True)
+                            },
+                        )
+                        if request.replan
+                        else build_plan_state(
+                            plan.result_snapshot["public"],
+                            {
+                                route.worker_id: stored.id
+                                for route, stored in zip(data, saved, strict=True)
+                            },
+                        )
                     ),
                     result=result,
                     at=clock(),

@@ -111,6 +111,14 @@ def next_state_for_event(
         if current_state not in _CANCELLABLE:
             raise IllegalTransition(f"{current_state.value} -> cancel")
         return TicketLifecycleState.CANCELLED
+    if event_type == WorkEventType.UNASSIGN:
+        if current_state not in {
+            TicketLifecycleState.WAITING_ASSIGNMENT,
+            TicketLifecycleState.ASSIGNED,
+            TicketLifecycleState.DISPATCHED,
+        }:
+            raise IllegalTransition(f"{current_state.value} -> unassign")
+        return TicketLifecycleState.WAITING_ASSIGNMENT
     if event_type == WorkEventType.PROGRESS_DELAY:
         if current_state in (TicketLifecycleState.COMPLETED, TicketLifecycleState.CANCELLED):
             raise IllegalTransition(f"{current_state.value} -> progress_delay")
@@ -324,6 +332,18 @@ def apply_ticket_event(
                 payload.setdefault("destination_id", ticket["location_id"])
             elif event_type in {WorkEventType.START, WorkEventType.COMPLETE}:
                 payload.setdefault("location_id", ticket["location_id"])
+            if (
+                event_type == WorkEventType.CANCEL
+                and current_state == TicketLifecycleState.EN_ROUTE
+            ):
+                expected_available_at = command.expected_available_at or ticket.get(
+                    "planned_end_at"
+                )
+                if (
+                    expected_available_at is not None
+                    and expected_available_at > command.occurred_at
+                ):
+                    payload["expected_available_at"] = expected_available_at.isoformat()
         if compatibility and event_type in {WorkEventType.START, WorkEventType.COMPLETE}:
             if current_state in {TicketLifecycleState.COMPLETED, TicketLifecycleState.CANCELLED}:
                 next_state = next_state_for_event(current_state, event_type)
@@ -369,6 +389,22 @@ def apply_ticket_event(
             if replay is not None:
                 return replay
             raise IdempotencyConflict(existing["id"] if existing else 0)
+        if event_type == WorkEventType.UNASSIGN:
+            from app.modules.tickets import repository as ticket_repository
+
+            source = (command.payload or {}).get("assignment_source", "manual")
+            set_assignment_origin(session, actor_id=actor_id, source=source)
+            ticket_repository.update_assignment(session, ticket_id, None, False)
+            session.execute(
+                text(
+                    """
+                    UPDATE tickets
+                    SET planned_start_at = NULL, planned_end_at = NULL
+                    WHERE id = :ticket_id
+                    """
+                ),
+                {"ticket_id": ticket_id},
+            )
         if event_worker_id is not None:
             from app.modules.execution import day_state
 

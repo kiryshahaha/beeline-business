@@ -20,6 +20,7 @@ assert {
 
 script:post-response {
   if (res.getStatus() === 200) {
+    bru.setVar("planning_day_revision", res.getBody().day_revision);
     bru.setVar("planning_route_id", res.getBody().routes[0].id);
     bru.setVar("planning_saved_ids", JSON.stringify(res.getBody().routes.map(r => r.id)));
   }
