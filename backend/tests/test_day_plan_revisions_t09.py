@@ -408,6 +408,99 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         self.assertEqual(rows, [("waiting_assignment", "planned", None)] * len(rows))
         self.assertEqual(unassign_events, len(rows))
 
+    def test_cancelled_in_flight_ticket_is_removed_while_worker_leg_is_preserved(self):
+        initial = self.apply(self.preview())
+        previous = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        active_visit = previous["visits"][0]
+        ticket_id = active_visit["ticket_id"]
+        worker_id = active_visit["worker_id"]
+        with Session(self.engine) as session:
+            ticket = session.get(Ticket, ticket_id)
+            ticket_revision = ticket.revision
+            destination_id = ticket.location_id
+        source_id = self.receipt["id_map"]["locations"]["1"]
+
+        dispatched = self.execution_event(
+            ticket_id,
+            "dispatch",
+            ticket_revision,
+            "planner-cancel-dispatch",
+            "2030-01-15T09:00:00+03:00",
+        )
+        en_route = self.execution_event(
+            ticket_id,
+            "start-route",
+            dispatched["revision"],
+            "planner-cancel-route",
+            "2030-01-15T09:05:00+03:00",
+            worker_id=worker_id,
+            location_id=source_id,
+        )
+        cancelled = self.client.post(
+            f"/api/v1/tickets/{ticket_id}/cancel",
+            json={
+                "expected_revision": en_route["revision"],
+                "occurred_at": "2030-01-15T09:10:00+03:00",
+                "expected_available_at": "2030-01-15T11:00:00+03:00",
+                "reason": "Клиент отменил заявку после выезда",
+                "payload": {},
+            },
+            headers=self.headers | {"Idempotency-Key": "planner-cancel-in-flight"},
+        )
+        self.assertEqual(cancelled.status_code, 200, cancelled.text)
+        self.assertEqual(cancelled.json()["state"], "cancelled")
+
+        self.now = self.now.replace(day=15, hour=6, minute=15)
+        day_state = self.client.get(
+            f"/api/v1/workers/{worker_id}/day-state",
+            params={
+                "service_area_id": self.area_id,
+                "date": ROUTE_DATE.isoformat(),
+                "at": self.now.isoformat(),
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(day_state.status_code, 200, day_state.text)
+        self.assertEqual(day_state.json()["current_ticket_id"], ticket_id)
+        self.assertEqual(day_state.json()["current_destination_id"], destination_id)
+        self.assertEqual(
+            datetime.fromisoformat(day_state.json()["expected_available_at"]),
+            datetime.fromisoformat("2030-01-15T11:00:00+03:00"),
+        )
+        response = self.client.post(
+            self.day_url("/replan/preview"),
+            json={"base_day_revision": initial["day_revision"]},
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        proposal = response.json()
+        self.assertIn(
+            ticket_id,
+            [visit["ticket_id"] for visit in proposal["replan_diff"]["removed"]],
+        )
+        self.assertNotIn(
+            ticket_id,
+            [stop["ticket_id"] for route in proposal["routes"] for stop in route["stops"]],
+        )
+        worker_route = next(
+            route for route in proposal["routes"] if route["worker_id"] == worker_id
+        )
+        self.assertEqual(worker_route["start_location_id"], destination_id)
+        self.assertGreaterEqual(
+            datetime.fromisoformat(worker_route["departure_at"]),
+            datetime.fromisoformat("2030-01-15T11:00:00+03:00"),
+        )
+
+        applied = self.apply(proposal)
+        self.assertEqual(applied["day_revision"], initial["day_revision"] + 1)
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        self.assertNotIn(ticket_id, [visit["ticket_id"] for visit in current["visits"]])
+        original = self.client.get(
+            self.day_url(f"/revisions/{initial['day_revision']}"), headers=self.headers
+        )
+        self.assertEqual(original.status_code, 200, original.text)
+        self.assertIn(ticket_id, [visit["ticket_id"] for visit in original.json()["visits"]])
+
     def test_midday_replan_keeps_completed_visit_and_uses_confirmed_location_and_time(self):
         initial = self.apply(self.preview())
         day_state = self.client.get(self.day_url("/current"), headers=self.headers).json()
@@ -490,6 +583,89 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         self.assertIn(ticket_id, published)
         self.assertEqual(published[ticket_id]["service_end_at"], completed_visit["service_end_at"])
         self.assertIn(emergency["id"], published)
+
+    def test_progress_delay_keeps_started_visit_and_reschedules_workers_remainder(self):
+        initial = self.apply(self.preview())
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        active_visit = current["visits"][0]
+        ticket_id = active_visit["ticket_id"]
+        worker_id = active_visit["worker_id"]
+        with Session(self.engine) as session:
+            ticket = session.get(Ticket, ticket_id)
+            ticket_revision = ticket.revision
+            destination_id = ticket.location_id
+        source_id = self.receipt["id_map"]["locations"]["1"]
+
+        dispatched = self.execution_event(
+            ticket_id,
+            "dispatch",
+            ticket_revision,
+            "planner-delay-dispatch",
+            "2030-01-15T09:00:00+03:00",
+        )
+        en_route = self.execution_event(
+            ticket_id,
+            "start-route",
+            dispatched["revision"],
+            "planner-delay-route",
+            "2030-01-15T09:05:00+03:00",
+            worker_id=worker_id,
+            location_id=source_id,
+        )
+        started = self.execution_event(
+            ticket_id,
+            "start",
+            en_route["revision"],
+            "planner-delay-start",
+            "2030-01-15T09:30:00+03:00",
+            worker_id=worker_id,
+            location_id=destination_id,
+        )
+        delayed = self.client.post(
+            f"/api/v1/tickets/{ticket_id}/delay",
+            json={
+                "expected_revision": started["revision"],
+                "occurred_at": "2030-01-15T10:00:00+03:00",
+                "expected_available_at": "2030-01-15T12:00:00+03:00",
+                "reason": "Работа займёт ещё два часа",
+                "payload": {},
+            },
+            headers=self.headers | {"Idempotency-Key": "planner-delay-active"},
+        )
+        self.assertEqual(delayed.status_code, 200, delayed.text)
+        self.assertEqual(delayed.json()["state"], "in_progress")
+
+        self.now = self.now.replace(day=15, hour=7, minute=15)
+        emergency = self.create_ticket("Авария после задержки")
+        response = self.client.post(
+            self.day_url("/replan/preview"),
+            json={"base_day_revision": initial["day_revision"]},
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        proposal = response.json()
+        self.assertIn(ticket_id, proposal["replan_diff"]["unchanged_ticket_ids"])
+        self.assertIn(
+            emergency["id"],
+            [item["ticket_id"] for item in proposal["replan_diff"]["added"]],
+        )
+        worker_route = next(
+            route for route in proposal["routes"] if route["worker_id"] == worker_id
+        )
+        self.assertEqual(worker_route["start_location_id"], destination_id)
+        self.assertGreaterEqual(
+            datetime.fromisoformat(worker_route["departure_at"]),
+            datetime.fromisoformat("2030-01-15T12:00:00+03:00"),
+        )
+
+        applied = self.apply(proposal)
+        self.assertEqual(applied["day_revision"], initial["day_revision"] + 1)
+        published = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        self.assertEqual(
+            next(visit for visit in published["visits"] if visit["ticket_id"] == ticket_id),
+            active_visit,
+        )
+        self.assertIn(emergency["id"], [visit["ticket_id"] for visit in published["visits"]])
 
     def test_replan_apply_rejects_a_route_whose_departure_time_has_passed(self):
         initial = self.apply(self.preview())
