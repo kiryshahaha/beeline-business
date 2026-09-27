@@ -46,6 +46,7 @@ class ExecutionSchemaTests(unittest.TestCase):
             [
                 "new_ticket",
                 "assign",
+                "unassign",
                 "dispatch",
                 "start_route",
                 "start",

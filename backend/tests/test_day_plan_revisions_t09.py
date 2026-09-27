@@ -6,16 +6,16 @@ the current one) and the A20 part about a proposal that the area-day has moved p
 
 import copy
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.security import create_access_token
-from app.db.models import DayPlanRevision, Route, ServiceArea, Ticket
+from app.db.models import DayPlanRevision, Route, ServiceArea, Ticket, TicketAppliance
 from app.db.session import get_session
 from app.main import app
 from app.modules.data_exchange.formats import parse_file, serialize
@@ -145,6 +145,58 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
+    def create_ticket(self, title):
+        response = self.client.post(
+            "/api/v1/tickets",
+            json={
+                "location_id": self.receipt["id_map"]["locations"]["1"],
+                "service_area_id": self.area_id,
+                "title": title,
+                "description": "Аварийная заявка для проверки остатка смены",
+                "work_type_id": self.receipt["id_map"]["work_types"]["1"],
+                "category": "emergency",
+                "priority": 1,
+                "received_at": self.now.isoformat(),
+                "sla_deadline_at": "2030-01-15T18:00:00+03:00",
+                "visit_window_start": "2030-01-15T11:00:00+03:00",
+                "visit_window_end": "2030-01-15T17:00:00+03:00",
+                "estimated_duration_minutes": 30,
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        ticket = response.json()
+        with Session(self.engine) as session, session.begin():
+            session.add(
+                TicketAppliance(
+                    ticket_id=ticket["id"],
+                    appliance_id=self.receipt["id_map"]["appliances"]["1"],
+                    office_id=self.receipt["id_map"]["offices"]["1"],
+                    quantity=1,
+                )
+            )
+        return ticket
+
+    def execution_event(
+        self, ticket_id, event, revision, key, occurred_at, *, worker_id=None, location_id=None
+    ):
+        payload = {
+            "expected_revision": revision,
+            "occurred_at": occurred_at,
+            "payload": {},
+        }
+        if worker_id is not None:
+            payload["worker_id"] = worker_id
+        if location_id is not None:
+            payload["location_id"] = location_id
+        response = self.client.post(
+            f"/api/v1/tickets/{ticket_id}/{event}",
+            json=payload,
+            headers=self.headers | {"Idempotency-Key": key},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
     def publish_manual_edit(self, mutate):
         """Publish the next revision the way a manual correction would."""
         with Session(self.engine) as session, session.begin():
@@ -260,6 +312,262 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         self.assertEqual(
             [row["reason"] for row in listed.json()][-2:], ["plan_applied", "manual_edit"]
         )
+
+    def test_replan_preview_includes_new_emergency_and_apply_publishes_one_revision(self):
+        initial = self.apply(self.preview())
+        emergency = self.create_ticket("Авария в течение смены")
+        preview_response = self.client.post(
+            self.day_url("/replan/preview"),
+            json={"base_day_revision": initial["day_revision"]},
+            headers=self.headers,
+        )
+        self.assertEqual(preview_response.status_code, 201, preview_response.text)
+        proposal = preview_response.json()
+        self.assertEqual(proposal["replan_diff"]["from_revision"], initial["day_revision"])
+        self.assertIn(
+            emergency["id"],
+            [visit["ticket_id"] for visit in proposal["replan_diff"]["added"]],
+            f"metrics={proposal['metrics']} unassigned={proposal['unassigned']}",
+        )
+        self.assertIn(
+            emergency["id"],
+            [stop["ticket_id"] for route in proposal["routes"] for stop in route["stops"]],
+        )
+
+        applied = self.apply(proposal)
+        self.assertEqual(applied["day_revision"], initial["day_revision"] + 1)
+        self.assertFalse(applied["already_applied"])
+        current = self.client.get(self.day_url("/current"), headers=self.headers)
+        self.assertEqual(current.status_code, 200, current.text)
+        self.assertEqual(current.json()["reason"], "event_replan")
+        self.assertIn(emergency["id"], [visit["ticket_id"] for visit in current.json()["visits"]])
+
+        replay = self.apply(proposal)
+        self.assertTrue(replay["already_applied"])
+        self.assertEqual(replay["day_revision"], applied["day_revision"])
+
+        stale_proposal = self.client.post(
+            self.day_url("/replan/preview"),
+            json={"base_day_revision": applied["day_revision"]},
+            headers=self.headers,
+        )
+        self.assertEqual(stale_proposal.status_code, 201, stale_proposal.text)
+        self.create_ticket("Вторая заявка после предпросмотра")
+        stale_apply = self.client.post(
+            f"/api/v1/planning/plans/{stale_proposal.json()['plan_id']}/apply",
+            headers=self.headers,
+        )
+        self.assertEqual(stale_apply.status_code, 409, stale_apply.text)
+        self.assertEqual(stale_apply.json()["detail"]["code"], "plan_stale")
+
+    def test_replan_requires_a_current_day_revision_and_uses_its_endpoint(self):
+        generic = self.client.post(
+            "/api/v1/planning/preview",
+            json={"route_date": "2030-02-20", "replan": True},
+            headers=self.headers,
+        )
+        self.assertEqual(generic.status_code, 422, generic.text)
+        self.assertEqual(generic.json()["detail"]["code"], "replan_endpoint_required")
+
+        missing_plan = self.client.post(
+            f"/api/v1/planning/areas/{self.area_id}/2030-02-20/replan/preview",
+            json={},
+            headers=self.headers,
+        )
+        self.assertEqual(missing_plan.status_code, 404, missing_plan.text)
+        self.assertEqual(missing_plan.json()["detail"]["code"], "day_plan_not_found")
+
+    def test_empty_replan_unassigns_pending_tickets_without_cancelling_them(self):
+        initial = self.apply(self.preview())
+        with Session(self.engine) as session, session.begin():
+            session.execute(text("UPDATE workers SET is_on_line = false"))
+
+        preview_response = self.client.post(
+            self.day_url("/replan/preview"),
+            json={"base_day_revision": initial["day_revision"]},
+            headers=self.headers,
+        )
+        self.assertEqual(preview_response.status_code, 201, preview_response.text)
+        proposal = preview_response.json()
+        self.assertEqual(proposal["routes"], [])
+        self.assertEqual(
+            proposal["outcome"],
+            "partial",
+            f"metrics={proposal['metrics']} unassigned={proposal['unassigned']}",
+        )
+
+        applied = self.apply(proposal)
+        self.assertEqual(applied["assigned_ticket_ids"], [])
+        with Session(self.engine) as session:
+            rows = session.execute(
+                text("SELECT lifecycle_state, status, assigned_worker_id FROM tickets ORDER BY id")
+            ).all()
+            unassign_events = session.scalar(
+                text("SELECT count(*) FROM work_events WHERE event_type = 'unassign'")
+            )
+        self.assertEqual(rows, [("waiting_assignment", "planned", None)] * len(rows))
+        self.assertEqual(unassign_events, len(rows))
+
+    def test_midday_replan_keeps_completed_visit_and_uses_confirmed_location_and_time(self):
+        initial = self.apply(self.preview())
+        day_state = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        completed_visit = day_state["visits"][0]
+        ticket_id = completed_visit["ticket_id"]
+        worker_id = completed_visit["worker_id"]
+        with Session(self.engine) as session:
+            ticket = session.get(Ticket, ticket_id)
+            destination_id = ticket.location_id
+            source_id = self.receipt["id_map"]["locations"]["1"]
+            ticket_revision = ticket.revision
+
+        event = self.execution_event(
+            ticket_id,
+            "dispatch",
+            ticket_revision,
+            "t06-midday-dispatch",
+            "2030-01-15T09:00:00+03:00",
+        )
+        event = self.execution_event(
+            ticket_id,
+            "start-route",
+            event["revision"],
+            "t06-midday-route",
+            "2030-01-15T09:05:00+03:00",
+            worker_id=worker_id,
+            location_id=source_id,
+        )
+        event = self.execution_event(
+            ticket_id,
+            "start",
+            event["revision"],
+            "t06-midday-start",
+            "2030-01-15T09:30:00+03:00",
+            worker_id=worker_id,
+            location_id=destination_id,
+        )
+        self.execution_event(
+            ticket_id,
+            "complete",
+            event["revision"],
+            "t06-midday-complete",
+            "2030-01-15T10:00:00+03:00",
+            worker_id=worker_id,
+            location_id=destination_id,
+        )
+
+        self.now = self.now.replace(day=15, hour=7, minute=15)
+        emergency = self.create_ticket("Авария после завершённого выезда")
+        preview_response = self.client.post(
+            self.day_url("/replan/preview"),
+            json={"base_day_revision": initial["day_revision"]},
+            headers=self.headers,
+        )
+        self.assertEqual(preview_response.status_code, 201, preview_response.text)
+        proposal = preview_response.json()
+        self.assertEqual(proposal["metrics"]["available_workers"], 4)
+        self.assertIn(
+            emergency["id"],
+            [visit["ticket_id"] for visit in proposal["replan_diff"]["added"]],
+        )
+        self.assertIn(
+            ticket_id,
+            proposal["replan_diff"]["unchanged_ticket_ids"],
+            "a confirmed completed visit remains in the published day plan",
+        )
+        self.assertTrue(
+            all(
+                datetime.fromisoformat(visit["service_start_at"])
+                >= datetime.fromisoformat("2030-01-15T10:15:00+03:00")
+                for route in proposal["routes"]
+                for visit in route["stops"]
+            )
+        )
+
+        applied = self.apply(proposal)
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        published = {visit["ticket_id"]: visit for visit in current["visits"]}
+        self.assertEqual(applied["day_revision"], initial["day_revision"] + 1)
+        self.assertIn(ticket_id, published)
+        self.assertEqual(published[ticket_id]["service_end_at"], completed_visit["service_end_at"])
+        self.assertIn(emergency["id"], published)
+
+    def test_replan_apply_rejects_a_route_whose_departure_time_has_passed(self):
+        initial = self.apply(self.preview())
+        self.now = self.now.replace(day=15, hour=7, minute=15)
+        response = self.client.post(
+            self.day_url("/replan/preview"),
+            json={"base_day_revision": initial["day_revision"]},
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        proposal = response.json()
+        departures = [datetime.fromisoformat(route["departure_at"]) for route in proposal["routes"]]
+        self.assertTrue(departures)
+        first_departure = min(departures)
+        self.assertGreaterEqual(first_departure, self.now)
+        self.assertLess(first_departure, self.now + timedelta(minutes=5))
+
+        self.now = first_departure + timedelta(seconds=1)
+        stale = self.client.post(
+            f"/api/v1/planning/plans/{proposal['plan_id']}/apply", headers=self.headers
+        )
+        self.assertEqual(stale.status_code, 409, stale.text)
+        self.assertEqual(stale.json()["detail"]["code"], "plan_stale")
+        self.assertEqual(
+            stale.json()["detail"]["reason"],
+            "replan_departure_elapsed",
+        )
+        current = self.client.get(self.day_url("/current"), headers=self.headers)
+        self.assertEqual(current.json()["revision"], initial["day_revision"])
+
+    def test_replan_returns_timed_unavailable_worker_after_dispatcher_eta(self):
+        initial = self.apply(self.preview())
+        worker_id = self.payload["worker_ids"][0]
+        self.now = self.now.replace(day=15, hour=7, minute=15)
+        with Session(self.engine) as session, session.begin():
+            session.execute(text("UPDATE workers SET is_on_line = false"))
+
+        unavailable = self.client.post(
+            f"/api/v1/workers/{worker_id}/unavailable",
+            json={
+                "expected_revision": 1,
+                "service_area_id": self.area_id,
+                "route_date": ROUTE_DATE.isoformat(),
+                "occurred_at": "2030-01-15T10:15:00+03:00",
+                "expected_available_at": "2030-01-15T11:00:00+03:00",
+                "worker_id": worker_id,
+                "reason": "Инженер вернётся через сорок пять минут",
+                "payload": {},
+            },
+            headers=self.headers | {"Idempotency-Key": "t06-worker-return-eta"},
+        )
+        self.assertEqual(unavailable.status_code, 200, unavailable.text)
+        emergency = self.create_ticket("Авария к возвращению инженера")
+        preview_response = self.client.post(
+            self.day_url("/replan/preview"),
+            json={"base_day_revision": initial["day_revision"]},
+            headers=self.headers,
+        )
+        self.assertEqual(preview_response.status_code, 201, preview_response.text)
+        proposal = preview_response.json()
+        self.assertEqual(proposal["metrics"]["available_workers"], 1)
+        self.assertIn(
+            emergency["id"],
+            [stop["ticket_id"] for route in proposal["routes"] for stop in route["stops"]],
+        )
+        self.assertTrue(proposal["routes"])
+        self.assertEqual({route["worker_id"] for route in proposal["routes"]}, {worker_id})
+        self.assertTrue(
+            all(
+                datetime.fromisoformat(stop["service_start_at"])
+                >= datetime.fromisoformat("2030-01-15T11:00:00+03:00")
+                for route in proposal["routes"]
+                for stop in route["stops"]
+            )
+        )
+
+        applied = self.apply(proposal)
+        self.assertIn(emergency["id"], applied["assigned_ticket_ids"])
 
     def test_diff_of_the_current_revision_names_the_moved_visit(self):
         self.apply(self.preview(allow_partial=False))

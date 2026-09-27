@@ -21,6 +21,44 @@ def dt(value: str) -> datetime:
     return value if isinstance(value, datetime) else datetime.fromisoformat(value)
 
 
+def worker_replan_anchor(day_state, active_ticket, now, *, default_location_id):
+    """Return the confirmed or promised point and time from which the remainder can start."""
+    current_ticket_id = day_state.get("current_ticket_id") if day_state else None
+    expected = day_state.get("expected_available_at") if day_state else None
+    if expected is not None:
+        expected = dt(expected)
+
+    if current_ticket_id is not None:
+        planned_end = (active_ticket or {}).get("planned_end_at")
+        destination_id = day_state.get("current_destination_id")
+        if (
+            destination_id is not None
+            and active_ticket is not None
+            and active_ticket.get("location_id") != destination_id
+        ):
+            planned_end = None
+        planned_end = dt(planned_end) if planned_end is not None else None
+        if expected is None:
+            if planned_end is None or planned_end <= now:
+                return {
+                    "location_id": None,
+                    "available_at": None,
+                    "reason": "active_work_eta_unknown",
+                }
+            expected = planned_end
+        location_id = day_state.get("current_destination_id") or day_state.get("last_location_id")
+    else:
+        if day_state and not day_state.get("available", True) and expected is None:
+            return {"location_id": None, "available_at": None, "reason": "worker_unavailable"}
+        location_id = day_state.get("last_location_id") if day_state else None
+
+    return {
+        "location_id": location_id or default_location_id,
+        "available_at": max(now, expected) if expected is not None else now,
+        "reason": None,
+    }
+
+
 def at(epoch: datetime, minutes: int) -> datetime:
     return epoch + timedelta(minutes=minutes)
 
@@ -70,6 +108,8 @@ def candidate_reason(
 def prepare(snapshot: dict, now: datetime) -> dict:
     policy = snapshot_policy(snapshot)
     request = snapshot["request"]
+    replan = bool(request.get("replan"))
+    replan_ticket_ids = set(request.get("ticket_ids", [])) if replan else set()
     epoch = datetime.combine(datetime.fromisoformat(request["route_date"]).date(), time(), MOSCOW)
     day = epoch.date()
     missing = {
@@ -103,7 +143,20 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         office_id = worker.get("stock_office_id") or (brigade["office_id"] if brigade else None)
         office = offices.get(office_id) if office_id else None
 
-        if day_state and day_state.get("last_location_id"):
+        default_location_id = worker.get("start_location_id") or (
+            office["location_id"] if office else None
+        )
+        anchor = None
+        if replan:
+            anchor = worker_replan_anchor(
+                day_state,
+                busy.get(day_state.get("current_ticket_id")) if day_state else None,
+                now,
+                default_location_id=default_location_id,
+            )
+        if anchor and anchor["reason"] is None:
+            start_location_id = anchor["location_id"]
+        elif day_state and day_state.get("last_location_id"):
             start_location_id = day_state["last_location_id"]
         elif worker.get("start_location_id"):
             start_location_id = worker["start_location_id"]
@@ -127,13 +180,27 @@ def prepare(snapshot: dict, now: datetime) -> dict:
             reason = reasons.invalid_worker_role(roles.get(wid))
         elif wid in archived:
             reason = reasons.worker_archived()
-        elif day_state and not day_state["available"]:
+        elif replan and anchor and anchor["reason"] == "active_work_eta_unknown":
+            reason = reasons.explain(
+                "active_work_eta_unknown",
+                "availability",
+                "Инженер занят начатой заявкой без времени освобождения",
+                constraint="active_work_requires_expected_end",
+                ids={"ticket_ids": [day_state["current_ticket_id"]]},
+            )
+        elif (
+            day_state
+            and not day_state["available"]
+            and not (replan and day_state.get("expected_available_at"))
+        ):
             reason = reasons.worker_unavailable(
                 dt(day_state["expected_available_at"])
                 if day_state.get("expected_available_at")
                 else None
             )
-        elif not worker["is_on_line"]:
+        elif not worker["is_on_line"] and not (
+            replan and day_state and day_state.get("expected_available_at")
+        ):
             reason = reasons.worker_offline()
         elif not office:
             reason = reasons.missing_office()
@@ -141,9 +208,9 @@ def prepare(snapshot: dict, now: datetime) -> dict:
             reason = reasons.office_without_coordinates(
                 office["id"], start_location_id or office["location_id"]
             )
-        elif start <= now and not (day_state and day_state.get("last_location_id")):
+        elif start <= now and not (day_state and day_state.get("last_location_id")) and not replan:
             reason = reasons.shift_already_started(start, now, day)
-        elif day_state and day_state.get("current_ticket_id"):
+        elif day_state and day_state.get("current_ticket_id") and not replan:
             reason = (
                 reasons.worker_en_route(day_state["current_ticket_id"])
                 if day_state.get("current_destination_id") is not None
@@ -162,6 +229,12 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 job = busy.get(assignment["ticket_id"])
                 if assignment["worker_id"] != wid or job is None:
                     continue
+                if (
+                    replan
+                    and day_state
+                    and assignment["ticket_id"] == day_state.get("current_ticket_id")
+                ):
+                    continue
                 a = dt(job["planned_start_at"] or job["visit_window_start"])
                 b = dt(job["planned_end_at"] or job["visit_window_end"])
                 if job["status"] == "in_progress" or (a < end and start < b):
@@ -174,7 +247,9 @@ def prepare(snapshot: dict, now: datetime) -> dict:
             excluded_workers.append({"worker_id": wid, "reason": "missing_last_location"})
             continue
         available_at = start
-        if day_state and day_state.get("expected_available_at"):
+        if replan:
+            available_at = max(start, now, anchor["available_at"] if anchor else now)
+        elif day_state and day_state.get("expected_available_at"):
             available_at = max(available_at, dt(day_state["expected_available_at"]))
         worker_area_id = (
             worker.get("service_area_id")
@@ -223,7 +298,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         reason, candidates = None, []
         if ticket["status"] != "planned":
             reason = reasons.ticket_not_planned(ticket["status"])
-        elif assigned:
+        elif assigned and not (replan and tid in replan_ticket_ids):
             reason = reasons.already_assigned(assigned)
         elif not location or location["latitude"] is None or location["longitude"] is None:
             reason = reasons.ticket_without_coordinates(ticket["location_id"])

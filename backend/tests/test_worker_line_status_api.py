@@ -284,11 +284,10 @@ class WorkerLineStatusApiTests(DatabaseTestCase):
 
     def test_failure_rolls_back_status_and_released_assignments(self):
         with patch(
-            "app.modules.users.repository.clear_planned_times_without_assignees",
-            side_effect=RuntimeError("cannot clear plan"),
-            create=True,
+            "app.modules.execution.day_state.apply_ticket_event",
+            side_effect=RuntimeError("cannot release assignment"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "cannot clear plan"):
+            with self.assertRaisesRegex(RuntimeError, "cannot release assignment"):
                 self.update_line_status(False)
 
         self.assertEqual(

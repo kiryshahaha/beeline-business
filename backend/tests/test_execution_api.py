@@ -523,6 +523,63 @@ class ExecutionApiTests(DatabaseTestCase):
             ).scalar_one(),
             1,
         )
+        self.assertEqual(
+            self.session.execute(
+                text("SELECT lifecycle_state FROM tickets WHERE id=:ticket_id"),
+                {"ticket_id": ticket_id},
+            ).scalar_one(),
+            "waiting_assignment",
+        )
+        self.assertEqual(
+            self.session.execute(
+                text(
+                    "SELECT count(*) FROM work_events "
+                    "WHERE ticket_id=:ticket_id AND event_type='unassign'"
+                ),
+                {"ticket_id": ticket_id},
+            ).scalar_one(),
+            1,
+        )
+
+    def test_worker_unavailable_uses_dispatcher_eta_and_audits_released_assignment(self):
+        ticket_id = self._ticket(title="Заявка перед возвращением инженера")["id"]
+        self._assign(ticket_id)
+        response = self.client.post(
+            f"/api/v1/workers/{self.worker.id}/unavailable",
+            json={
+                "expected_revision": 1,
+                "service_area_id": self.service_area_id,
+                "route_date": self.route_date.isoformat(),
+                "occurred_at": "2030-01-15T15:00:00+03:00",
+                "expected_available_at": "2030-01-15T16:00:00+03:00",
+                "worker_id": self.worker.id,
+                "reason": "Инженер вернётся после короткой недоступности",
+                "payload": {},
+            },
+            headers=self._auth(self.observer) | {"Idempotency-Key": "worker-unavailable-eta"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(
+            datetime.fromisoformat(response.json()["expected_available_at"]).astimezone(UTC),
+            datetime(2030, 1, 15, 13, tzinfo=UTC),
+        )
+        ticket_state = self.session.execute(
+            text(
+                "SELECT lifecycle_state, assigned_worker_id, planned_start_at, planned_end_at "
+                "FROM tickets WHERE id=:ticket_id"
+            ),
+            {"ticket_id": ticket_id},
+        ).one()
+        self.assertEqual(ticket_state, ("waiting_assignment", None, None, None))
+        event_types = (
+            self.session.execute(
+                text("SELECT event_type FROM work_events WHERE ticket_id=:ticket_id ORDER BY id"),
+                {"ticket_id": ticket_id},
+            )
+            .scalars()
+            .all()
+        )
+        self.assertEqual(event_types, ["new_ticket", "assign", "unassign"])
 
     def test_completion_consumes_material_once_and_reopen_preserves_ledger(self):
         appliance = self._save(
