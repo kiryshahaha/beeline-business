@@ -1,0 +1,23 @@
+meta {
+  name: Восстановить исполнителя перед проверкой снятия с линии
+  type: http
+  seq: 0
+}
+
+put {
+  url: {{base_url}}/api/v1/workers/{{worker_id}}/line-status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"is_on_line": true}
+}
+
+assert {
+  res.status: eq 200
+}

@@ -27,3 +27,9 @@ tests {
     expect(res.getBody().assigned_worker_id).to.be.null;
   });
 }
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    bru.setVar("workflow_ticket_revision", res.getBody().revision);
+  }
+}

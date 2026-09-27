@@ -6,12 +6,20 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.session import get_session
 from app.modules.appliances.inventory import InventoryError
 from app.modules.auth.dependencies import get_current_user, require_roles
 from app.modules.execution import service as execution_service
 from app.modules.execution.enums import WorkEventType
 from app.modules.execution.schemas import ExecutionCommand, WindowChangeCommand
+from app.modules.planning.errors import PlanningError
+from app.modules.planning.planner_client import PlannerClient
+from app.modules.planning.router import (
+    get_clock,
+    get_planning_engine,
+    get_provider_factory,
+)
 from app.modules.tickets import service
 from app.modules.tickets.enums import TicketStatus
 from app.modules.tickets.schemas import (
@@ -31,6 +39,22 @@ DatabaseSession = Annotated[Session, Depends(get_session)]
 CurrentUser = Annotated[UserRead, Depends(get_current_user)]
 CurrentObserver = Annotated[UserRead, Depends(require_roles(UserRole.OBSERVER))]
 IdempotencyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
+
+
+def optional_planning_settings():
+    return get_settings()
+
+
+def optional_planner_client(settings=Depends(optional_planning_settings)):
+    if not settings.planning_enabled:
+        return None
+    if not settings.planner_base_url or not settings.planner_service_token.get_secret_value():
+        raise HTTPException(503, detail={"code": "planner_not_configured"})
+    return PlannerClient(settings)
+
+
+def optional_provider_factory(provider_factory=Depends(get_provider_factory)):
+    return provider_factory
 
 
 def _idempotency_key(value: str | None) -> str:
@@ -175,16 +199,30 @@ def estimate_ticket_sla(
 
 
 @router.put("/{id}/assignees", response_model=TicketRead)
-def update_ticket_assignment(
+async def update_ticket_assignment(
     id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     data: TicketAssignmentUpdate,
     session: DatabaseSession,
     _current_user: CurrentObserver,
+    engine=Depends(get_planning_engine),
+    settings=Depends(optional_planning_settings),
+    provider=Depends(optional_provider_factory),
+    planner=Depends(optional_planner_client),
+    clock=Depends(get_clock),
 ) -> TicketRead:
     """Replace the assigned worker; newly assigned workers receive an event."""
     try:
-        return service.update_assignment(
-            session, id, data.worker_id, data.is_pinned, actor_id=_current_user.id
+        return await service.update_assignment(
+            session,
+            id,
+            data.worker_id,
+            data.is_pinned,
+            actor_id=_current_user.id,
+            engine=engine,
+            settings=settings,
+            provider=provider,
+            planner=planner,
+            clock=clock,
         )
     except service.TicketNotFoundError as error:
         raise HTTPException(status_code=404, detail="Заявка не найдена") from error
@@ -202,24 +240,52 @@ def update_ticket_assignment(
             status_code=422,
             detail="Исполнитель принадлежит другому участку обслуживания",
         ) from error
+    except service.AssignmentValidationError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "manual_assignment_rejected", "violations": error.violations},
+        ) from error
+    except PlanningError as error:
+        raise HTTPException(
+            status_code=error.status, detail={"code": error.code, **error.details}
+        ) from error
     except InventoryError as error:
         raise HTTPException(status_code=error.status, detail=error.detail()) from error
 
 
 @router.post("/{id}/assign/preview", response_model=AssignmentPreviewResponse)
-def preview_ticket_assignment(
+async def preview_ticket_assignment(
     id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     data: AssignmentPreviewRequest,
     session: DatabaseSession,
     _current_user: CurrentObserver,
+    engine=Depends(get_planning_engine),
+    settings=Depends(optional_planning_settings),
+    provider=Depends(optional_provider_factory),
+    planner=Depends(optional_planner_client),
+    clock=Depends(get_clock),
 ) -> AssignmentPreviewResponse:
     """Preview the assignment of a worker to a ticket without saving."""
     try:
-        return service.preview_assignment(session, id, data.worker_id)
+        return await service.preview_assignment(
+            session,
+            id,
+            data.worker_id,
+            engine,
+            settings,
+            provider,
+            planner,
+            clock,
+            actor_id=_current_user.id,
+        )
     except service.TicketNotFoundError as error:
         raise HTTPException(status_code=404, detail="Заявка не найдена") from error
     except service.WorkerNotFoundError as error:
         raise HTTPException(status_code=422, detail="Исполнитель не найден") from error
+    except PlanningError as error:
+        raise HTTPException(
+            status_code=error.status, detail={"code": error.code, **error.details}
+        ) from error
 
 
 @router.patch("/{id}/status", response_model=TicketRead)

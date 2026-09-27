@@ -1,0 +1,40 @@
+meta {
+  name: Перенести назначение на свободный день
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{ticket_id}}/window-change
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+headers {
+  Idempotency-Key: workflow-ticket-window-change
+}
+
+body:json {
+  {
+    "expected_revision": {{workflow_ticket_revision}},
+    "occurred_at": "2030-01-15T06:30:00Z",
+    "reason": "Тестовое окно перенесено на свободный день",
+    "new_window_start": "2030-01-16T07:00:00Z",
+    "new_window_end": "2030-01-16T11:00:00Z",
+    "payload": {}
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    bru.setVar("workflow_ticket_revision", res.getBody().revision);
+  }
+}
+
+assert {
+  res.status: eq 200
+}

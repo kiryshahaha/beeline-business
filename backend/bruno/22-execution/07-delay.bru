@@ -22,7 +22,7 @@ body:json {
   {
     "expected_revision": 6,
     "occurred_at": "{{execution_occurred_at}}",
-    "worker_id": {{worker_two_id}},
+    "worker_id": {{execution_worker_id}},
     "reason": "Работа заняла больше времени",
     "expected_available_at": "{{execution_available_at}}",
     "payload": {}
@@ -30,9 +30,8 @@ body:json {
 }
 
 script:pre-request {
-  const now = Date.now();
-  bru.setVar("execution_occurred_at", new Date(now).toISOString());
-  bru.setVar("execution_available_at", new Date(now + 2 * 60 * 60 * 1000).toISOString());
+  bru.setVar("execution_occurred_at", "2030-01-17T09:00:00.000Z");
+  bru.setVar("execution_available_at", "2030-01-17T10:30:00.000Z");
 }
 
 assert {

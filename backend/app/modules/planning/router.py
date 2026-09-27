@@ -67,7 +67,9 @@ def get_planner_client(settings=Depends(planning_settings)):
     return PlannerClient(settings)
 
 
-def get_provider_factory(settings=Depends(planning_settings)):
+def get_provider_factory(settings=Depends(get_settings)):
+    if not settings.planning_enabled:
+        return None
     if not settings.geoapify_api_key:
         raise HTTPException(503, detail={"code": "routing_not_configured"})
     return lambda: AsyncGeoapifyRoutingClient(
