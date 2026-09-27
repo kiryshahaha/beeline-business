@@ -25,6 +25,7 @@ from app.db.models import (
 )
 from app.db.session import get_session
 from app.main import app
+from app.modules.buildings.models import Building
 from app.modules.data_exchange.formats import parse_file, serialize
 from app.modules.data_exchange.service import import_data
 from app.modules.planning import router as api
@@ -32,6 +33,7 @@ from app.modules.planning import service
 from app.modules.planning.errors import PlanningError
 from app.modules.planning.snapshot import fingerprint
 from app.modules.planning.solver_contract import SolveResponse
+from app.modules.service_areas.models import ServiceArea
 from app.modules.tickets import router as tickets_api
 from planning_scenarios import NOW, generate_planning_dataset, preview_request
 from tests.planning_fakes import FeasiblePlanner, provider_factory
@@ -173,6 +175,45 @@ class PlanningApiTests(CommittedDatabaseTestCase):
                 item for item in revision.plan_state["visits"] if item["ticket_id"] == ticket_id
             )
             self.assertEqual(visit["worker_id"], new_worker_id)
+
+    def test_manual_assignment_preview_excludes_other_service_areas(self):
+        plan = self.preview(allow_partial=False)
+        self.assertEqual(self.apply(plan).status_code, 200)
+        route = plan["routes"][0]
+        target_ticket_id = route["stops"][0]["ticket_id"]
+        worker_id = route["worker_id"]
+
+        with Session(self.engine) as session, session.begin():
+            worker_tickets = list(
+                session.scalars(
+                    select(Ticket).where(Ticket.assigned_worker_id == worker_id).order_by(Ticket.id)
+                )
+            )
+            other = next(ticket for ticket in worker_tickets if ticket.id != target_ticket_id)
+            other_location = session.get(Location, other.location_id)
+            other_building = session.get(Building, other_location.building_id)
+            other_area = ServiceArea(code="manual-preview-other", name="Other area")
+            session.add(other_area)
+            session.flush()
+            other.service_area_id = other_area.id
+            other_building.service_area_id = other_area.id
+            other_ticket_id = other.id
+
+        response = self.client.post(
+            f"/api/v1/tickets/{target_ticket_id}/assign/preview",
+            json={"worker_id": worker_id},
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(response.json()["is_eligible"], response.text)
+        self.assertTrue(
+            any(
+                violation["code"] == "worker_busy"
+                and other_ticket_id in violation["ids"].get("ticket_ids", [])
+                for violation in response.json()["violations"]
+            ),
+            response.text,
+        )
 
     def test_exceeding_limits_returns_422(self):
         req = self.payload.copy()

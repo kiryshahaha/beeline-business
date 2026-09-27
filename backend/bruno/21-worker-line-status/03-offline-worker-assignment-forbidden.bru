@@ -24,6 +24,8 @@ assert {
 
 tests {
   test("API объясняет запрет назначения", function () {
-    expect(res.getBody().detail).to.equal("Один или несколько исполнителей сняты с линии");
+    const detail = res.getBody().detail;
+    expect(detail.code).to.equal("manual_assignment_rejected");
+    expect(detail.violations.map((violation) => violation.code)).to.include("worker_offline");
   });
 }

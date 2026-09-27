@@ -1,17 +1,20 @@
+import asyncio
 import math
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import RowMapping, select, text
+from sqlalchemy import RowMapping, func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.audit import set_assignment_origin
 from app.core.planning_guard import lock_planning_mutation
 from app.db.models import WorkType, WorkTypePlanningRule
+from app.modules.buildings.models import Building
 from app.modules.execution import repository as execution_repository
 from app.modules.execution import service as execution_service
 from app.modules.execution.enums import TicketLifecycleState, WorkEventType
 from app.modules.execution.schemas import ExecutionCommand
+from app.modules.locations.models import Location
 from app.modules.locations.schemas import LocationRead
 from app.modules.notifications.enums import NotificationKind
 from app.modules.routing.service import save_routes_in_transaction
@@ -253,9 +256,7 @@ def create_ticket(
     actor_id: int | None = None,
     idempotency_key: str | None = None,
 ) -> TicketRead:
-    if session.in_transaction():
-        session.rollback()
-    with session.begin():
+    with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         if repository.find_location_id(session, data.location_id) is None:
             raise LocationNotFoundError
@@ -407,6 +408,7 @@ async def update_assignment(
             session,
             affected_worker_id,
             route_date,
+            service_area_id=service_area_id,
             include_ticket_id=ticket_id if affected_worker_id == worker_id else None,
             exclude_ticket_id=(
                 ticket_id
@@ -473,9 +475,7 @@ def _update_assignment_without_planner(
     *,
     actor_id: int | None,
 ) -> TicketRead:
-    if session.in_transaction():
-        session.rollback()
-    with session.begin():
+    with session.begin_nested() if session.in_transaction() else session.begin():
         lock_planning_mutation(session)
         return update_assignment_in_transaction(
             session,
@@ -517,28 +517,33 @@ def _manual_worker_ticket_ids(
     worker_id: int,
     route_date,
     *,
+    service_area_id: int | None,
     include_ticket_id: int | None,
     exclude_ticket_id: int | None,
 ) -> list[int]:
     start_of_day = datetime.combine(route_date, datetime.min.time(), MOSCOW).astimezone(UTC)
     end_of_day = start_of_day + timedelta(days=1)
-    ids = set(
-        session.scalars(
-            select(Ticket.id)
-            .where(
-                Ticket.assigned_worker_id == worker_id,
-                Ticket.visit_window_start >= start_of_day,
-                Ticket.visit_window_start < end_of_day,
-                Ticket.status.in_(
-                    [
-                        TicketStatus.PLANNED.value,
-                        TicketStatus.IN_PROGRESS.value,
-                    ]
-                ),
-            )
-            .order_by(Ticket.id)
+    statement = (
+        select(Ticket.id)
+        .join(Location, Location.id == Ticket.location_id)
+        .join(Building, Building.id == Location.building_id)
+        .where(
+            Ticket.assigned_worker_id == worker_id,
+            Ticket.visit_window_start >= start_of_day,
+            Ticket.visit_window_start < end_of_day,
+            Ticket.status.in_(
+                [
+                    TicketStatus.PLANNED.value,
+                    TicketStatus.IN_PROGRESS.value,
+                ]
+            ),
         )
     )
+    if service_area_id is not None:
+        statement = statement.where(
+            func.coalesce(Ticket.service_area_id, Building.service_area_id) == service_area_id
+        )
+    ids = set(session.scalars(statement.order_by(Ticket.id)))
     if include_ticket_id is not None:
         ids.add(include_ticket_id)
     if exclude_ticket_id is not None:
@@ -581,8 +586,9 @@ async def _manual_route_preview(
     from sqlalchemy.orm import Session
 
     from app.modules.planning.models import PlanningPlan
+    from app.modules.planning.policy import execution_policy
     from app.modules.planning.schemas import PreviewRequest
-    from app.modules.planning.service import preview
+    from app.modules.planning.service import preview, read_snapshot
 
     request = PreviewRequest(
         route_date=route_date,
@@ -591,6 +597,8 @@ async def _manual_route_preview(
         worker_ids=[worker_id],
         allow_partial=True,
     )
+    snapshot = await asyncio.to_thread(read_snapshot, engine, request, execution_policy(settings))
+    snapshot = _manual_snapshot_transform(ticket_ids)(snapshot)
     public = await preview(
         engine,
         request,
@@ -599,7 +607,7 @@ async def _manual_route_preview(
         provider,
         planner,
         clock,
-        snapshot_transform=_manual_snapshot_transform(ticket_ids),
+        snapshot_override=snapshot,
     )
     with Session(engine) as session:
         stored = session.get(PlanningPlan, UUID(public["plan_id"]))
@@ -972,6 +980,7 @@ async def preview_assignment(
         session,
         worker_id,
         route_date,
+        service_area_id=service_area_id,
         include_ticket_id=None,
         exclude_ticket_id=None,
     )

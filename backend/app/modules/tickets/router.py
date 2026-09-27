@@ -18,9 +18,8 @@ from app.modules.planning.planner_client import PlannerClient
 from app.modules.planning.router import (
     get_clock,
     get_planning_engine,
+    get_provider_factory,
 )
-from app.modules.routing.cache import GEOAPIFY_RESULT_CACHE
-from app.modules.routing.client import AsyncGeoapifyRoutingClient
 from app.modules.tickets import service
 from app.modules.tickets.enums import TicketStatus
 from app.modules.tickets.schemas import (
@@ -54,19 +53,8 @@ def optional_planner_client(settings=Depends(optional_planning_settings)):
     return PlannerClient(settings)
 
 
-def optional_provider_factory(settings=Depends(optional_planning_settings)):
-    if not settings.planning_enabled:
-        return None
-    if not settings.geoapify_api_key:
-        raise HTTPException(503, detail={"code": "routing_not_configured"})
-    return lambda: AsyncGeoapifyRoutingClient(
-        settings.geoapify_api_key,
-        timeout=settings.geoapify_timeout_seconds,
-        max_retries=settings.geoapify_max_retries,
-        cache=GEOAPIFY_RESULT_CACHE,
-        cache_ttl_seconds=settings.geoapify_cache_ttl_seconds,
-        coordinate_precision=settings.geoapify_cache_coordinate_precision,
-    )
+def optional_provider_factory(provider_factory=Depends(get_provider_factory)):
+    return provider_factory
 
 
 def _idempotency_key(value: str | None) -> str:

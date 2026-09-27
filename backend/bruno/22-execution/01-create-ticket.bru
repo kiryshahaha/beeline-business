@@ -16,7 +16,7 @@ auth:bearer {
 
 body:json {
   {
-    "location_id": {{location_id}},
+    "location_id": {{planning_location_id}},
     "title": "Execution lifecycle из Bruno",
     "description": "Заявка для проверки состояния выполнения.",
     "work_type_id": 1,
@@ -31,10 +31,14 @@ body:json {
 }
 
 script:pre-request {
-  const now = Date.now();
-  bru.setVar("execution_route_date", new Date(now + 3 * 60 * 60 * 1000).toISOString().slice(0, 10));
-  bru.setVar("execution_window_start", new Date(now + 60 * 60 * 1000).toISOString());
-  bru.setVar("execution_window_end", new Date(now + 5 * 60 * 60 * 1000).toISOString());
+  bru.setVar("execution_worker_id", JSON.parse(bru.getVar("planning_worker_ids"))[0]);
+  bru.setVar("execution_service_area_id", bru.getVar("planning_service_area_id"));
+  bru.setVar("execution_unavailable_worker_id", bru.getVar("worker_id"));
+  const windowStart = new Date("2030-01-17T07:00:00.000Z");
+  const windowEnd = new Date("2030-01-17T11:00:00.000Z");
+  bru.setVar("execution_route_date", windowStart.toISOString().slice(0, 10));
+  bru.setVar("execution_window_start", windowStart.toISOString());
+  bru.setVar("execution_window_end", windowEnd.toISOString());
 }
 
 script:post-response {
