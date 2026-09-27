@@ -10,16 +10,20 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.core.audit import set_assignment_origin
 from app.core.planning_guard import lock_planning_mutation
 from app.modules.execution import repository
 from app.modules.execution.enums import TicketLifecycleState, WorkEventType
 from app.modules.execution.schemas import (
+    ExecutionCommand,
     RedirectCommand,
     WorkerDayStateRead,
     WorkerUnavailableCommand,
 )
-from app.modules.execution.service import ExecutionConflict, IdempotencyConflict
+from app.modules.execution.service import (
+    ExecutionConflict,
+    IdempotencyConflict,
+    apply_ticket_event,
+)
 from app.modules.planning.day_plans import publish_revision
 
 MOSCOW = ZoneInfo("Europe/Moscow")
@@ -90,6 +94,7 @@ def reduce_worker_day_events(events, *, initially_available: bool = True) -> dic
         elif event_type == "redirect":
             state["current_destination_id"] = payload.get("destination_id")
             state["current_ticket_id"] = payload.get("ticket_id", state["current_ticket_id"])
+            state["expected_available_at"] = None
             state["reason"] = payload.get("reason") or event.get("reason")
         elif event_type == "start":
             state["last_location_id"] = payload.get("location_id", state["last_location_id"])
@@ -103,9 +108,13 @@ def reduce_worker_day_events(events, *, initially_available: bool = True) -> dic
             state["en_route_started_at"] = None
         elif event_type in (WorkEventType.CANCEL.value, "cancel"):
             if payload.get("ticket_id") in (None, state["current_ticket_id"]):
-                state["current_ticket_id"] = None
-                state["current_destination_id"] = None
-                state["en_route_started_at"] = None
+                if state["current_destination_id"] is None:
+                    state["current_ticket_id"] = None
+                    state["en_route_started_at"] = None
+                state["expected_available_at"] = _parse_datetime(
+                    payload.get("expected_available_at")
+                )
+                state["reason"] = payload.get("reason") or event.get("reason")
         elif event_type == "progress_delay":
             state["expected_available_at"] = _parse_datetime(payload.get("expected_available_at"))
             state["reason"] = payload.get("reason") or event.get("reason")
@@ -301,12 +310,15 @@ def materialize_ticket_event(
         )
     elif event_type == WorkEventType.CANCEL.value:
         if state["current_ticket_id"] in (None, ticket_id):
+            if state["current_destination_id"] is None:
+                fields.update(
+                    {
+                        "current_ticket_id": None,
+                        "en_route_started_at": None,
+                    }
+                )
             fields.update(
-                {
-                    "current_ticket_id": None,
-                    "current_destination_id": None,
-                    "en_route_started_at": None,
-                }
+                {"expected_available_at": _parse_datetime(payload.get("expected_available_at"))}
             )
     elif event_type == WorkEventType.PROGRESS_DELAY.value:
         fields.update(
@@ -562,11 +574,46 @@ def mark_worker_unavailable(
                 expected_available_at += timedelta(days=1)
         if expected_available_at <= command.occurred_at:
             raise ValueError("Ожидаемое время доступности должно быть позже события")
-        from app.modules.users import repository as users_repository
-
-        set_assignment_origin(session, actor_id=actor_id, source="line_status")
-        released_ticket_ids = users_repository.release_planned_assignments(session, worker_id)
-        users_repository.clear_planned_times_without_assignees(session, released_ticket_ids)
+        released_tickets = session.execute(
+            text(
+                """
+                SELECT id, revision
+                FROM tickets
+                WHERE assigned_worker_id = :worker_id
+                  AND status = 'planned'
+                  AND lifecycle_state IN ('waiting_assignment', 'assigned', 'dispatched')
+                ORDER BY id
+                FOR UPDATE
+                """
+            ),
+            {"worker_id": worker_id},
+        ).all()
+        released_ticket_ids = []
+        for ticket_id, ticket_revision in released_tickets:
+            ticket_event_key = sha256(
+                f"{idempotency_key}:{ticket_id}:{ticket_revision}".encode()
+            ).hexdigest()
+            ticket_command = ExecutionCommand.model_construct(
+                expected_revision=ticket_revision,
+                occurred_at=command.occurred_at,
+                reason=command.reason,
+                expected_available_at=None,
+                payload={
+                    "assignment_source": "line_status",
+                    "worker_id": worker_id,
+                },
+            )
+            apply_ticket_event(
+                session,
+                ticket_id,
+                WorkEventType.UNASSIGN,
+                ticket_command,
+                actor_id=actor_id,
+                idempotency_key=(
+                    f"worker-unavailable-unassign:{ticket_id}:{ticket_revision}:{ticket_event_key}"
+                ),
+            )
+            released_ticket_ids.append(ticket_id)
         session.execute(
             text("UPDATE workers SET is_on_line = false WHERE user_id = :worker_id"),
             {"worker_id": worker_id},
@@ -744,6 +791,7 @@ def redirect_worker(
                 UPDATE worker_day_states
                 SET revision = revision + 1,
                     current_destination_id = :destination_id,
+                    expected_available_at = NULL,
                     reason = :reason,
                     updated_at = now()
                 WHERE worker_id = :worker_id

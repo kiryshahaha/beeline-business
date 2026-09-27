@@ -63,8 +63,10 @@ def load_area_scope(session: Session, service_area_id: int | None, route_date) -
         return {"tickets": [], "events": {"count": 0, "last_id": None}}
     area_tickets = (
         select(Ticket.id)
+        .join(Location, Location.id == Ticket.location_id)
+        .join(Building, Building.id == Location.building_id)
         .where(
-            Ticket.service_area_id == service_area_id,
+            func.coalesce(Ticket.service_area_id, Building.service_area_id) == service_area_id,
             text(TICKET_LOCAL_DAY + " = :area_scope_date"),
         )
         .params(area_scope_date=route_date)
@@ -73,16 +75,29 @@ def load_area_scope(session: Session, service_area_id: int | None, route_date) -
         {
             "id": row.id,
             "status": row.status,
+            "lifecycle_state": row.lifecycle_state,
             "revision": row.revision,
             "assigned_worker_id": row.assigned_worker_id,
         }
         for row in session.execute(
-            select(Ticket.id, Ticket.status, Ticket.revision, Ticket.assigned_worker_id)
+            select(
+                Ticket.id,
+                Ticket.status,
+                Ticket.lifecycle_state,
+                Ticket.revision,
+                Ticket.assigned_worker_id,
+            )
             .where(Ticket.id.in_(area_tickets))
             .order_by(Ticket.id)
         )
     ]
-    area_workers = select(Worker.user_id).where(Worker.service_area_id == service_area_id)
+    area_workers = (
+        select(Worker.user_id)
+        .outerjoin(BrigadeMember, BrigadeMember.worker_id == Worker.user_id)
+        .outerjoin(Brigade, Brigade.id == BrigadeMember.brigade_id)
+        .outerjoin(Division, Division.id == Brigade.division_id)
+        .where(func.coalesce(Worker.service_area_id, Division.service_area_id) == service_area_id)
+    )
     count, last_id = session.execute(
         select(func.count(WorkEvent.id), func.max(WorkEvent.id)).where(
             WorkEvent.route_date == route_date,
@@ -155,6 +170,9 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
         for t in assigned_tickets
         if t["assigned_worker_id"] is not None
     ]
+    if request.replan:
+        replan_ticket_ids = set(ticket_ids)
+        assignments = [a for a in assignments if a["ticket_id"] not in replan_ticket_ids]
     busy_ids = {a["ticket_id"] for a in assignments if a["worker_id"] in worker_ids}
     busy = [
         t
@@ -280,14 +298,17 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
         ).mappings()
     ]
     current_day_revision = None
+    current_day_state = {}
     if service_area_id is not None:
-        current_day_revision = session.execute(
-            select(DayPlanRevision.revision).where(
+        current_revision = session.execute(
+            select(DayPlanRevision.revision, DayPlanRevision.plan_state).where(
                 DayPlanRevision.service_area_id == service_area_id,
                 DayPlanRevision.route_date == request.route_date,
                 DayPlanRevision.is_current.is_(True),
             )
-        ).scalar_one_or_none()
+        ).one_or_none()
+        if current_revision is not None:
+            current_day_revision, current_day_state = current_revision
     area_scope = load_area_scope(session, service_area_id, request.route_date)
     return normalize(
         {
@@ -324,6 +345,7 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
             "worker_service_areas": worker_service_areas,
             "worker_day_states": worker_day_states,
             "current_day_revision": current_day_revision,
+            "current_day_state": current_day_state or {},
             # The whole area-day, not only the chosen IDs: a ticket that appeared or
             # changed after the preview must make this plan stale (T09).
             "area_scope": area_scope,

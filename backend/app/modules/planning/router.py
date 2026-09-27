@@ -31,6 +31,7 @@ from app.modules.planning.schemas import (
     PlanRead,
     PolicyRead,
     PreviewRequest,
+    ReplanRequest,
 )
 from app.modules.routing.cache import GEOAPIFY_RESULT_CACHE
 from app.modules.routing.client import AsyncGeoapifyRoutingClient
@@ -105,6 +106,8 @@ async def preview(
     planner=Depends(get_planner_client),
     clock=Depends(get_clock),
 ):
+    if data.replan:
+        raise HTTPException(422, detail={"code": "replan_endpoint_required"})
     if not _preview_slots.acquire(blocking=False):
         raise HTTPException(503, detail={"code": "planning_busy"}, headers={"Retry-After": "5"})
     try:
@@ -117,6 +120,76 @@ async def preview(
         ) as fields:
             result = await service.preview(
                 engine, data, actor.id, settings, provider, planner, clock
+            )
+            metrics = result.get("metrics") or {}
+            oplog.merge_stages((metrics.get("routing") or {}).get("stages"))
+            fields.update(
+                plan_id=result["plan_id"],
+                plan_outcome=result["outcome"],
+                solver_status=result.get("solver_status"),
+                assigned_tickets=metrics.get("assigned_tickets"),
+                unassigned_tickets=metrics.get("unassigned_tickets"),
+            )
+        response.headers["Location"] = f"/api/v1/planning/plans/{result['plan_id']}"
+        return result
+    except (PlanningError, OperationalError) as error:
+        fail(error)
+    except TimeoutError:
+        raise HTTPException(504, detail={"code": "planning_timeout"})
+    finally:
+        _preview_slots.release()
+
+
+@router.post(
+    "/areas/{service_area_id}/{route_date}/replan/preview",
+    status_code=201,
+    response_model=PlanRead,
+    response_model_exclude_unset=True,
+)
+async def preview_remainder(
+    service_area_id: int,
+    route_date: date,
+    data: ReplanRequest,
+    actor: Observer,
+    response: Response,
+    engine=Depends(get_planning_engine),
+    settings=Depends(planning_settings),
+    provider=Depends(get_provider_factory),
+    planner=Depends(get_planner_client),
+    clock=Depends(get_clock),
+):
+    if not _preview_slots.acquire(blocking=False):
+        raise HTTPException(503, detail={"code": "planning_busy"}, headers={"Retry-After": "5"})
+    try:
+        with oplog.operation(
+            "planning.replan_preview",
+            route_date=route_date,
+            service_area_id=service_area_id,
+            base_day_revision=data.base_day_revision,
+        ) as fields:
+            request, snapshot = await asyncio.to_thread(
+                service.read_replan_snapshot,
+                engine,
+                service_area_id,
+                route_date,
+                data,
+                execution_policy(settings),
+                max_tickets=settings.planning_max_tickets,
+                max_workers=settings.planning_max_workers,
+            )
+            fields.update(
+                requested_tickets=len(request.ticket_ids),
+                requested_workers=len(request.worker_ids),
+            )
+            result = await service.preview(
+                engine,
+                request,
+                actor.id,
+                settings,
+                provider,
+                planner,
+                clock,
+                snapshot_override=snapshot,
             )
             metrics = result.get("metrics") or {}
             oplog.merge_stages((metrics.get("routing") or {}).get("stages"))

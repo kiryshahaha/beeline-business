@@ -16,6 +16,7 @@ class TicketLifecycleState(StrEnum):
 class WorkEventType(StrEnum):
     NEW_TICKET = "new_ticket"
     ASSIGN = "assign"
+    UNASSIGN = "unassign"
     DISPATCH = "dispatch"
     START_ROUTE = "start_route"
     START = "start"

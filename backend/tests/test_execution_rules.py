@@ -34,6 +34,21 @@ class ExecutionRuleTests(unittest.TestCase):
         with self.assertRaises(IllegalTransition):
             next_state_for_event(TicketLifecycleState.COMPLETED, WorkEventType.COMPLETE)
 
+    def test_unassign_keeps_unstarted_tickets_in_the_assignment_queue(self):
+        for state in (
+            TicketLifecycleState.WAITING_ASSIGNMENT,
+            TicketLifecycleState.ASSIGNED,
+            TicketLifecycleState.DISPATCHED,
+        ):
+            with self.subTest(state=state):
+                self.assertEqual(
+                    next_state_for_event(state, WorkEventType.UNASSIGN),
+                    TicketLifecycleState.WAITING_ASSIGNMENT,
+                )
+        for state in (TicketLifecycleState.EN_ROUTE, TicketLifecycleState.IN_PROGRESS):
+            with self.subTest(state=state), self.assertRaises(IllegalTransition):
+                next_state_for_event(state, WorkEventType.UNASSIGN)
+
     def test_delay_keeps_active_state_and_cannot_reopen_terminal_work(self):
         self.assertEqual(
             next_state_for_event(TicketLifecycleState.IN_PROGRESS, WorkEventType.PROGRESS_DELAY),
