@@ -460,9 +460,9 @@ async def _recalculate_route(engine, settings, provider, planner, clock, worker_
     if result.get("routes"):
         r = result["routes"][0]
         from pydantic import BaseModel
-        stops_dump = [{"location_id": s.location_id, "ticket_id": s.ticket_id, "arrival_at": s.arrival_at.isoformat(), "service_start_at": s.service_start_at.isoformat(), "service_end_at": s.service_end_at.isoformat(), "waiting_minutes": s.waiting_minutes, "effective_service_minutes": s.effective_service_minutes, "duration_source": s.duration_source} for s in r.stops]
-        path_props = {"kind": "path", "source": "provided", "legs": [l.model_dump(mode="json") for l in r.legs]} if r.legs else None
-        rc = RouteCreate.model_validate({"worker_id": r.worker_id, "route_date": route_date, "stops": stops_dump, "geometry": r.geometry.model_dump(mode="json") if r.geometry else None, "path_properties": path_props})
+        stops_dump = [{"location_id": s["location_id"], "ticket_id": s.get("ticket_id"), "arrival_at": s["arrival_at"], "service_start_at": s["service_start_at"], "service_end_at": s["service_end_at"], "waiting_minutes": s["waiting_minutes"], "effective_service_minutes": s["effective_service_minutes"], "duration_source": s["duration_source"]} for s in r["stops"]]
+        path_props = {"kind": "path", "source": "provided", "legs": r["legs"]} if r.get("legs") else None
+        rc = RouteCreate.model_validate({"worker_id": r["worker_id"], "route_date": route_date, "stops": stops_dump, "geometry": r.get("geometry"), "path_properties": path_props})
         def save():
             with Session(engine) as session, session.begin():
                 saved = save_routes_in_transaction(session, [rc])
@@ -473,7 +473,7 @@ async def _recalculate_route(engine, settings, provider, planner, clock, worker_
                     actor_id=actor_id or 0,
                     reason="manual_assignment",
                     fingerprint="recalculated",
-                    plan_state=build_plan_state({"routes": [r.model_dump(mode="json")]}, {worker_id: saved[0].id}),
+                    plan_state=build_plan_state({"routes": [r]}, {worker_id: saved[0].id}),
                     result={},
                     at=clock(),
                     plan_id=None
@@ -696,12 +696,12 @@ async def preview_assignment(
 
     result = await preview(engine, request, ticket["created_by"], settings, provider, planner, clock)
 
-    unassigned = [u for u in result.get("unassigned", []) if u.ticket_id == ticket_id]
+    unassigned = [u for u in result.get("unassigned", []) if u["ticket_id"] == ticket_id]
     is_eligible = len(unassigned) == 0
     violations = []
     if not is_eligible:
         for u in unassigned:
-            violations.append(u.reason.code)
+            violations.append(u["reason"]["code"])
 
     old_travel = 0
     old_service = 0
@@ -718,16 +718,16 @@ async def preview_assignment(
             t.id: t.sla_deadline_at
             for t in session.scalars(select(Ticket).where(Ticket.id.in_(ticket_ids_in_route)))
         }
-        for stop in r.stops:
-            sla_deadline = tickets_sla.get(stop.ticket_id)
-            if sla_deadline and stop.service_end_at and stop.service_end_at > sla_deadline:
+        for stop in r['stops']:
+            sla_deadline = tickets_sla.get(stop['ticket_id'])
+            if sla_deadline and datetime.fromisoformat(stop['service_end_at']) and datetime.fromisoformat(stop['service_end_at']) > sla_deadline:
                 violations_count += 1
         return violations_count
 
     if result.get("routes"):
         r = result["routes"][0]
-        new_travel = r.travel_minutes
-        new_service = r.service_minutes
+        new_travel = r['travel_minutes']
+        new_service = r['service_minutes']
         new_sla = count_sla_violations(r, ticket_ids_to_plan)
 
     if worker_ticket_ids and ticket_id not in worker_ticket_ids:
@@ -741,8 +741,8 @@ async def preview_assignment(
         old_res = await preview(engine, old_req, ticket["created_by"], settings, provider, planner, clock)
         if old_res.get("routes"):
             r = old_res["routes"][0]
-            old_travel = r.travel_minutes
-            old_service = r.service_minutes
+            old_travel = r['travel_minutes']
+            old_service = r['service_minutes']
             old_sla = count_sla_violations(r, worker_ticket_ids)
 
     new_duration = new_travel + new_service
