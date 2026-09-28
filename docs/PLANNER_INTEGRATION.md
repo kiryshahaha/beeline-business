@@ -533,6 +533,10 @@ JWT пользователя или Geoapify API key.
 
 ### 8.2. Модель и результат
 
+> Пункты 5–6 описывают исходную цель. С T05 действует лексикографическая цель
+> политики версии 2 с ненулевой стоимостью инженера:
+> [политика планирования](PLANNING_POLICY.md#исполняемая-цель-solver-t05).
+
 1. Отдельный time callback для каждого профиля:
    `travel[profile][from][to] + service_times[from]`.
    Настроить `AddDimensionWithVehicleTransits` с callback по каждому vehicle.

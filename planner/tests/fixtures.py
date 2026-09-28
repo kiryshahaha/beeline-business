@@ -31,6 +31,5 @@ def problem(n=4, vehicles=1, horizon=100):
         ],
         "time_capacity": horizon,
         "slack_max": horizon,
-        "vehicle_fixed_cost": 0,
         "search_time_limit_s": 1,
     }

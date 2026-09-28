@@ -236,9 +236,31 @@ class PlanningApiTests(CommittedDatabaseTestCase):
             stored = session.get(PlanningPlan, UUID(plan["plan_id"]))
             self.assertEqual(stored.input_snapshot["planning_policy"], recorded)
             self.assertEqual(stored.result_snapshot["problem"]["search_time_limit_s"], 2)
-            self.assertEqual(stored.result_snapshot["problem"]["policy_version"], 1)
+            self.assertEqual(stored.result_snapshot["problem"]["policy_version"], 2)
+            weights = stored.result_snapshot["solution"]["objective_weights"]
+            self.assertEqual(set(weights), set(recorded["objective_order"]))
+        self.assertEqual(set(plan["objective_components"]), set(recorded["objective_order"]))
         self.settings.planning_solve_time_limit_seconds = 7
-        self.assertEqual(self.apply(plan).status_code, 200)
+        applied = self.apply(plan)
+        self.assertEqual(applied.status_code, 200)
+        with Session(self.engine) as session:
+            revision = session.scalar(
+                select(DayPlanRevision).where(
+                    DayPlanRevision.plan_id == UUID(plan["plan_id"]),
+                    DayPlanRevision.is_current.is_(True),
+                )
+            )
+            self.assertEqual(revision.plan_state["planning_policy"], recorded)
+            self.assertEqual(
+                revision.plan_state["objective_components"], plan["objective_components"]
+            )
+        area = self.client.get(
+            f"/api/v1/planning/areas/{plan['service_area_id']}/{plan['route_date']}/current",
+            headers=self.headers,
+        )
+        self.assertEqual(area.status_code, 200, area.text)
+        self.assertEqual(area.json()["planning_policy"], recorded)
+        self.assertEqual(area.json()["objective_components"], plan["objective_components"])
         read = self.client.get(f"/api/v1/planning/plans/{plan['plan_id']}", headers=self.headers)
         self.assertEqual(read.json()["planning_policy"], recorded)
         self.assertTrue(read.json()["is_current"])
@@ -248,7 +270,9 @@ class PlanningApiTests(CommittedDatabaseTestCase):
         plan = self.preview()
         with Session(self.engine) as session, session.begin():
             stored = session.get(PlanningPlan, UUID(plan["plan_id"]))
+            # Snapshots recorded before T01 carry version 1 without its parameters.
             legacy = {k: v for k, v in stored.input_snapshot.items() if k != "planning_policy"}
+            legacy["policy_version"] = 1
             stored.input_snapshot = legacy
             stored.input_fingerprint = fingerprint(legacy)
             result = dict(stored.result_snapshot)
@@ -294,9 +318,14 @@ class PlanningApiTests(CommittedDatabaseTestCase):
         response = self.client.get(url, headers=self.headers)
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["case_contract"]["activation"], "contract_only")
+        execution = response.json()["execution"]
+        self.assertEqual(execution["policy_version"], 2)
         self.assertEqual(
-            response.json()["execution"]["priority"],
-            "category_and_numeric_priority_penalties",
+            execution["priority"], "emergency_then_connection_then_repair_or_additional"
+        )
+        self.assertEqual(
+            execution["objective_order"][:-1],
+            response.json()["case_contract"]["objective_order"][:-1],
         )
 
     def test_preview_cannot_silently_activate_case_policy(self):

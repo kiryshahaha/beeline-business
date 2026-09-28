@@ -53,6 +53,9 @@ def build_plan_state(public: dict, route_ids: dict[int, int] | None = None) -> d
         "visits": sorted(visits, key=lambda visit: visit["ticket_id"]),
         "unassigned_ticket_ids": sorted(item["ticket_id"] for item in public.get("unassigned", [])),
         "metrics": public.get("metrics") or {},
+        # Rules and objective breakdown the solver used; a manual edit has neither.
+        "planning_policy": public.get("planning_policy"),
+        "objective_components": public.get("objective_components"),
     }
 
 
@@ -239,6 +242,8 @@ def _public(revision: DayPlanRevision) -> dict:
         "effective_at": revision.effective_at,
         "created_at": revision.created_at,
         "metrics": (revision.plan_state or {}).get("metrics") or {},
+        "planning_policy": (revision.plan_state or {}).get("planning_policy"),
+        "objective_components": (revision.plan_state or {}).get("objective_components"),
     }
 
 

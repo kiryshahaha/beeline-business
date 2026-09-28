@@ -30,6 +30,7 @@ from app.db.models import (
 )
 from app.modules.planning.errors import PlanningError
 from app.modules.planning.policy import execution_policy
+from app.modules.planning.policy import policy_snapshot as current_policy_snapshot
 from app.modules.planning.schemas import PreviewRequest
 from app.modules.planning.snapshot import normalize
 
@@ -327,10 +328,7 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
         {
             "request": request.model_dump(mode="json"),
             **(
-                {
-                    "policy_version": 1,
-                    "planning_policy": execution_policy().model_dump(mode="json"),
-                }
+                current_policy_snapshot(execution_policy())
                 if policy_snapshot is None
                 else policy_snapshot
             ),
