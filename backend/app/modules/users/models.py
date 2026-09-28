@@ -1,10 +1,10 @@
-"""SQLAlchemy models for users, worker profiles, skills, and refresh tokens."""
-
-from datetime import datetime, time
+from datetime import date, datetime, time
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -16,7 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IntegerIdMixin
-from app.modules.users.enums import TransportType, UserRole
+from app.modules.users.enums import ScheduleType, TransportType, UserRole
 
 
 class User(IntegerIdMixin, Base):
@@ -96,9 +96,44 @@ class Worker(Base):
     end_location_id: Mapped[int | None] = mapped_column(
         ForeignKey("locations.id", ondelete="RESTRICT"), nullable=True
     )
+    schedule_type: Mapped[ScheduleType] = mapped_column(
+        Enum(
+            ScheduleType,
+            values_callable=lambda values: [value.value for value in values],
+            native_enum=False,
+            create_constraint=True,
+            name="worker_schedule_type",
+        ),
+        default=ScheduleType.FIVE_TWO,
+        server_default=ScheduleType.FIVE_TWO.value,
+    )
+    cycle_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    workdays_mask: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
 
     __table_args__ = (
         CheckConstraint("workshift_start <> workshift_end", name="workshift_duration_not_zero"),
+    )
+
+
+class WorkerShiftException(IntegerIdMixin, Base):
+    __tablename__ = "worker_shift_exceptions"
+
+    worker_id: Mapped[int] = mapped_column(
+        ForeignKey("workers.user_id", ondelete="CASCADE"), index=True
+    )
+    exception_date: Mapped[date] = mapped_column(Date)
+    is_working: Mapped[bool] = mapped_column(Boolean)
+    workshift_start: Mapped[time | None] = mapped_column(Time, nullable=True)
+    workshift_end: Mapped[time | None] = mapped_column(Time, nullable=True)
+
+    __table_args__ = (
+        Index("uq_worker_shift_exception_date", "worker_id", "exception_date", unique=True),
+        CheckConstraint(
+            "is_working = false OR "
+            "(workshift_start IS NOT NULL AND workshift_end IS NOT NULL "
+            "AND workshift_start <> workshift_end)",
+            name="worker_shift_exception_hours_valid",
+        ),
     )
 
 

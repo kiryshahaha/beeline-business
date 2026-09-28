@@ -38,6 +38,42 @@ STATUS_BY_BK = {
 }
 FINAL_STATUSES = frozenset({"completed", "cancelled", "overdue"})
 
+# HelpDesk request types that explicitly define an emergency visit.
+EMERGENCY_HD_TYPES = frozenset(
+    {
+        "авария",
+        "аварийная заявка",
+        "аварийные работы",
+        "инцидент",
+        "массовая авария",
+        "авария на сети",
+        "emergency",
+    }
+)
+
+# Known non-emergency HelpDesk types from real/sample organizer datasets.
+NON_EMERGENCY_HD_TYPES = frozenset(
+    {
+        "конвергенция абонента",
+        "нет линка",
+        "информация",
+        "дозаказ оборудования",
+        "заявка на подключение",
+        "работа с кабелем",
+        "подключение",
+        "дозаказ",
+        "ремонт",
+        "локальная заявка",
+        "мониторинг",
+        "консультация",
+        "настройка оборудования",
+        "плановые работы",
+        "диагностика",
+    }
+)
+
+KNOWN_HD_TYPES = EMERGENCY_HD_TYPES | NON_EMERGENCY_HD_TYPES
+
 
 def work_type_code(bk_type: str) -> str | None:
     return WORK_TYPE_BY_BK.get(normalize(bk_type))
@@ -47,10 +83,24 @@ def source_status(bk_status: str) -> str | None:
     return STATUS_BY_BK.get(normalize(bk_status))
 
 
+def is_emergency_hd(hd_type: str | None) -> bool:
+    if not hd_type:
+        return False
+    return normalize(hd_type) in EMERGENCY_HD_TYPES
+
+
+def is_known_hd(hd_type: str | None) -> bool:
+    if not hd_type:
+        return False
+    return normalize(hd_type) in KNOWN_HD_TYPES
+
+
 def describe() -> dict:
     return {
         "mapping_version": MAPPING_VERSION,
         "work_type_by_bk": WORK_TYPE_BY_BK,
         "skill_by_category": SKILL_BY_CATEGORY,
         "status_by_bk": STATUS_BY_BK,
+        "emergency_hd_types": sorted(EMERGENCY_HD_TYPES),
+        "known_hd_types": sorted(KNOWN_HD_TYPES),
     }

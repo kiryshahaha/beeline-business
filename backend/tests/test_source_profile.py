@@ -205,3 +205,97 @@ class ClassifierTests(unittest.TestCase):
             set(classify.SKILL_BY_CATEGORY.values()),
             {"Локальные работы", "Работы на подключение и дозаказы", "Аварийные работы"},
         )
+
+    def test_hd_type_aliases_recognized(self):
+        from app.modules.source_import.profile import ALIASES
+
+        aliases = (
+            "тип заявки hd",
+            "тип hd",
+            "тип заявки helpdesk",
+            "тип helpdesk",
+            "request_type_hd",
+        )
+        for alias in aliases:
+            self.assertEqual(ALIASES.get(alias), "hd_type")
+
+    def test_hd_emergency_and_known_classification(self):
+        # Emergency types
+        for term in ("Авария", "аварийная заявка", "ИнцИдент", "массовая авария", "emergency"):
+            self.assertTrue(classify.is_emergency_hd(term), f"Expected {term} to be emergency")
+            self.assertTrue(classify.is_known_hd(term), f"Expected {term} to be known")
+
+        # Non-emergency known types
+        known_non_emergency = (
+            "Информация",
+            "Нет линка",
+            "Конвергенция абонента",
+            "подключение",
+            "дозаказ оборудования",
+        )
+        for term in known_non_emergency:
+            self.assertFalse(classify.is_emergency_hd(term), f"Expected {term} not to be emergency")
+            self.assertTrue(classify.is_known_hd(term), f"Expected {term} to be known")
+
+        # Unknown types
+        for term in ("Неизвестная ошибка 404", "Непонятное обращение", None, ""):
+            self.assertFalse(classify.is_emergency_hd(term))
+            if term:
+                self.assertFalse(classify.is_known_hd(term))
+
+    def test_ticket_values_emergency_decoupling(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from app.modules.source_import.profile import SourceRow
+        from app.modules.source_import.service import Prepared, _ticket_values
+
+        tz = ZoneInfo("Europe/Moscow")
+        start = datetime(2026, 9, 10, 10, 0, tzinfo=tz)
+        end = datetime(2026, 9, 10, 12, 0, tzinfo=tz)
+
+        global_norm = {
+            "id": 4,
+            "name": "Глобальная проблема",
+            "category": "emergency",
+            "default_priority": 1,
+            "work_minutes": 120,
+            "documents_minutes": 20,
+        }
+
+        # Case 1: BK is Глобальная проблема, but HD is Информация (not emergency)
+        row1 = SourceRow(
+            sheet="Sheet1",
+            number=2,
+            values={"bk_type": "Глобальная проблема", "hd_type": "Информация"},
+            raw={},
+        )
+        item1 = Prepared(row=row1, external_id="T1", content_sha256="abc", start=start, end=end)
+        vals1 = _ticket_values(item1, global_norm, area_id=1, location_id=10)
+        self.assertEqual(vals1["category"], "repair")  # Decoupled to non-emergency
+        self.assertEqual(vals1["priority"], 1)
+        self.assertIsNone(vals1["response_deadline_at"])
+        self.assertEqual(vals1["intake_source"], "morning_assumption")
+
+        # Case 2: BK is Локальная заявка, but HD is Авария (emergency)
+        repair_norm = {
+            "id": 3,
+            "name": "Локальная заявка",
+            "category": "repair",
+            "default_priority": 3,
+            "work_minutes": 60,
+            "documents_minutes": 10,
+        }
+        row2 = SourceRow(
+            sheet="Sheet1",
+            number=3,
+            values={"bk_type": "Локальная заявка", "hd_type": "Авария"},
+            raw={},
+        )
+        item2 = Prepared(row=row2, external_id="T2", content_sha256="def", start=start, end=end)
+        vals2 = _ticket_values(item2, repair_norm, area_id=1, location_id=10)
+        self.assertEqual(vals2["category"], "emergency")  # Classified by HD
+        self.assertEqual(vals2["priority"], 1)
+        self.assertIsNotNone(vals2["response_deadline_at"])
+        self.assertEqual(vals2["response_deadline_at"], datetime(2026, 9, 10, 12, 0, tzinfo=tz))
+        self.assertEqual(vals2["intake_source"], "morning_assumption")

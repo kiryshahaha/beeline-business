@@ -94,7 +94,7 @@ class CommittedDatabaseTestCase(DatabaseTestCase):
                     "push_subscriptions, ticket_comments, "
                     "ticket_work_type_migration_issues, ticket_assignment_events, tickets, "
                     "refresh_tokens, "
-                    "calendar_tokens, worker_skill_assignments, "
+                    "calendar_tokens, worker_shift_exceptions, worker_skill_assignments, "
                     "worker_skills, workers, users, locations, entrances, "
                     "buildings, streets, districts, cities, service_areas"
                 )

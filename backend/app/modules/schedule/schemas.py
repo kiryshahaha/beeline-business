@@ -13,6 +13,10 @@ class ShiftInterval(BaseModel):
     start: AwareDatetime
     end: AwareDatetime
 
+    def __iter__(self):
+        yield self.start
+        yield self.end
+
 
 class ScheduleTicket(BaseModel):
     id: int

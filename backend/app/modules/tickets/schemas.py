@@ -117,6 +117,14 @@ class TicketFields(BaseModel):
         default=None,
         description="Крайний срок завершения по SLA.",
     )
+    response_deadline_at: AwareDatetime | None = Field(
+        default=None,
+        description="Крайний срок реакции (1-2 часа от поступления) для аварийных заявок.",
+    )
+    intake_source: str | None = Field(
+        default=None,
+        description="Источник/способ фиксации времени поступления заявки.",
+    )
     required_transport_type: TransportType | None = Field(
         default=None,
         description=(
@@ -178,6 +186,12 @@ class TicketFields(BaseModel):
             and self.sla_deadline_at <= self.received_at
         ):
             raise ValueError("Срок SLA должен быть позже времени поступления")
+        if (
+            self.response_deadline_at is not None
+            and self.received_at is not None
+            and self.response_deadline_at <= self.received_at
+        ):
+            raise ValueError("Срок реакции должен быть позже времени поступления")
         return self
 
 
@@ -277,6 +291,8 @@ class TicketRead(TicketFields):
     priority: int
     received_at: AwareDatetime
     sla_deadline_at: AwareDatetime | None = None
+    response_deadline_at: AwareDatetime | None = None
+    intake_source: str | None = None
     required_transport_type: TransportType | None = None
     service_duration_source: str | None = None
     state: TicketLifecycleState = Field(description="Каноническое состояние выполнения заявки.")

@@ -13,7 +13,8 @@ TICKET_SELECT_SQL = """
         t.title, t.description,
         COALESCE(wt.name, t.work_type) AS work_type,
         t.work_type_id, t.category, t.priority,
-        t.received_at, t.sla_deadline_at, t.required_transport_type, t.service_duration_source,
+        t.received_at, t.sla_deadline_at, t.response_deadline_at, t.intake_source,
+        t.required_transport_type, t.service_duration_source,
         t.status,
         CASE
             WHEN t.lifecycle_state = 'waiting_assignment' AND t.status = 'in_progress'
@@ -204,26 +205,33 @@ def update_ticket_brigade(session: Session, ticket_id: int, brigade_id: int | No
 
 
 def add_ticket(session: Session, values: dict[str, object]) -> int:
+    params = {
+        "response_deadline_at": None,
+        "intake_source": None,
+        **values,
+    }
     return session.execute(
         text("""
             INSERT INTO tickets (
                 location_id, service_area_id, brigade_id, title, description,
                 work_type, work_type_id, category, priority,
-                received_at, sla_deadline_at, required_transport_type, service_duration_source,
+                received_at, sla_deadline_at, response_deadline_at, intake_source,
+                required_transport_type, service_duration_source,
                 status, lifecycle_state,
                 visit_window_start, visit_window_end, planned_start_at, planned_end_at,
                 estimated_duration_minutes, actual_duration_minutes
             ) VALUES (
                 :location_id, :service_area_id, :brigade_id, :title, :description,
                 :work_type, :work_type_id, :category, :priority,
-                :received_at, :sla_deadline_at, :required_transport_type, :service_duration_source,
+                :received_at, :sla_deadline_at, :response_deadline_at, :intake_source,
+                :required_transport_type, :service_duration_source,
                 :status, :lifecycle_state,
                 :visit_window_start, :visit_window_end, :planned_start_at, :planned_end_at,
                 :estimated_duration_minutes, :actual_duration_minutes
             )
             RETURNING id
         """),
-        values,
+        params,
     ).scalar_one()
 
 

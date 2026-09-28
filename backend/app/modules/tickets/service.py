@@ -341,6 +341,15 @@ def create_ticket(
         if not values.get("sla_deadline_at") and values["category"] == "emergency":
             values["sla_deadline_at"] = values["received_at"] + timedelta(hours=24)
 
+        if (
+            values.get("response_deadline_at") is not None
+            and values["response_deadline_at"] <= values["received_at"]
+        ):
+            raise InvalidSlaDeadlineError
+
+        if not values.get("response_deadline_at") and values["category"] == "emergency":
+            values["response_deadline_at"] = values["received_at"] + timedelta(minutes=120)
+
         if values.get("required_transport_type") is not None:
             values["required_transport_type"] = (
                 values["required_transport_type"].value
