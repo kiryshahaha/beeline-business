@@ -3,7 +3,13 @@ import styles from './Menu.module.css';
 import Image from 'next/image';
 import { useUsers } from '@/hooks/useUsers';
 
-export const BrigadeDetailsPanel = ({ brigade, onBack, onClose }) => {
+export const BrigadeDetailsPanel = ({
+    brigade,
+    selectedWorker,
+    onSelectWorker,
+    onBack,
+    onClose
+}) => {
     const { users = [] } = useUsers({ brigade_id: brigade.id });
     const [searchQuery, setSearchQuery] = React.useState('');
 
@@ -23,16 +29,26 @@ export const BrigadeDetailsPanel = ({ brigade, onBack, onClose }) => {
         return `${name || ''} ${surname?.[0] || ''}.`;
     };
 
+    const handleBack = () => {
+        onSelectWorker?.(null);
+        onBack?.();
+    };
+
+    const handleClose = (e) => {
+        onSelectWorker?.(null);
+        onClose?.(e);
+    };
+
     return (
         <div className={styles.brigadesPanel}>
             <div className={styles.detailsHeader}>
-                <button className={styles.backBtn} onClick={onBack}>
+                <button className={styles.backBtn} onClick={handleBack}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M15 18L9 12L15 6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                 </button>
                 <div className={styles.detailsTitle}>{brigade.name}</div>
-                <button className={styles.closeBtn} onClick={onClose}>
+                <button className={styles.closeBtn} onClick={handleClose}>
                     <Image src="/icons/Frame 33.svg" alt="close" width={16} height={16} />
                 </button>
             </div>
@@ -50,9 +66,15 @@ export const BrigadeDetailsPanel = ({ brigade, onBack, onClose }) => {
                     const currentTasks = user.id % 6; // random looking number 0-5
                     const maxTasks = 5;
                     const isActive = currentTasks > 0;
+                    const isSelected = selectedWorker?.id === user.id;
 
                     return (
-                        <div key={user.id} className={styles.workerCard}>
+                        <div
+                            key={user.id}
+                            className={`${styles.workerCard} ${isSelected ? styles.activeWorkerCard : ''}`}
+                            onClick={() => onSelectWorker?.(isSelected ? null : user)}
+                            title={isSelected ? "Кликните, чтобы снять выбор инженера" : "Кликните, чтобы показать только задачи этого инженера"}
+                        >
                             <div className={styles.workerCardHeader}>
                                 <div className={styles.workerInfo}>
                                     <div className={styles.workerAvatar}>

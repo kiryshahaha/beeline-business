@@ -13,6 +13,7 @@ import RouteFloatingCard from "./Routes/RouteFloatingCard";
 import RouteStopPopup from "./Routes/RouteStopPopup";
 import { calculateRouteDistanceKm } from "./Routes/routeUtils";
 import { useRouteGeoJson } from "@/hooks/useRoutes";
+import { useTicketRouteLeg } from "@/hooks/useTicketRouteLeg";
 import styles from "./MapComponent.module.css";
 import routeStyles from "./Routes/Routes.module.css";
 
@@ -38,6 +39,7 @@ export default function MapComponent({
   offices,
   workers,
   routes = [],
+  workerRoute = null,
   locationById,
   selectedObject,
   ticketStatusFilter,
@@ -116,48 +118,110 @@ export default function MapComponent({
   const selectedRouteId = selectedObject?.type === "route" ? selectedObject.id : null;
   const { data: serverRouteGeoJson } = useRouteGeoJson(selectedRouteId);
 
+  // 1.1. Интерактивный расчёт маршрута к выбранной пользователем заявке от предыдущей точки
+  const selectedTicket = useMemo(() => {
+    if (selectedObject?.type !== "ticket") return null;
+    return tickets.find((t) => t.id === selectedObject.id) || null;
+  }, [selectedObject, tickets]);
+
+  const { routeLeg: activeLegRoute, isLoadingRoute } = useTicketRouteLeg(
+    selectedTicket,
+    tickets,
+    workers,
+    offices,
+  );
+
+  const activeLegFeature = useMemo(() => {
+    if (!activeLegRoute?.geometry) return null;
+    return {
+      type: "Feature",
+      geometry: activeLegRoute.geometry,
+      properties: {
+        routeId: "active-leg-route",
+        color: "#FFC800",
+        isSelected: true,
+        isDimmed: false,
+        distanceKm: activeLegRoute.distanceKm,
+        durationMin: activeLegRoute.durationMin,
+      },
+    };
+  }, [activeLegRoute]);
+
   // 2. Сборка FeatureCollection для векторного слоя дорог
   const routesGeoJson = useMemo(() => {
-    if (!visibleLayers.routes) {
-      return { type: "FeatureCollection", features: [] };
+    const features = [];
+
+    if (visibleLayers.routes) {
+      const isAnyRouteSelected = selectedObject?.type === "route";
+
+      const lineFeatures = parsedRoutes
+        .filter((r) => r.lineGeometry != null)
+        .map((r) => {
+          const isSelected = selectedRouteId === r.id;
+          const isDimmed = isAnyRouteSelected && !isSelected;
+
+          let geometry = r.lineGeometry;
+          if (isSelected && serverRouteGeoJson?.features) {
+            const serverLine = serverRouteGeoJson.features.find(
+              (f) => f.geometry?.type === "LineString" || f.geometry?.type === "MultiLineString",
+            );
+            if (serverLine?.geometry) {
+              geometry = serverLine.geometry;
+            }
+          }
+
+          return {
+            type: "Feature",
+            geometry,
+            properties: {
+              routeId: r.id,
+              workerId: r.worker_id,
+              color: r.color,
+              isSelected,
+              isDimmed,
+            },
+          };
+        });
+
+      features.push(...lineFeatures);
     }
 
-    const isAnyRouteSelected = selectedObject?.type === "route";
+    // Всегда отрисовываем активный дорожный сегмент к выбранной заявке
+    if (activeLegFeature) {
+      features.push(activeLegFeature);
+    }
 
-    const lineFeatures = parsedRoutes
-      .filter((r) => r.lineGeometry != null)
-      .map((r) => {
-        const isSelected = selectedRouteId === r.id;
-        const isDimmed = isAnyRouteSelected && !isSelected;
-
-        let geometry = r.lineGeometry;
-        if (isSelected && serverRouteGeoJson?.features) {
-          const serverLine = serverRouteGeoJson.features.find(
-            (f) => f.geometry?.type === "LineString" || f.geometry?.type === "MultiLineString",
-          );
-          if (serverLine?.geometry) {
-            geometry = serverLine.geometry;
-          }
-        }
-
-        return {
-          type: "Feature",
-          geometry,
-          properties: {
-            routeId: r.id,
-            workerId: r.worker_id,
-            color: r.color,
-            isSelected,
-            isDimmed,
-          },
-        };
+    // Всегда отрисовываем дорожный маршрут между задачами выбранного инженера
+    if (workerRoute?.geometry) {
+      features.push({
+        type: "Feature",
+        geometry: workerRoute.geometry,
+        properties: {
+          routeId: workerRoute.id || `worker-route-${workerRoute.workerId}`,
+          workerId: workerRoute.workerId,
+          color: workerRoute.color || "#FFC800",
+          isSelected: true,
+          isDimmed: false,
+          isWorkerTasksRoute: true,
+          distanceKm: workerRoute.distanceKm,
+          durationMin: workerRoute.durationMin,
+        },
       });
+    }
 
     return {
       type: "FeatureCollection",
-      features: lineFeatures,
+      features,
     };
-  }, [parsedRoutes, selectedObject, selectedRouteId, serverRouteGeoJson, visibleLayers.routes]);
+  }, [
+    parsedRoutes,
+    selectedObject,
+    selectedRouteId,
+    serverRouteGeoJson,
+    visibleLayers.routes,
+    activeLegFeature,
+    workerRoute,
+  ]);
 
   // 3. Подготовка статических объектов (заявки, работники, офисы)
   const mapItems = useMemo(() => {
@@ -282,6 +346,64 @@ export default function MapComponent({
     }
   }, [mapRef, selectedObject, selectedRoute]);
 
+  // Анимация камеры при построении реалистичного маршрута к выбранной заявке
+  useEffect(() => {
+    if (!activeLegRoute?.geometry) return;
+    const map = mapRef?.current?.getMap?.() || mapRef?.current;
+    if (!map) return;
+
+    let coords = [];
+    if (activeLegRoute.geometry.type === "LineString") {
+      coords = activeLegRoute.geometry.coordinates;
+    } else if (activeLegRoute.geometry.type === "MultiLineString") {
+      coords = activeLegRoute.geometry.coordinates.flat(1);
+    }
+
+    if (coords.length >= 2) {
+      const bounds = coords.reduce(
+        (result, point) => [
+          [Math.min(result[0][0], point[0]), Math.min(result[0][1], point[1])],
+          [Math.max(result[1][0], point[0]), Math.max(result[1][1], point[1])],
+        ],
+        [[Infinity, Infinity], [-Infinity, -Infinity]],
+      );
+      map.fitBounds(bounds, {
+        padding: { top: 110, right: 380, bottom: 130, left: 110 },
+        maxZoom: 15,
+        duration: 700,
+      });
+    }
+  }, [activeLegRoute, mapRef]);
+
+  // Анимация камеры при построении маршрута задач инженера
+  useEffect(() => {
+    if (!workerRoute?.geometry) return;
+    const map = mapRef?.current?.getMap?.() || mapRef?.current;
+    if (!map) return;
+
+    let coords = [];
+    if (workerRoute.geometry.type === "LineString") {
+      coords = workerRoute.geometry.coordinates;
+    } else if (workerRoute.geometry.type === "MultiLineString") {
+      coords = workerRoute.geometry.coordinates.flat(1);
+    }
+
+    if (coords.length >= 2) {
+      const bounds = coords.reduce(
+        (result, point) => [
+          [Math.min(result[0][0], point[0]), Math.min(result[0][1], point[1])],
+          [Math.max(result[1][0], point[0]), Math.max(result[1][1], point[1])],
+        ],
+        [[Infinity, Infinity], [-Infinity, -Infinity]],
+      );
+      map.fitBounds(bounds, {
+        padding: { top: 100, right: 380, bottom: 130, left: 100 },
+        maxZoom: 15,
+        duration: 700,
+      });
+    }
+  }, [workerRoute, mapRef]);
+
   const handleFocusRoute = (routeToFocus = selectedRoute) => {
     const map = mapRef?.current?.getMap?.() || mapRef?.current;
     if (!map || !routeToFocus || routeToFocus.allCoordinates.length < 2) return;
@@ -355,6 +477,28 @@ export default function MapComponent({
       (feature.layer?.id === "routes-line" || feature.layer?.id === "routes-hit-area")
     ) {
       const clickedRouteId = feature.properties.routeId;
+      if (clickedRouteId && String(clickedRouteId).startsWith("worker-route") && workerRoute) {
+        setHoveredRoute({
+          route: { color: workerRoute.color || "#FFC800" },
+          workerName: `Маршрут инженера: ${workerRoute.workerName} (${workerRoute.distanceKm} км · ~${workerRoute.durationMin} мин)`,
+          x: event.point.x,
+          y: event.point.y,
+        });
+        const map = mapRef?.current?.getMap?.() || mapRef?.current;
+        if (map) map.getCanvas().style.cursor = "pointer";
+        return;
+      }
+      if (clickedRouteId === "active-leg-route" && activeLegRoute) {
+        setHoveredRoute({
+          route: { color: "#FFC800" },
+          workerName: `Маршрут к заявке (${activeLegRoute.distanceKm} км · ~${activeLegRoute.durationMin} мин)`,
+          x: event.point.x,
+          y: event.point.y,
+        });
+        const map = mapRef?.current?.getMap?.() || mapRef?.current;
+        if (map) map.getCanvas().style.cursor = "pointer";
+        return;
+      }
       const route = parsedRoutes.find((r) => r.id === clickedRouteId);
       if (route) {
         const worker = workers.find((w) => w.id === route.worker_id);
@@ -421,7 +565,9 @@ export default function MapComponent({
       initialViewState={{ longitude: 35, latitude: 55, zoom: 1 }}
       mapStyle={`https://api.maptiler.com/maps/01a0a53f-a24b-7778-b5e1-b59ba3d6f612/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`}
       attributionControl={false}
-      interactiveLayerIds={visibleLayers.routes ? ["routes-hit-area", "routes-line"] : []}
+      interactiveLayerIds={
+        visibleLayers.routes || activeLegFeature || workerRoute?.geometry ? ["routes-hit-area", "routes-line"] : []
+      }
       maxZoom={20}
       minZoom={0}
       maxPitch={75}
@@ -492,6 +638,17 @@ export default function MapComponent({
           onSelectStop={handleSelectStop}
         />
       )}
+      {workerRoute?.stops && (
+        <RouteMarkers
+          selectedRoute={workerRoute}
+          selectedObject={selectedObject}
+          onSelectStop={(route, stop) => {
+            if (stop.ticket_id) {
+              onSelectObject("ticket", stop.ticket_id);
+            }
+          }}
+        />
+      )}
 
       {/* 3. Кластеризация базовых объектов (заявки, работники, офисы) */}
       <ClusterComponent
@@ -514,6 +671,8 @@ export default function MapComponent({
         <TicketPopup
           ticket={selectedItem.data}
           selectedTicketRoute={selectedTicketRoute}
+          activeLegRoute={activeLegRoute}
+          isLoadingRoute={isLoadingRoute}
           onSelectRouteStop={handleSelectStop}
           onClose={onClearSelection}
         />
@@ -598,7 +757,9 @@ export default function MapComponent({
             style={{ backgroundColor: hoveredRoute.route.color }}
           />
           <span>
-            Маршрут #{hoveredRoute.route.route_number || 1} • {hoveredRoute.workerName} ({hoveredRoute.route.stops.length} ост. • {hoveredRoute.route.distanceKm} км)
+            {hoveredRoute.route.route_number != null
+              ? `Маршрут #${hoveredRoute.route.route_number || 1} • ${hoveredRoute.workerName} (${hoveredRoute.route.stops?.length || 0} ост. • ${hoveredRoute.route.distanceKm} км)`
+              : hoveredRoute.workerName}
           </span>
         </div>
       )}

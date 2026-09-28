@@ -15,74 +15,24 @@ from app.db.session import get_engine
 
 
 def clear_business_data(engine, target_username: str | None = None):
-    """Clean all domain tables in topological order to respect foreign keys."""
-    ordered_tables = [
-        # Tickets and history
-        "ticket_assignment_events",
-        "ticket_comments",
-        "ticket_appliances",
-        "ticket_appliance_states",
-        "work_events",
-        "routes",
-        "planning_plan_routes",
-        "planning_plans",
-        "day_plan_revisions",
-        "worker_day_states",
-        "equipment_movements",
-        "worker_equipment",
-        "appliance_movements",
-        "appliance_operations",
-        "worker_appliances",
-        "office_kit_reserves",
-        "appliance_stocks",
-        "tickets",
-        # Brigades and workers
-        "brigade_members",
-        "brigades",
-        "worker_skill_assignments",
-        "workers",
-        "worker_skills",
-        # Source imports
-        "data_imports",
-        "source_records",
-        "source_addresses",
-        "source_imports",
-        # Geography and infrastructure
-        "locations",
-        "entrances",
-        "buildings",
-        "streets",
-        "districts",
-        "service_areas",
-        "offices",
-        "cities",
-        # System
-        "push_subscriptions",
-        "refresh_tokens",
-        "notification_events",
-        "work_types",
-        "work_type_planning_rules",
-        "work_type_required_skills",
-        "work_type_required_appliances",
-        "divisions",
-    ]
-    with engine.connect() as conn:
-        for t in ordered_tables:
-            try:
-                with conn.begin():
-                    conn.execute(text(f'DELETE FROM "{t}"'))
-            except Exception:
-                pass
+    """Clean all domain tables using TRUNCATE CASCADE to bypass append-only triggers."""
+    with engine.begin() as conn:
+        tables_res = conn.execute(
+            text(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
+                "AND table_name != 'alembic_version' AND table_name != 'users'"
+            )
+        ).fetchall()
+        if tables_res:
+            table_names = ", ".join(f'"{t[0]}"' for t in tables_res)
+            conn.execute(text(f"TRUNCATE TABLE {table_names} CASCADE;"))
 
         if target_username:
-            try:
-                with conn.begin():
-                    conn.execute(
-                        text("DELETE FROM users WHERE lower(username) != lower(:u)"),
-                        {"u": target_username.strip()},
-                    )
-            except Exception:
-                pass
+            conn.execute(
+                text("DELETE FROM users WHERE lower(username) != lower(:u)"),
+                {"u": target_username.strip()},
+            )
 
         print("[OK] Бизнес-данные успешно очищены. База полностью пустая.", flush=True)
 

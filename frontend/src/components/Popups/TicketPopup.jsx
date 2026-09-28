@@ -15,6 +15,8 @@ const STATUS_LABELS = {
 export default function TicketPopup({
   ticket,
   selectedTicketRoute,
+  activeLegRoute,
+  isLoadingRoute,
   onSelectRouteStop,
   onClose,
 }) {
@@ -25,6 +27,7 @@ export default function TicketPopup({
       longitude={ticket.location?.longitude}
       latitude={ticket.location?.latitude}
       offset={16}
+      maxWidth="340px"
       closeButton
       closeOnClick={false}
       onClose={onClose}
@@ -65,6 +68,42 @@ export default function TicketPopup({
               )}
             </span>
           </p>
+        )}
+
+        {/* Индикатор загрузки реалистичного автомаршрута */}
+        {isLoadingRoute && (
+          <div className={styles.routeLegBox}>
+            <div className={styles.routeLegLoading}>
+              <span className={styles.routeSpinner} />
+              <span>Построение маршрута по дорогам...</span>
+            </div>
+          </div>
+        )}
+
+        {/* Реалистичный дорожный сегмент от предыдущей точки */}
+        {!isLoadingRoute && activeLegRoute && (
+          <div className={styles.routeLegBox}>
+            <div className={styles.routeLegHeader}>
+              <span className={styles.routeLegBadge}>🚗 Маршрут к заявке</span>
+              <span className={styles.routeLegStats}>
+                {activeLegRoute.distanceKm} км · ~{activeLegRoute.durationMin} мин
+              </span>
+            </div>
+            <div className={styles.routeLegDetails}>
+              <div className={styles.routeLegStep}>
+                <span className={styles.routeLegStepDot} style={{ background: "#9CA3AF" }} />
+                <span className={styles.routeLegStepText}>
+                  От: <strong>{activeLegRoute.origin?.label || "Предыдущая точка"}</strong>
+                </span>
+              </div>
+              <div className={styles.routeLegStep}>
+                <span className={styles.routeLegStepDot} style={{ background: "#FFC800" }} />
+                <span className={styles.routeLegStepText}>
+                  До: <strong>{activeLegRoute.destination?.label || `Заявка #${ticket.id}`}</strong>
+                </span>
+              </div>
+            </div>
+          </div>
         )}
 
         {selectedTicketRoute && (
