@@ -65,6 +65,169 @@
     background-color: rgba(255, 200, 0, 0.2);
 }
 
+.dateFilterWrapper {
+    position: relative;
+    margin-left: 8px;
+    flex-shrink: 0;
+}
+
+.dateFilterBtn {
+    height: 36px;
+    background-color: var(--tertiary, #2C2C2E);
+    border-radius: 12px;
+    border: 1px solid var(--stroke, #333333);
+    color: #EDEDED;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.dateFilterBtn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: #555555;
+}
+
+.dateFilterBtnActive {
+    border-color: #FFC800;
+    color: #FFC800;
+    background-color: rgba(255, 200, 0, 0.08);
+}
+
+.dateFilterIcon {
+    color: #FFC800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dateFilterChevron {
+    color: #8E8E93;
+    transition: transform 0.2s ease;
+}
+
+.chevronOpen {
+    transform: rotate(180deg);
+}
+
+.dateFilterPopover {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 100;
+    min-width: 240px;
+    background-color: #1E1E20;
+    border: 1px solid #38383A;
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    backdrop-filter: blur(20px);
+    animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.popoverHeader {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #8E8E93;
+    padding: 6px 10px 4px 10px;
+}
+
+.presetBtn {
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 10px;
+    text-align: left;
+    color: #EDEDED;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background 0.15s ease;
+}
+
+.presetBtn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.presetBtnActive {
+    background-color: rgba(255, 200, 0, 0.12);
+    color: #FFC800;
+    font-weight: 600;
+}
+
+.presetBadge {
+    font-size: 11px;
+    color: #8E8E93;
+    background: rgba(255, 255, 255, 0.06);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.presetBtnActive .presetBadge {
+    color: #FFC800;
+    background: rgba(255, 200, 0, 0.15);
+}
+
+.popoverDivider {
+    height: 1px;
+    background-color: #2C2C2E;
+    margin: 4px 0;
+}
+
+.customDateBlock {
+    padding: 6px 10px 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.customDateLabel {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #8E8E93;
+}
+
+.customDateInput {
+    width: 100%;
+    background-color: #2C2C2E;
+    border: 1px solid #444446;
+    border-radius: 8px;
+    color: #FFFFFF;
+    font-size: 13px;
+    padding: 6px 10px;
+    outline: none;
+    color-scheme: dark;
+    transition: border-color 0.15s ease;
+}
+
+.customDateInput:focus {
+    border-color: #FFC800;
+}
+
 .statusGroup {
     display: flex;
     align-items: center;
@@ -118,10 +281,14 @@
 
 .workloadCol {
     grid-column: span 7;
+    display: flex;
+    flex-direction: column;
 }
 
 .activityCol {
     grid-column: span 5;
+    display: flex;
+    flex-direction: column;
 }
 
 .reportsCol {
