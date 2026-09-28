@@ -30,6 +30,20 @@ class ServiceAreaUpdate(BaseModel):
     description: str | None = None
 
 
+class TerritoryIssue(BaseModel):
+    code: str
+    subject: str
+    subject_id: int
+    sources: dict[str, int | None]
+
+
+class TerritoryConsistencyReport(BaseModel):
+    consistent: bool
+    workers: list[TerritoryIssue]
+    brigades: list[TerritoryIssue]
+    tickets: list[TerritoryIssue]
+
+
 class ServiceAreaRead(ServiceAreaBase):
     model_config = ConfigDict(from_attributes=True)
 

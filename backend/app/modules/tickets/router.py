@@ -193,8 +193,13 @@ def update_ticket_brigade(
     except service.BrigadeServiceAreaMismatchError as error:
         raise HTTPException(
             status_code=422,
-            detail="Бригада не обслуживает район заявки",
+            detail={
+                "code": "service_area_mismatch",
+                "message": "Бригада относится к другому участку, чем заявка",
+            },
         ) from error
+    except service.ServiceAreaUnresolvedError as error:
+        raise HTTPException(status_code=422, detail=error.detail()) from error
     except service.TicketWorkerBrigadeMismatchError as error:
         raise HTTPException(
             status_code=409,
@@ -282,8 +287,13 @@ async def update_ticket_assignment(
     except service.ServiceAreaMismatchError as error:
         raise HTTPException(
             status_code=422,
-            detail="Исполнитель принадлежит другому участку обслуживания",
+            detail={
+                "code": "service_area_mismatch",
+                "message": "Исполнитель принадлежит другому участку обслуживания",
+            },
         ) from error
+    except service.ServiceAreaUnresolvedError as error:
+        raise HTTPException(status_code=422, detail=error.detail()) from error
     except service.BrigadeResolutionRequiredError as error:
         raise HTTPException(
             status_code=409,

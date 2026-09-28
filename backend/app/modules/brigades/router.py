@@ -43,6 +43,8 @@ def create_brigade(
         raise HTTPException(
             status_code=409, detail="Конфликт состава или руководителя бригады"
         ) from error
+    except service.BrigadeServiceAreaError as error:
+        raise HTTPException(status_code=422, detail=error.detail()) from error
     except (service.ForemanInvalidError, service.WorkerNotFoundError) as error:
         raise HTTPException(
             status_code=422, detail="Указаны недопустимые бригадир или исполнители"
@@ -93,6 +95,8 @@ def replace_brigade_members(
         raise HTTPException(
             status_code=409, detail="Конфликт состава или руководителя бригады"
         ) from error
+    except service.BrigadeServiceAreaError as error:
+        raise HTTPException(status_code=422, detail=error.detail()) from error
     except (service.ForemanInvalidError, service.WorkerNotFoundError) as error:
         raise HTTPException(
             status_code=422, detail="Указаны недопустимые бригадир или исполнители"

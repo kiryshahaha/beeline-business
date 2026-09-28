@@ -101,6 +101,7 @@ class ExecutionApiTests(DatabaseTestCase):
                         workshift_start="08:00:00",
                         workshift_end="18:00:00",
                         skills=["Монтаж"],
+                        service_area_id=self.service_area_id,
                     )
                     if role == UserRole.WORKER
                     else None

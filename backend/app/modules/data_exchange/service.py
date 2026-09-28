@@ -82,6 +82,20 @@ def _remap_operation_request(request, tables: dict, ids: dict):
     return result
 
 
+def _remap_roster(roster, tables: dict, ids: dict):
+    """A day's roster names engineers and areas; they must follow into the target IDs."""
+    if not isinstance(roster, list):
+        return roster
+    return [
+        {
+            **entry,
+            "worker_id": _remap("users", entry.get("worker_id"), tables, ids),
+            "service_area_id": _remap("service_areas", entry.get("service_area_id"), tables, ids),
+        }
+        for entry in roster
+    ]
+
+
 def _validate_route(session: Session, values: dict, tables: dict, ids: dict) -> None:
     geo = RouteGeoJSON.model_validate(values["geojson"])
     geo.properties.worker_id = _remap("workers", geo.properties.worker_id, tables, ids)
@@ -360,6 +374,7 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                                 values["service_area_id"] = _service_area_id_for_legacy_district(
                                     session, legacy_district_id, tables, ids
                                 )
+                            values["roster"] = _remap_roster(values.get("roster"), tables, ids)
                             _continue_day_plan_chain(session, values)
                         if name == "service_areas":
                             code = values.get("code")

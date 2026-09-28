@@ -21,12 +21,13 @@ class TicketWorkflowApiTests(DatabaseTestCase):
         super().setUp()
         city = self.save(City(name="Санкт-Петербург"))
         district = self.save(District(city_id=city.id, name="Невский район"))
+        self.service_area_id = self.service_area_for_district(district.id)
         street = self.save(Street(city_id=city.id, name="Тестовая улица"))
         building = self.save(
             Building(
                 city_id=city.id,
                 street_id=street.id,
-                service_area_id=self.service_area_for_district(district.id),
+                service_area_id=self.service_area_id,
                 number="10",
             )
         )
@@ -74,6 +75,7 @@ class TicketWorkflowApiTests(DatabaseTestCase):
                 workshift_start="09:00:00",
                 workshift_end="18:00:00",
                 skills=["Настройка сети"],
+                service_area_id=self.service_area_id,
             )
         return create_user(
             self.session,

@@ -7,6 +7,7 @@ answers for the area-day. Actual execution progress lives in the execution modul
 and is deliberately not merged into this promised timeline.
 """
 
+from collections.abc import Iterable
 from datetime import date, datetime
 
 from sqlalchemy import select
@@ -14,6 +15,8 @@ from sqlalchemy.orm import Session
 
 from app.modules.planning.day_models import DayPlanRevision
 from app.modules.planning.errors import PlanningError
+from app.modules.planning.models import PlanningPlan
+from app.modules.users.models import Worker
 
 # Numeric metrics whose change is worth showing next to a revision.
 COMPARED_METRICS = (
@@ -228,6 +231,135 @@ def diff_states(
     }
 
 
+def _clock(value) -> str | None:
+    if value is None:
+        return None
+    return value if isinstance(value, str) else value.isoformat()
+
+
+def roster_entry(
+    worker_id: int,
+    service_area_id: int,
+    workshift_start=None,
+    workshift_end=None,
+    source: str = "published",
+) -> dict:
+    """One engineer admitted to the area-day with the shift they had at that moment."""
+    return {
+        "worker_id": worker_id,
+        "service_area_id": service_area_id,
+        "workshift_start": _clock(workshift_start),
+        "workshift_end": _clock(workshift_end),
+        "source": source,
+    }
+
+
+def roster_from_snapshot(snapshot: dict, service_area_id: int, source="published") -> list[dict]:
+    """Everyone the dispatcher selected for a plan, not only engineers who got a visit."""
+    rows = {row["user_id"]: row for row in snapshot.get("workers", [])}
+    return [
+        roster_entry(
+            worker_id,
+            service_area_id,
+            rows.get(worker_id, {}).get("workshift_start"),
+            rows.get(worker_id, {}).get("workshift_end"),
+            source,
+        )
+        for worker_id in sorted(set(snapshot.get("request", {}).get("worker_ids", [])))
+    ]
+
+
+def roster_for_workers(
+    session: Session, worker_ids: Iterable[int], service_area_id: int, source: str
+) -> list[dict]:
+    """Entries for engineers a dispatcher admits explicitly, with their current shift."""
+    ids = sorted(set(worker_ids))
+    if not ids:
+        return []
+    rows = session.execute(
+        select(Worker.user_id, Worker.workshift_start, Worker.workshift_end)
+        .where(Worker.user_id.in_(ids))
+        .order_by(Worker.user_id)
+    ).all()
+    return [
+        roster_entry(row.user_id, service_area_id, row.workshift_start, row.workshift_end, source)
+        for row in rows
+    ]
+
+
+def roster_ids(roster: Iterable[dict] | None) -> list[int]:
+    return sorted({entry["worker_id"] for entry in roster or []})
+
+
+def merge_roster(base: list[dict] | None, additions: Iterable[dict]) -> list[dict]:
+    """Admitted engineers keep their first entry; only explicit additions extend it."""
+    entries = {entry["worker_id"]: entry for entry in base or []}
+    for entry in additions:
+        entries.setdefault(entry["worker_id"], entry)
+    return [entries[worker_id] for worker_id in sorted(entries)]
+
+
+def reconstruct_roster(
+    session: Session, service_area_id: int, route_date: date
+) -> list[dict] | None:
+    """Rebuild a roster for revisions saved before it was recorded.
+
+    Only immutable facts of this area-day count: the engineers selected in the planning
+    snapshots its revisions were applied with and those who had a published visit. The
+    other engineers of the area are never added. None when the history holds nothing.
+    """
+    entries: dict[int, dict] = {}
+    revisions = session.scalars(
+        select(DayPlanRevision)
+        .where(
+            DayPlanRevision.service_area_id == service_area_id,
+            DayPlanRevision.route_date == route_date,
+        )
+        .order_by(DayPlanRevision.revision)
+    ).all()
+    for revision in revisions:
+        if revision.roster is not None:
+            entries = {entry["worker_id"]: entry for entry in revision.roster}
+            continue
+        plan = session.get(PlanningPlan, revision.plan_id) if revision.plan_id else None
+        if plan is not None:
+            for entry in roster_from_snapshot(
+                plan.input_snapshot or {}, service_area_id, "reconstructed_from_snapshot"
+            ):
+                entries.setdefault(entry["worker_id"], entry)
+        for visit in (revision.plan_state or {}).get("visits", []):
+            worker_id = visit.get("worker_id")
+            if worker_id is not None:
+                entries.setdefault(
+                    worker_id,
+                    roster_entry(worker_id, service_area_id, source="reconstructed_from_visits"),
+                )
+    return [entries[worker_id] for worker_id in sorted(entries)] or None
+
+
+def day_roster(session: Session, service_area_id: int, route_date: date) -> list[dict] | None:
+    """The roster of the current revision, rebuilt from history for older revisions."""
+    current = session.execute(
+        select(DayPlanRevision.roster).where(
+            DayPlanRevision.service_area_id == service_area_id,
+            DayPlanRevision.route_date == route_date,
+            DayPlanRevision.is_current.is_(True),
+        )
+    ).one_or_none()
+    if current is None:
+        return None
+    if current.roster is not None:
+        return current.roster
+    return reconstruct_roster(session, service_area_id, route_date)
+
+
+def roster_change(before: list[dict] | None, after: list[dict] | None) -> dict | None:
+    old, new = set(roster_ids(before)), set(roster_ids(after))
+    if old == new:
+        return None
+    return {"added": sorted(new - old), "removed": sorted(old - new)}
+
+
 def current_revision(session: Session, service_area_id: int, route_date: date) -> int | None:
     return session.execute(
         select(DayPlanRevision.revision).where(
@@ -251,12 +383,17 @@ def publish_revision(
     at: datetime,
     plan_id=None,
     event_id: int | None = None,
+    roster_additions: Iterable[dict] = (),
 ) -> DayPlanRevision:
     """Append one revision and hand the `is_current` marker over atomically.
 
     The partial unique index lets exactly one revision of an area-day stay current,
     so two concurrent applies cannot both publish: the second waits on the row lock
     and then numbers itself after the first.
+
+    The roster carries over unchanged. Only an explicit dispatcher action (a plan with
+    selected engineers, a manual assignment) passes `roster_additions`; a replan never
+    does, so new demand cannot bring in an engineer who was not admitted to the day.
     """
     previous = session.scalar(
         select(DayPlanRevision)
@@ -269,6 +406,23 @@ def publish_revision(
     )
     previous_number = previous.revision if previous is not None else 0
     number = previous_number + 1
+    previous_roster = None
+    if previous is not None:
+        previous_roster = (
+            previous.roster
+            if previous.roster is not None
+            else reconstruct_roster(session, service_area_id, route_date)
+        )
+    additions = list(roster_additions)
+    roster = (
+        merge_roster(previous_roster, additions)
+        if previous_roster is not None or additions
+        else None
+    )
+    diff = diff_states(previous.plan_state if previous is not None else None, plan_state)
+    change = roster_change(previous_roster, roster)
+    if change is not None:
+        diff["roster"] = change
     if previous is not None:
         previous.is_current = False
         previous.superseded_at = at
@@ -285,8 +439,9 @@ def publish_revision(
         reason=reason,
         fingerprint=fingerprint,
         plan_state=plan_state,
-        diff=diff_states(previous.plan_state if previous is not None else None, plan_state),
+        diff=diff,
         result=result,
+        roster=roster,
         is_current=True,
         effective_at=at,
     )
@@ -313,6 +468,7 @@ def _public(revision: DayPlanRevision) -> dict:
         "metrics": (revision.plan_state or {}).get("metrics") or {},
         "planning_policy": (revision.plan_state or {}).get("planning_policy"),
         "objective_components": (revision.plan_state or {}).get("objective_components"),
+        "roster": revision.roster,
     }
 
 
@@ -382,7 +538,13 @@ def read_diff(
             raise PlanningError("day_plan_not_found", 404)
     if from_revision is not None and from_revision.revision > to_revision.revision:
         raise PlanningError("revision_order_invalid", 422)
+    before = from_revision.roster if from_revision is not None else None
+    comparable = to_revision.roster is not None and (
+        from_revision is None or from_revision.roster is not None
+    )
+    roster = roster_change(before, to_revision.roster) if comparable else None
     return {
+        "roster": roster,
         "service_area_id": service_area_id,
         "route_date": route_date,
         "from_revision": from_revision.revision if from_revision is not None else None,
