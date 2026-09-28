@@ -40,21 +40,26 @@ const formatAddress = (loc) => {
     return parts.join(', ') || loc.address;
 };
 
-const TicketsStatuses = () => {
+const TicketsStatuses = ({ onFilterChange, onSelectTicket, filter }) => {
     const { tickets, ticketsData } = useTickets({ limit: 100 });
     const [isOpen, setIsOpen] = useState(false);
-    const [activeFilter, setActiveFilter] = useState("all");
+    const [localFilter, setLocalFilter] = useState("all");
+    const activeFilter = filter ?? localFilter;
     const containerRef = useRef(null);
 
     useClickOutside(containerRef, () => setIsOpen(false));
+    const changeFilter = (nextFilter) => {
+        setLocalFilter(nextFilter);
+        onFilterChange?.(nextFilter);
+    };
 
     // Считаем статусы напрямую из списка загруженных тикетов, чтобы цифры сходились
     const allCount = tickets.length;
-    const urgentCount = tickets.filter(t => t.status === "planned" && (!t.assignee_ids || t.assignee_ids.length === 0)).length;
+    const urgentCount = tickets.filter(t => t.status === "planned" && !t.assigned_worker_id).length;
     const completedCount = tickets.filter(t => t.status === "completed").length;
 
     const displayedTickets = tickets.filter(t => {
-        if (activeFilter === "urgent") return t.status === "planned" && (!t.assignee_ids || t.assignee_ids.length === 0);
+        if (activeFilter === "urgent") return t.status === "planned" && !t.assigned_worker_id;
         if (activeFilter === "completed") return t.status === "completed";
         return true;
     });
@@ -72,7 +77,7 @@ const TicketsStatuses = () => {
                     variant="all" 
                     isInteractive={isOpen}
                     isInactive={isOpen && activeFilter !== "all"}
-                    onClick={() => setActiveFilter("all")}
+                    onClick={() => changeFilter("all")}
                 />
                 <Status 
                     label="Срочные" 
@@ -80,7 +85,7 @@ const TicketsStatuses = () => {
                     variant="urgent" 
                     isInteractive={isOpen}
                     isInactive={isOpen && activeFilter !== "urgent"}
-                    onClick={() => setActiveFilter("urgent")}
+                    onClick={() => changeFilter("urgent")}
                 />
                 <Status 
                     label="Выполнено" 
@@ -88,7 +93,7 @@ const TicketsStatuses = () => {
                     variant="completed" 
                     isInteractive={isOpen}
                     isInactive={isOpen && activeFilter !== "completed"}
-                    onClick={() => setActiveFilter("completed")}
+                    onClick={() => changeFilter("completed")}
                 />
             </div>
             
@@ -97,11 +102,22 @@ const TicketsStatuses = () => {
                     <div style={{ padding: '20px', textAlign: 'center', opacity: 0.6 }}>Загрузка заявок...</div>
                 ) : displayedTickets.length > 0 ? (
                     <ul key={activeFilter} className={styles.ticketsList}>
-                        {displayedTickets.map((t, index) => (
+                        {displayedTickets.map((t, index) => {
+                            const hasCoordinates = t.location?.latitude != null && t.location?.longitude != null;
+                            return (
                             <li 
                                 key={t.id} 
                                 className={styles.ticketCard}
                                 style={{ animationDelay: `${index * 0.05}s` }}
+                                role={onSelectTicket && hasCoordinates ? "button" : undefined}
+                                tabIndex={onSelectTicket && hasCoordinates ? 0 : undefined}
+                                onClick={() => hasCoordinates && onSelectTicket?.(t)}
+                                onKeyDown={(event) => {
+                                    if (hasCoordinates && (event.key === "Enter" || event.key === " ")) {
+                                        event.preventDefault();
+                                        onSelectTicket?.(t);
+                                    }
+                                }}
                             >
                                 <div className={styles.ticketRow}>
                                     <span className={styles.ticketName}>{t.title}</span>
@@ -120,11 +136,12 @@ const TicketsStatuses = () => {
                                         <span>{formatTimeWindow(t.visit_window_start, t.visit_window_end)}</span>
                                     </div>
                                     <div className={styles.ticketType}>
-                                        {t.work_type}
+                                        {hasCoordinates ? t.work_type : "Нет координат"}
                                     </div>
                                 </div>
                             </li>
-                        ))}
+                            );
+                        })}
                     </ul>
                 ) : (
                     <div style={{ padding: '20px', textAlign: 'center', opacity: 0.6 }}>Нет заявок в этой категории</div>
