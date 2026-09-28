@@ -45,6 +45,23 @@ class ConnectionManagerTests(unittest.TestCase):
         self.assertEqual(second_recipient_browser.messages, expected)
         self.assertEqual(unrelated_browser.messages, [])
 
+    def test_broadcast_reaches_connections_of_different_users(self):
+        manager = ConnectionManager()
+        observer_browser = RecordingWebSocket()
+        foreman_browser = RecordingWebSocket()
+        payload = {"type": "schedule_updated"}
+
+        async def scenario():
+            await manager.connect(10, observer_browser)
+            await manager.connect(20, foreman_browser)
+            return await manager.broadcast(payload)
+
+        delivered = asyncio.run(scenario())
+
+        self.assertEqual(delivered, 2)
+        self.assertEqual(observer_browser.messages, [payload])
+        self.assertEqual(foreman_browser.messages, [payload])
+
 
 class NotificationsWebSocketTests(DatabaseTestCase):
     def setUp(self):

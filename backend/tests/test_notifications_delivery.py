@@ -2,14 +2,17 @@
 
 import asyncio
 import json
+import unittest
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import Building, City, District, Location, Street, Ticket
 from app.modules.notifications.dispatcher import NotificationDispatcher
 from app.modules.notifications.firebase import PushResult
+from app.modules.notifications.schedule_updates import publish_schedule_updated
+from app.modules.notifications.topology import DeliveryLease
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserCreate
 from app.modules.users.service import create_user
@@ -19,11 +22,18 @@ from tests.support import DatabaseTestCase
 class FakeConnectionManager:
     def __init__(self, receivers=1):
         self.messages = []
+        self.broadcasts = []
         self.receivers = receivers
+        self.schedule_updated = asyncio.Event()
 
     async def publish(self, user_id, payload):
         self.messages.append((user_id, payload))
         return self.receivers
+
+    async def broadcast(self, payload):
+        self.broadcasts.append(payload)
+        self.schedule_updated.set()
+        return 1
 
 
 class FakePushGateway:
@@ -236,3 +246,73 @@ class NotificationsDeliveryTests(DatabaseTestCase):
         again = FakeConnectionManager()
         processed, _manager = self.dispatch(FakePushGateway(), again)
         self.assertEqual((processed, again.messages), (0, []))
+
+    def test_schedule_update_from_another_process_reaches_live_sockets(self):
+        lease = DeliveryLease(self.engine)
+        self.addCleanup(lease.release)
+        self.assertTrue(lease.acquire())
+
+        async def scenario():
+            manager = FakeConnectionManager()
+            dispatcher = NotificationDispatcher(
+                self.session_factory,
+                connection_manager=manager,
+                push_gateway=FakePushGateway(),
+            )
+            task = asyncio.create_task(dispatcher.run(0.02, lease))
+            try:
+                await asyncio.sleep(0.05)
+                with Session(self.engine) as publisher:
+                    with publisher.begin():
+                        publish_schedule_updated(publisher)
+                await asyncio.wait_for(manager.schedule_updated.wait(), timeout=2)
+            finally:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            return manager.broadcasts
+
+        self.assertEqual(asyncio.run(scenario()), [{"type": "schedule_updated"}])
+
+
+class NotificationDispatcherLoopTests(unittest.IsolatedAsyncioTestCase):
+    async def test_schedule_signal_does_not_add_a_second_poll_delay(self):
+        manager = FakeConnectionManager()
+        dispatcher = NotificationDispatcher(
+            None,
+            connection_manager=manager,
+            push_gateway=FakePushGateway(),
+        )
+        second_dispatch = asyncio.Event()
+        dispatch_count = 0
+
+        async def dispatch_once():
+            nonlocal dispatch_count
+            dispatch_count += 1
+            if dispatch_count == 2:
+                second_dispatch.set()
+            return 0
+
+        class ReadyLease:
+            held = True
+
+            def alive(self):
+                return True
+
+            def wait_for_schedule_update(self, _timeout):
+                return True
+
+        dispatcher.dispatch_once = dispatch_once
+        task = asyncio.create_task(dispatcher.run(0.5, ReadyLease()))
+        try:
+            await asyncio.wait_for(second_dispatch.wait(), timeout=0.2)
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        self.assertGreaterEqual(dispatch_count, 2)
