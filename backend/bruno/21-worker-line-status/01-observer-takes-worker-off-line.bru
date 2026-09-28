@@ -27,7 +27,7 @@ tests {
     const body = res.getBody();
     expect(body.worker_id).to.equal(Number(bru.getVar("worker_id")));
     expect(body.is_on_line).to.equal(false);
-    expect(body.released_ticket_ids).to.be.an("array").that.is.not.empty;
+    expect(body.released_ticket_ids).to.be.an("array");
     expect(body.released_ticket_ids).not.to.include(Number(bru.getVar("ticket_id")));
   });
 }

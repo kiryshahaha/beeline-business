@@ -205,8 +205,8 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
 
                 shift_end = epoch + timedelta(minutes=worker["window"][1])
                 limit = shift_end
-                if ticket.get("deadline_at"):
-                    deadline = datetime.fromisoformat(ticket["deadline_at"])
+                if ticket.get("sla_deadline_at"):
+                    deadline = datetime.fromisoformat(ticket["sla_deadline_at"])
                     limit = min(shift_end, deadline)
                 if service_end > limit:
                     raise PlanningError("routing_estimate_changed", 502)

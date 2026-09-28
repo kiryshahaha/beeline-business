@@ -5,7 +5,7 @@ meta {
 }
 
 post {
-  url: {{base_url}}/api/v1/workers/{{worker_two_id}}/unavailable
+  url: {{base_url}}/api/v1/workers/{{execution_unavailable_worker_id}}/unavailable
   body: json
   auth: bearer
 }
@@ -20,11 +20,11 @@ headers {
 
 body:json {
   {
-    "expected_revision": {{worker_day_revision}},
+    "expected_revision": 1,
     "occurred_at": "{{execution_unavailable_at}}",
     "service_area_id": {{service_area_id}},
     "route_date": "{{execution_route_date}}",
-    "worker_id": {{worker_two_id}},
+    "worker_id": {{execution_unavailable_worker_id}},
     "reason": "Инженер завершил смену раньше",
     "expected_available_at": "{{execution_available_at}}",
     "payload": {}
@@ -32,9 +32,8 @@ body:json {
 }
 
 script:pre-request {
-  const now = Date.now();
-  bru.setVar("execution_unavailable_at", new Date(now).toISOString());
-  bru.setVar("execution_available_at", new Date(now + 4 * 60 * 60 * 1000).toISOString());
+  bru.setVar("execution_unavailable_at", "2030-01-17T12:00:00.000Z");
+  bru.setVar("execution_available_at", "2030-01-17T13:00:00.000Z");
 }
 
 assert {

@@ -30,10 +30,9 @@ body:json {
 }
 
 script:pre-request {
-  const now = Date.now();
-  bru.setVar("execution_occurred_at", new Date(now).toISOString());
-  bru.setVar("execution_new_window_start", new Date(now + 2 * 60 * 60 * 1000).toISOString());
-  bru.setVar("execution_new_window_end", new Date(now + 6 * 60 * 60 * 1000).toISOString());
+  bru.setVar("execution_occurred_at", "2030-01-17T07:30:00.000Z");
+  bru.setVar("execution_new_window_start", "2030-01-17T08:00:00.000Z");
+  bru.setVar("execution_new_window_end", "2030-01-17T12:00:00.000Z");
 }
 
 assert {

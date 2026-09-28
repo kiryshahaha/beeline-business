@@ -22,14 +22,14 @@ body:json {
   {
     "expected_revision": 7,
     "occurred_at": "{{execution_occurred_at}}",
-    "worker_id": {{worker_two_id}},
+    "worker_id": {{execution_worker_id}},
     "location_id": {{location_id}},
     "payload": {}
   }
 }
 
 script:pre-request {
-  bru.setVar("execution_occurred_at", new Date().toISOString());
+  bru.setVar("execution_occurred_at", "2030-01-17T10:45:00.000Z");
 }
 
 assert {

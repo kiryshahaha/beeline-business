@@ -56,6 +56,52 @@ def build_plan_state(public: dict, route_ids: dict[int, int] | None = None) -> d
     }
 
 
+def build_replan_state(
+    public: dict,
+    previous: dict | None,
+    lifecycle_by_ticket: dict[int, str],
+    route_ids: dict[int, int] | None = None,
+) -> dict:
+    """Replace the unstarted remainder while retaining execution already in motion."""
+    state = build_plan_state(public, route_ids)
+    visits = _visits_by_ticket(state)
+    frozen_states = {"en_route", "in_progress", "completed"}
+    for visit in (previous or {}).get("visits", []):
+        ticket_id = visit["ticket_id"]
+        if lifecycle_by_ticket.get(ticket_id) in frozen_states:
+            visits[ticket_id] = visit
+
+    offsets: dict[int, int] = {}
+    for visit in visits.values():
+        if lifecycle_by_ticket.get(visit["ticket_id"]) in frozen_states:
+            worker_id = visit.get("worker_id")
+            sequence = visit.get("sequence")
+            if worker_id is not None and sequence is not None:
+                offsets[worker_id] = max(offsets.get(worker_id, 0), sequence)
+    for ticket_id, visit in list(visits.items()):
+        if lifecycle_by_ticket.get(ticket_id) in frozen_states:
+            continue
+        worker_id = visit.get("worker_id")
+        if worker_id is not None and visit.get("sequence") is not None:
+            visits[ticket_id] = {**visit, "sequence": offsets.get(worker_id, 0) + visit["sequence"]}
+
+    state["visits"] = sorted(visits.values(), key=lambda visit: visit["ticket_id"])
+    state["metrics"] = {
+        **(state.get("metrics") or {}),
+        "assigned_tickets": len(state["visits"]),
+        "unassigned_tickets": len(state.get("unassigned_ticket_ids", [])),
+        "used_workers": len({visit["worker_id"] for visit in state["visits"]}),
+        "metric_scope": "remaining_route_metrics_with_frozen_visits",
+    }
+    if not state["visits"] and not state["unassigned_ticket_ids"]:
+        state["outcome"] = "empty"
+    elif state["unassigned_ticket_ids"]:
+        state["outcome"] = "partial"
+    else:
+        state["outcome"] = "complete"
+    return state
+
+
 def _visits_by_ticket(state: dict) -> dict[int, dict]:
     return {visit["ticket_id"]: visit for visit in (state or {}).get("visits", [])}
 
@@ -63,7 +109,12 @@ def _visits_by_ticket(state: dict) -> dict[int, dict]:
 def _metric_changes(before: dict, after: dict) -> dict[str, dict]:
     old, new = (before or {}).get("metrics") or {}, (after or {}).get("metrics") or {}
     changes = {}
-    for name in COMPARED_METRICS:
+    metric_names = (
+        ("assigned_tickets", "unassigned_tickets", "used_workers")
+        if new.get("metric_scope") == "remaining_route_metrics_with_frozen_visits"
+        else COMPARED_METRICS
+    )
+    for name in metric_names:
         was, now = old.get(name), new.get(name)
         if was is None and now is None:
             continue

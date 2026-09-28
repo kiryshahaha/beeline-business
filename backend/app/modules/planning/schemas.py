@@ -18,10 +18,11 @@ class PreviewRequest(BaseModel):
     route_date: date
     service_area_id: PositiveInt32 | None = None
     base_day_revision: PositiveInt32 | None = None
-    route_end: Literal["open", "return_to_start", "specific_finish"] | None = None
-    ticket_ids: list[PositiveInt32] = Field(min_length=1, max_length=100)
-    worker_ids: list[PositiveInt32] = Field(min_length=1, max_length=50)
+    route_end: Literal["open", "return_to_start", "specific_finish"] | None = "open"
+    ticket_ids: list[PositiveInt32] = Field(default_factory=list, max_length=100)
+    worker_ids: list[PositiveInt32] = Field(default_factory=list, max_length=50)
     allow_partial: bool = Field(default=True, strict=True)
+    replan: bool = Field(default=False, strict=True)
 
     @model_validator(mode="after")
     def unique_ids(self) -> Self:
@@ -29,7 +30,16 @@ class PreviewRequest(BaseModel):
             if len(values) != len(set(values)):
                 raise ValueError("Списки ID не должны содержать повторов")
             values.sort()
+        if not self.replan and (not self.ticket_ids or not self.worker_ids):
+            raise ValueError("Для предпросмотра нужны заявки и инженеры")
         return self
+
+
+class ReplanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    base_day_revision: PositiveInt32 | None = None
+    allow_partial: bool = Field(default=True, strict=True)
 
 
 # Public DTOs deliberately omit raw snapshots, solver matrices and internal IDs.
@@ -173,30 +183,6 @@ class PlanWorker(BaseModel):
     archived_at: datetime | None
 
 
-class PlanRead(BaseModel):
-    planning_policy: ExecutionPolicy | None = None
-    case_policy_version: int | None = None
-    plan_id: UUID
-    state: Literal["ready", "applied", "expired", "stale"]
-    outcome: Literal["complete", "partial", "empty"]
-    route_date: date
-    service_area_id: int | None = None
-    day_revision: int | None = None
-    timezone: Literal["Europe/Moscow"]
-    expires_at: datetime
-    solver_status: Literal["FEASIBLE", "OPTIMAL"] | None
-    objective_components: dict[str, int] | None = None
-    metrics: PlanMetrics | None = None
-    routes: list[PlannedRoute]
-    unassigned: list[Rejection]
-    excluded_workers: list[ExcludedWorker]
-    resource_estimate: ResourceEstimate | None = None
-    warnings: list[str]
-    is_current: bool | None = None
-    apply_result: ApplyResult | None = None
-    workers: list[PlanWorker] | None = None
-
-
 class ApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -248,6 +234,42 @@ class DayPlanDiff(BaseModel):
     changed: list[VisitChange]
     unchanged_ticket_ids: list[int]
     metrics: dict[str, MetricChange]
+
+
+class ReplanDiff(BaseModel):
+    """Diff between the current day revision and a proposed remainder."""
+
+    from_revision: int | None
+    added: list[VisitPlacement]
+    removed: list[VisitPlacement]
+    changed: list[VisitChange]
+    unchanged_ticket_ids: list[int]
+    metrics: dict[str, MetricChange]
+
+
+class PlanRead(BaseModel):
+    planning_policy: ExecutionPolicy | None = None
+    case_policy_version: int | None = None
+    plan_id: UUID
+    state: Literal["ready", "applied", "expired", "stale"]
+    outcome: Literal["complete", "partial", "empty"]
+    route_date: date
+    service_area_id: int | None = None
+    day_revision: int | None = None
+    timezone: Literal["Europe/Moscow"]
+    expires_at: datetime
+    solver_status: Literal["FEASIBLE", "OPTIMAL"] | None
+    objective_components: dict[str, int] | None = None
+    metrics: PlanMetrics | None = None
+    routes: list[PlannedRoute]
+    unassigned: list[Rejection]
+    excluded_workers: list[ExcludedWorker]
+    resource_estimate: ResourceEstimate | None = None
+    warnings: list[str]
+    is_current: bool | None = None
+    apply_result: ApplyResult | None = None
+    workers: list[PlanWorker] | None = None
+    replan_diff: ReplanDiff | None = None
 
 
 class DayPlanRevisionRead(BaseModel):

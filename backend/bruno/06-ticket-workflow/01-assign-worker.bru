@@ -1,7 +1,7 @@
 meta {
   name: Назначить исполнителя
   type: http
-  seq: 1
+  seq: 3
 }
 
 put {
@@ -25,5 +25,6 @@ assert {
 tests {
   test("Назначен выбранный исполнитель", function () {
     expect(res.getBody().assigned_worker_id).to.equal(Number(bru.getVar("worker_id")));
+    expect(res.getBody().revision).to.equal(3);
   });
 }

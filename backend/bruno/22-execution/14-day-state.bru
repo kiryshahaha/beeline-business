@@ -5,7 +5,7 @@ meta {
 }
 
 get {
-  url: {{base_url}}/api/v1/workers/{{worker_two_id}}/day-state?service_area_id={{service_area_id}}&date={{execution_route_date}}
+  url: {{base_url}}/api/v1/workers/{{execution_worker_id}}/day-state?service_area_id={{execution_service_area_id}}&date={{execution_route_date}}&at=2030-01-17T11:30:00.000Z
   body: none
   auth: bearer
 }
@@ -27,7 +27,7 @@ script:post-response {
 tests {
   test("Снимок рабочего дня содержит журнал событий", function () {
     const state = res.getBody();
-    expect(state.worker_id).to.equal(Number(bru.getVar("worker_two_id")));
+    expect(state.worker_id).to.equal(Number(bru.getVar("execution_worker_id")));
     expect(state.route_date).to.equal(bru.getVar("execution_route_date"));
     expect(state.revision).to.be.a("number").and.above(0);
     expect(state.event_ids).to.be.an("array").that.is.not.empty;

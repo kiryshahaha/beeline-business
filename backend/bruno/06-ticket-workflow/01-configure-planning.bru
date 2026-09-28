@@ -1,0 +1,28 @@
+meta {
+  name: Настроить требования планирования вида работ
+  type: http
+  seq: 1
+}
+
+put {
+  url: {{base_url}}/api/v1/work-types/1/planning-rules
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "service_duration_source": "ticket_estimate",
+    "required_skill_ids": [],
+    "required_appliances": []
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.configured: eq true
+}
