@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from datetime import datetime
 from pathlib import Path
 
 from app.modules.data_exchange.formats import parse_file
@@ -16,7 +17,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def verify_packages(root: Path = ROOT) -> dict:
-    report = {"files": 0, "format_pairs": 0, "rows_per_pair": {}, "policy_comparisons": 0}
+    report = {
+        "files": 0,
+        "format_pairs": 0,
+        "rows_per_pair": {},
+        "policy_comparisons": 0,
+        "dynamic_replanning_cases": 0,
+    }
     required = {
         root / "data/planning/manifest.json",
         root / "data/synthetic/standard/manifest.json",
@@ -62,6 +69,44 @@ def verify_packages(root: Path = ROOT) -> dict:
         if actual != example["winner"]:
             raise ValueError(f"Policy comparison mismatch: {example['id']}")
         report["policy_comparisons"] += 1
+    dynamic = json.loads(
+        (root / "data/planning/dynamic_replanning_scenarios.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    if dynamic.get("schema_version") != 1 or dynamic.get("timezone") != "Europe/Moscow":
+        raise ValueError("Unsupported dynamic replanning scenario contract")
+    for field, minimum in (
+        ("active_stage_cases", 3),
+        ("ordinary_insert_cases", 2),
+        ("response_cases", 3),
+    ):
+        cases = dynamic.get(field)
+        if not isinstance(cases, list) or len(cases) < minimum:
+            raise ValueError(f"Dynamic replanning scenarios need at least {minimum} {field}")
+        ids = [case.get("id") for case in cases]
+        if any(not item for item in ids) or len(ids) != len(set(ids)):
+            raise ValueError(f"Dynamic replanning {field} require unique non-empty ids")
+        for case in cases:
+            timestamps = [
+                value
+                for name, value in case.items()
+                if name.endswith(("_at", "received_at", "actual_completed_at"))
+            ]
+            if field == "ordinary_insert_cases":
+                timestamps.extend(case.get("published_service_starts", []))
+                timestamps.extend(case.get("new_visit_window", []))
+            if not timestamps:
+                raise ValueError(f"Dynamic replanning case has no timestamps: {case['id']}")
+            for value in timestamps:
+                if not isinstance(value, str):
+                    raise ValueError(f"Dynamic replanning timestamp must be a string: {case['id']}")
+                parsed = datetime.fromisoformat(value)
+                if parsed.tzinfo is None or parsed.utcoffset() is None:
+                    raise ValueError(
+                        f"Dynamic replanning timestamp must include timezone: {case['id']}"
+                    )
+            report["dynamic_replanning_cases"] += 1
     return report
 
 

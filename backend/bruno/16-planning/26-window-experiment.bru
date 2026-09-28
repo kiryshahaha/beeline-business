@@ -1,0 +1,58 @@
+meta {
+  name: Сравнить фиксированное и экспериментальное окно
+  type: http
+  seq: 26
+}
+
+post {
+  url: {{base_url}}/api/v1/planning/areas/{{planning_service_area_id}}/2030-01-15/window-experiment
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "base_day_revision": {{planning_day_revision}},
+    "allow_partial": true,
+    "windows": [{
+      "ticket_id": {{planning_window_experiment_ticket_id}},
+      "visit_window_start": "2030-01-15T00:00:00+03:00",
+      "visit_window_end": "2030-01-15T23:59:00+03:00"
+    }]
+  }
+}
+
+script:pre-request {
+  const ticketIds = JSON.parse(bru.getVar("planning_ticket_ids"));
+  bru.setVar("planning_window_experiment_ticket_id", ticketIds[0]);
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    const override = res.getBody().window_overrides[0];
+    bru.setVar("planning_window_original_start", override.original_visit_window_start);
+    bru.setVar("planning_window_original_end", override.original_visit_window_end);
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Эксперимент сравнивает одинаковую ревизию без публикации", () => {
+    const body = res.getBody();
+    expect(body.experimental).to.equal(true);
+    expect(body.applied).to.equal(false);
+    expect(body.base_day_revision).to.equal(Number(bru.getVar("planning_day_revision")));
+    expect(body.baseline.metrics).to.be.an("object");
+    expect(body.experiment.metrics).to.be.an("object");
+    expect(body.window_overrides[0].ticket_id).to.equal(
+      Number(bru.getVar("planning_window_experiment_ticket_id"))
+    );
+  });
+}

@@ -22,6 +22,7 @@ from app.db.models import (
 from app.db.session import get_session
 from app.main import app
 from app.modules.appliances.enums import ApplianceType
+from app.modules.planning import router as planning_api
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserCreate, WorkerProfileCreate
 from app.modules.users.service import create_user
@@ -80,6 +81,8 @@ class ExecutionApiTests(DatabaseTestCase):
 
         app.dependency_overrides[get_session] = session_dependency
         self.addCleanup(app.dependency_overrides.pop, get_session)
+        app.dependency_overrides[planning_api.get_planning_engine] = lambda: self.engine
+        self.addCleanup(app.dependency_overrides.pop, planning_api.get_planning_engine)
         self.client = self.enterContext(TestClient(app))
 
     def _save(self, instance):
@@ -201,7 +204,7 @@ class ExecutionApiTests(DatabaseTestCase):
         )
         self.assertEqual(response.status_code, 200, response.text)
 
-    def test_lifecycle_day_state_redirect_reopen_and_cancel(self):
+    def test_lifecycle_day_state_rejects_active_route_redirect(self):
         ticket = self._ticket()
         ticket_id = ticket["id"]
         self.assertEqual((ticket["state"], ticket["revision"]), ("waiting_assignment", 1))
@@ -271,6 +274,16 @@ class ExecutionApiTests(DatabaseTestCase):
             )
         )
         self.session.commit()
+        before_day_state = self.client.get(
+            f"/api/v1/workers/{self.worker.id}/day-state",
+            params={
+                "service_area_id": self.service_area_id,
+                "date": self.route_date.isoformat(),
+                "at": "2030-01-15T13:30:00+03:00",
+            },
+            headers=self._auth(self.observer),
+        )
+        self.assertEqual(before_day_state.status_code, 200, before_day_state.text)
         redirected = self.client.post(
             f"/api/v1/planning/days/{self.service_area_id}/{self.route_date}/redirect",
             json={
@@ -283,8 +296,34 @@ class ExecutionApiTests(DatabaseTestCase):
             },
             headers=self._auth(self.observer) | {"Idempotency-Key": "lifecycle-redirect"},
         )
-        self.assertEqual(redirected.status_code, 200, redirected.text)
-        self.assertEqual(redirected.json()["current_destination_id"], self.source_location_id)
+        self.assertEqual(redirected.status_code, 409, redirected.text)
+        self.assertEqual(redirected.json()["detail"]["code"], "active_route_redirect_forbidden")
+        day_state = self.client.get(
+            f"/api/v1/workers/{self.worker.id}/day-state",
+            params={
+                "service_area_id": self.service_area_id,
+                "date": self.route_date.isoformat(),
+                "at": "2030-01-15T13:30:00+03:00",
+            },
+            headers=self._auth(self.observer),
+        )
+        self.assertEqual(day_state.status_code, 200, day_state.text)
+        self.assertEqual(day_state.json()["current_destination_id"], self.destination_location_id)
+        self.assertEqual(day_state.json()["current_ticket_id"], ticket_id)
+        self.assertEqual(day_state.json()["revision"], before_day_state.json()["revision"])
+        with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
+            redirect_count = session.execute(
+                text("SELECT count(*) FROM work_events WHERE event_type='redirect'")
+            ).scalar_one()
+            current_revision = session.execute(
+                text(
+                    "SELECT revision FROM day_plan_revisions "
+                    "WHERE service_area_id=:area AND route_date=:route_date AND is_current"
+                ),
+                {"area": self.service_area_id, "route_date": self.route_date},
+            ).scalar_one()
+        self.assertEqual(redirect_count, 0)
+        self.assertEqual(current_revision, 1)
         redirect_replay = self.client.post(
             f"/api/v1/planning/days/{self.service_area_id}/{self.route_date}/redirect",
             json={
@@ -297,7 +336,10 @@ class ExecutionApiTests(DatabaseTestCase):
             },
             headers=self._auth(self.observer) | {"Idempotency-Key": "lifecycle-redirect"},
         )
-        self.assertEqual(redirect_replay.status_code, 200, redirect_replay.text)
+        self.assertEqual(redirect_replay.status_code, 409, redirect_replay.text)
+        self.assertEqual(
+            redirect_replay.json()["detail"]["code"], "active_route_redirect_forbidden"
+        )
 
         self.assertEqual(
             self._command(
@@ -398,7 +440,6 @@ class ExecutionApiTests(DatabaseTestCase):
                 "window_change",
                 "dispatch",
                 "start_route",
-                "redirect",
                 "start",
                 "progress_delay",
                 "complete",

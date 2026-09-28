@@ -29,6 +29,17 @@ def worker_replan_anchor(day_state, active_ticket, now, *, default_location_id):
         expected = dt(expected)
 
     if current_ticket_id is not None:
+        lifecycle_state = (active_ticket or {}).get("lifecycle_state")
+        if lifecycle_state in {"en_route", "in_progress"}:
+            # A predicted finish is useful for display, but it is not a confirmed
+            # departure point. Keep this worker outside the new solve until the
+            # active stage has a completion event with an actual location/time.
+            return {
+                "location_id": day_state.get("current_destination_id")
+                or day_state.get("last_location_id"),
+                "available_at": expected,
+                "reason": "active_stage_not_completed",
+            }
         planned_end = (active_ticket or {}).get("planned_end_at")
         destination_id = day_state.get("current_destination_id")
         if (
@@ -185,13 +196,31 @@ def prepare(snapshot: dict, now: datetime) -> dict:
             reason = reasons.invalid_worker_role(roles.get(wid))
         elif wid in archived:
             reason = reasons.worker_archived()
-        elif replan and anchor and anchor["reason"] == "active_work_eta_unknown":
+        elif replan and anchor and anchor["reason"] in {
+            "active_work_eta_unknown",
+            "active_stage_not_completed",
+        }:
+            active_stage_not_completed = anchor["reason"] == "active_stage_not_completed"
             reason = reasons.explain(
-                "active_work_eta_unknown",
+                anchor["reason"],
                 "availability",
-                "Инженер занят начатой заявкой без времени освобождения",
-                constraint="active_work_requires_expected_end",
+                (
+                    "Инженер завершает текущий этап; расчёт нового маршрута ждёт события завершения"
+                    if active_stage_not_completed
+                    else "Инженер занят начатой заявкой без времени освобождения"
+                ),
+                constraint=(
+                    "active_stage_requires_completion_event"
+                    if active_stage_not_completed
+                    else "active_work_requires_expected_end"
+                ),
                 ids={"ticket_ids": [day_state["current_ticket_id"]]},
+                observed={
+                    "expected_available_at": (
+                        anchor["available_at"].isoformat() if anchor["available_at"] else None
+                    )
+                },
+                required={"execution_state": "completed"} if active_stage_not_completed else None,
             )
         elif (
             day_state

@@ -1,10 +1,12 @@
 """Public planning DTOs; matrices and database snapshots stay private."""
 
+from __future__ import annotations
+
 from datetime import date, datetime
 from typing import Any, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.planning.case_policy import CasePolicy
 from app.modules.planning.policy import ExecutionPolicy, RecordedPolicy
@@ -40,6 +42,59 @@ class ReplanRequest(BaseModel):
 
     base_day_revision: PositiveInt32 | None = None
     allow_partial: bool = Field(default=True, strict=True)
+
+
+class ExperimentalWindowOverride(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: PositiveInt32
+    visit_window_start: AwareDatetime
+    visit_window_end: AwareDatetime
+
+    @model_validator(mode="after")
+    def ordered_window(self) -> Self:
+        if self.visit_window_end <= self.visit_window_start:
+            raise ValueError("Окончание экспериментального окна должно быть позже начала")
+        return self
+
+
+class WindowExperimentRequest(ReplanRequest):
+    windows: list[ExperimentalWindowOverride] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def unique_ticket_windows(self) -> Self:
+        ticket_ids = [window.ticket_id for window in self.windows]
+        if len(ticket_ids) != len(set(ticket_ids)):
+            raise ValueError("Для одной заявки можно задать только одно экспериментальное окно")
+        return self
+
+
+class WindowScenarioResult(BaseModel):
+    outcome: Literal["complete", "partial", "empty"]
+    metrics: PlanMetrics
+    routes: list[PlannedRoute]
+    unassigned: list[Rejection]
+    warnings: list[str]
+    replan_diff: ReplanDiff | None = None
+
+
+class WindowExperimentOverrideRead(BaseModel):
+    ticket_id: PositiveInt32
+    original_visit_window_start: datetime
+    original_visit_window_end: datetime
+    scenario_visit_window_start: AwareDatetime
+    scenario_visit_window_end: AwareDatetime
+
+
+class WindowExperimentRead(BaseModel):
+    experimental: Literal[True] = True
+    applied: Literal[False] = False
+    service_area_id: PositiveInt32
+    route_date: date
+    base_day_revision: PositiveInt32
+    window_overrides: list[WindowExperimentOverrideRead]
+    baseline: WindowScenarioResult
+    experiment: WindowScenarioResult
 
 
 # Public DTOs deliberately omit raw snapshots, solver matrices and internal IDs.
@@ -245,6 +300,23 @@ class ReplanDiff(BaseModel):
     changed: list[VisitChange]
     unchanged_ticket_ids: list[int]
     metrics: dict[str, MetricChange]
+    emergency_response: list[EmergencyResponseEstimate] = Field(default_factory=list)
+
+
+class EmergencyResponseEstimate(BaseModel):
+    ticket_id: int
+    received_at: datetime | None
+    arrival_at: datetime | None
+    service_start_at: datetime | None
+    service_end_at: datetime | None
+    reaction_to_arrival_minutes: int | None
+    reaction_to_service_start_minutes: int | None
+    within_60_minutes_to_arrival: bool | None
+    within_120_minutes_to_arrival: bool | None
+    service_deadline_at: datetime | None
+    service_deadline_met: bool | None
+    status: Literal["scheduled", "unassigned", "received_at_missing"]
+    unassigned_reason: str | None = None
 
 
 class PlanRead(BaseModel):

@@ -1,10 +1,13 @@
 """Read a snapshot, calculate outside transactions, then apply one immutable proposal."""
 
 import asyncio
+import copy
 import logging
 import time
 from datetime import UTC, datetime, timedelta
+from math import ceil
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -45,6 +48,7 @@ from app.modules.tickets.service import update_assignment_in_transaction
 from app.modules.users.models import User
 
 logger = logging.getLogger(__name__)
+MOSCOW = ZoneInfo("Europe/Moscow")
 
 
 def utc_now():
@@ -147,6 +151,104 @@ def read_replan_snapshot(
         return request, snapshot
 
 
+def _ordinary_insert_ticket_ids(snapshot):
+    """Only newly arrived unassigned requests are candidates for insertion."""
+    day_state = snapshot.get("current_day_state") or {}
+    previous_ids = {visit["ticket_id"] for visit in day_state.get("visits", [])}
+    previous_ids.update(day_state.get("unassigned_ticket_ids", []))
+    new_tickets = [ticket for ticket in snapshot["tickets"] if ticket["id"] not in previous_ids]
+    if any(ticket.get("category") == "emergency" for ticket in new_tickets):
+        return None
+    return {
+        ticket["id"]
+        for ticket in new_tickets
+        if ticket.get("lifecycle_state")
+        in {"waiting_assignment", "assigned", "dispatched"}
+    }
+
+
+def _pin_existing_visits_for_ordinary_insert(prepared, snapshot, new_ticket_ids):
+    """Keep each published future visit on its worker and at its promised start."""
+    candidates = {ticket["id"]: ticket for ticket in prepared["tickets"]}
+    eligible_new_ids = new_ticket_ids & candidates.keys()
+    for ticket_id in sorted(new_ticket_ids - candidates.keys()):
+        rejection = next(
+            (item for item in prepared["unassigned"] if item["ticket_id"] == ticket_id), None
+        )
+        raise PlanningError(
+            "ordinary_insert_ticket_ineligible",
+            409,
+            ticket_id=ticket_id,
+            rejection=rejection["reason"] if rejection else None,
+        )
+
+    workers = {
+        worker.get("user_id", worker.get("worker_id")): index
+        for index, worker in enumerate(prepared["workers"])
+    }
+    lifecycle_by_ticket = {
+        ticket["id"]: ticket["lifecycle_state"] for ticket in snapshot["tickets"]
+    }
+    for visit in (snapshot.get("current_day_state") or {}).get("visits", []):
+        ticket = candidates.get(visit["ticket_id"])
+        if ticket is None:
+            if lifecycle_by_ticket.get(visit["ticket_id"]) in {"assigned", "dispatched"}:
+                raise PlanningError(
+                    "ordinary_insert_existing_visit_conflict",
+                    409,
+                    ticket_id=min(new_ticket_ids) if new_ticket_ids else None,
+                    conflicting_ticket_id=visit["ticket_id"],
+                )
+            continue
+        worker_index = workers.get(visit.get("worker_id"))
+        if worker_index is None or worker_index not in ticket["allowed"]:
+            raise PlanningError(
+                "ordinary_insert_existing_visit_conflict",
+                409,
+                ticket_id=min(new_ticket_ids) if new_ticket_ids else None,
+                conflicting_ticket_id=visit["ticket_id"],
+            )
+        service_start = visit.get("service_start_at")
+        if not service_start:
+            raise PlanningError(
+                "ordinary_insert_existing_visit_conflict",
+                409,
+                ticket_id=min(new_ticket_ids) if new_ticket_ids else None,
+                conflicting_ticket_id=visit["ticket_id"],
+            )
+        if isinstance(service_start, str):
+            service_start = datetime.fromisoformat(service_start)
+        fixed_start = ceil((service_start - prepared["epoch"]).total_seconds() / 60)
+        if fixed_start < ticket["window"][0] or fixed_start > ticket["window"][1]:
+            raise PlanningError(
+                "ordinary_insert_existing_visit_conflict",
+                409,
+                ticket_id=min(new_ticket_ids) if new_ticket_ids else None,
+                conflicting_ticket_id=visit["ticket_id"],
+            )
+        ticket["allowed"] = [worker_index]
+        ticket["window"] = (fixed_start, fixed_start)
+    for ticket_id in eligible_new_ids:
+        ticket = candidates[ticket_id]
+        worker_id = ticket.get("assigned_worker_id")
+        if worker_id is None:
+            continue
+        worker_index = workers.get(worker_id)
+        if worker_index is None or worker_index not in ticket["allowed"]:
+            raise PlanningError(
+                "ordinary_insert_ticket_ineligible",
+                409,
+                ticket_id=ticket_id,
+                reason="manual_assignment_not_eligible",
+            )
+        ticket["allowed"] = [worker_index]
+    return {
+        visit["ticket_id"]
+        for visit in (snapshot.get("current_day_state") or {}).get("visits", [])
+        if visit["ticket_id"] in candidates
+    }
+
+
 def recorded_policy(snapshot):
     return {key: snapshot[key] for key in ("policy_version", "planning_policy") if key in snapshot}
 
@@ -161,6 +263,7 @@ async def preview(
     clock=utc_now,
     *,
     snapshot_override=None,
+    persist=True,
 ):
     if (
         len(request.ticket_ids) > settings.planning_max_tickets
@@ -174,6 +277,12 @@ async def preview(
     else:
         snapshot = snapshot_override
     prepared = prepare(snapshot, clock())
+    ordinary_insert_ids = _ordinary_insert_ticket_ids(snapshot) if request.replan else None
+    required_existing_ids = None
+    if ordinary_insert_ids is not None:
+        required_existing_ids = _pin_existing_visits_for_ordinary_insert(
+            prepared, snapshot, ordinary_insert_ids
+        )
     if not request.allow_partial and prepared["unassigned"]:
         raise PlanningError("incomplete_plan", unassigned=prepared["unassigned"])
     problem = solution = estimate = None
@@ -201,6 +310,29 @@ async def preview(
                         finally:
                             telemetry.record_stage("solver", time.perf_counter() - started)
                         validate_solution(problem, solution)
+                        if ordinary_insert_ids is not None:
+                            task_by_node = {
+                                index: node["ticket"]["id"]
+                                for index, node in enumerate(nodes)
+                                if node["kind"] == "ticket"
+                            }
+                            served_ids = {
+                                task_by_node[step.node]
+                                for route in solution.routes
+                                for step in route.steps
+                                if step.node in task_by_node
+                            }
+                            missing_existing = required_existing_ids - served_ids
+                            missing_new = ordinary_insert_ids - served_ids
+                            if missing_new or missing_existing:
+                                raise PlanningError(
+                                    "ordinary_insert_no_gap",
+                                    409,
+                                    ticket_ids=sorted(missing_new),
+                                    preserved_ticket_ids=sorted(required_existing_ids),
+                                    missing_existing_ticket_ids=sorted(missing_existing),
+                                    reason="no_feasible_gap_without_changing_published_visits",
+                                )
 
                         started = time.perf_counter()
                         try:
@@ -299,34 +431,211 @@ async def preview(
             item["id"]: item["lifecycle_state"] for item in snapshot["area_scope"]["tickets"]
         }
         proposed_state = build_replan_state(public, previous_state, lifecycle_by_ticket)
-        public["replan_diff"] = {
-            "from_revision": snapshot.get("current_day_revision"),
-            **diff_states(previous_state, proposed_state),
-        }
+        public["replan_diff"] = normalize(
+            {
+                "from_revision": snapshot.get("current_day_revision"),
+                **diff_states(previous_state, proposed_state),
+                "emergency_response": emergency_response_estimates(snapshot, public),
+            }
+        )
 
-    def persist():
-        with Session(engine) as session, session.begin():
-            session.add(
-                PlanningPlan(
-                    id=plan_id,
-                    route_date=request.route_date,
-                    created_by=actor,
-                    expires_at=expires,
-                    state="ready",
-                    input_fingerprint=fingerprint(snapshot),
-                    input_snapshot=snapshot,
-                    result_snapshot={
-                        "public": public,
-                        "route_creates": creates,
-                        "problem": problem.model_dump(mode="json") if problem else None,
-                        "solution": solution.model_dump(mode="json") if solution else None,
-                        "algorithm_version": 1,
-                    },
+    if persist:
+        def save_preview():
+            with Session(engine) as session, session.begin():
+                session.add(
+                    PlanningPlan(
+                        id=plan_id,
+                        route_date=request.route_date,
+                        created_by=actor,
+                        expires_at=expires,
+                        state="ready",
+                        input_fingerprint=fingerprint(snapshot),
+                        input_snapshot=snapshot,
+                        result_snapshot={
+                            "public": public,
+                            "route_creates": creates,
+                            "problem": problem.model_dump(mode="json") if problem else None,
+                            "solution": solution.model_dump(mode="json") if solution else None,
+                            "algorithm_version": 1,
+                        },
+                    )
                 )
-            )
 
-    await asyncio.to_thread(persist)
+        await asyncio.to_thread(save_preview)
     return public
+
+
+def snapshot_with_experimental_windows(snapshot: dict, windows, route_date) -> dict:
+    """Copy a planning input and widen selected windows without touching live rows."""
+    result = copy.deepcopy(snapshot)
+    tickets = {ticket["id"]: ticket for ticket in result["tickets"]}
+    local_date = route_date
+    for override in windows:
+        ticket = tickets.get(override.ticket_id)
+        if ticket is None:
+            raise PlanningError("experimental_ticket_not_in_day", ticket_id=override.ticket_id)
+        original_start = datetime.fromisoformat(ticket["visit_window_start"])
+        original_end = datetime.fromisoformat(ticket["visit_window_end"])
+        proposed_start = override.visit_window_start
+        proposed_end = override.visit_window_end
+        if (
+            proposed_start.astimezone(MOSCOW).date() != local_date
+            or proposed_end.astimezone(MOSCOW).date() != local_date
+        ):
+            raise PlanningError("experimental_window_outside_day", ticket_id=override.ticket_id)
+        if proposed_start > original_start or proposed_end < original_end:
+            raise PlanningError(
+                "experimental_window_must_only_expand", ticket_id=override.ticket_id
+            )
+        ticket["visit_window_start"] = proposed_start.isoformat()
+        ticket["visit_window_end"] = proposed_end.isoformat()
+    return result
+
+
+def emergency_response_estimates(snapshot: dict, public: dict) -> list[dict]:
+    """Expose arrival and service-start forecasts from the immutable receipt time."""
+    scheduled = {
+        stop["ticket_id"]: stop
+        for route in public.get("routes", [])
+        for stop in route.get("stops", [])
+    }
+    unassigned = {
+        item["ticket_id"]: item.get("reason", {}).get("code")
+        for item in public.get("unassigned", [])
+    }
+    estimates = []
+    for ticket in snapshot.get("tickets", []):
+        if ticket.get("category") != "emergency":
+            continue
+        stop = scheduled.get(ticket["id"])
+        received = (
+            datetime.fromisoformat(ticket["received_at"])
+            if ticket.get("received_at")
+            else None
+        )
+        arrival = datetime.fromisoformat(stop["arrival_at"]) if stop else None
+        service_start = datetime.fromisoformat(stop["service_start_at"]) if stop else None
+        service_end = datetime.fromisoformat(stop["service_end_at"]) if stop else None
+        deadline = (
+            datetime.fromisoformat(ticket["sla_deadline_at"])
+            if ticket.get("sla_deadline_at")
+            else None
+        )
+        arrival_minutes = (
+            max(0, ceil((arrival - received).total_seconds() / 60))
+            if arrival is not None and received is not None
+            else None
+        )
+        service_minutes = (
+            max(0, ceil((service_start - received).total_seconds() / 60))
+            if service_start is not None and received is not None
+            else None
+        )
+        estimates.append(
+            {
+                "ticket_id": ticket["id"],
+                "received_at": received,
+                "arrival_at": arrival,
+                "service_start_at": service_start,
+                "service_end_at": service_end,
+                "reaction_to_arrival_minutes": arrival_minutes,
+                "reaction_to_service_start_minutes": service_minutes,
+                "within_60_minutes_to_arrival": (
+                    arrival_minutes <= 60 if arrival_minutes is not None else None
+                ),
+                "within_120_minutes_to_arrival": (
+                    arrival_minutes <= 120 if arrival_minutes is not None else None
+                ),
+                "service_deadline_at": deadline,
+                "service_deadline_met": (
+                    service_end <= deadline
+                    if service_end is not None and deadline is not None
+                    else None
+                ),
+                "status": (
+                    "scheduled"
+                    if stop is not None
+                    else "received_at_missing"
+                    if received is None
+                    else "unassigned"
+                ),
+                "unassigned_reason": unassigned.get(ticket["id"]),
+            }
+        )
+    return estimates
+
+
+def _experiment_summary(public: dict) -> dict:
+    return {
+        "outcome": public["outcome"],
+        "metrics": public["metrics"],
+        "routes": public["routes"],
+        "unassigned": public["unassigned"],
+        "warnings": public["warnings"],
+        "replan_diff": public.get("replan_diff"),
+    }
+
+
+async def compare_window_experiment(
+    engine,
+    request,
+    windows,
+    actor,
+    settings,
+    provider_factory,
+    planner,
+    clock=utc_now,
+    *,
+    snapshot,
+):
+    """Run two non-persisted calculations over the same captured input snapshot."""
+    scenario_snapshot = snapshot_with_experimental_windows(snapshot, windows, request.route_date)
+    original_tickets = {ticket["id"]: ticket for ticket in snapshot["tickets"]}
+    baseline = await preview(
+        engine,
+        request,
+        actor,
+        settings,
+        provider_factory,
+        planner,
+        clock,
+        snapshot_override=snapshot,
+        persist=False,
+    )
+    experiment = await preview(
+        engine,
+        request,
+        actor,
+        settings,
+        provider_factory,
+        planner,
+        clock,
+        snapshot_override=scenario_snapshot,
+        persist=False,
+    )
+    return {
+        "experimental": True,
+        "applied": False,
+        "service_area_id": request.service_area_id,
+        "route_date": request.route_date,
+        "base_day_revision": snapshot.get("current_day_revision"),
+        "window_overrides": [
+            {
+                "ticket_id": window.ticket_id,
+                "original_visit_window_start": original_tickets[window.ticket_id][
+                    "visit_window_start"
+                ],
+                "original_visit_window_end": original_tickets[window.ticket_id][
+                    "visit_window_end"
+                ],
+                "scenario_visit_window_start": window.visit_window_start,
+                "scenario_visit_window_end": window.visit_window_end,
+            }
+            for window in windows
+        ],
+        "baseline": _experiment_summary(baseline),
+        "experiment": _experiment_summary(experiment),
+    }
 
 
 def plan_workers(session: Session, snapshot: dict) -> list[dict]:

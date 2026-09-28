@@ -1,0 +1,30 @@
+meta {
+  name: Проверить, что эксперимент не изменил окно заявки
+  type: http
+  seq: 27
+}
+
+get {
+  url: {{base_url}}/api/v1/tickets/{{planning_window_experiment_ticket_id}}
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Live окно клиента осталось подтверждённым исходным окном", () => {
+    const ticket = res.getBody();
+    expect(new Date(ticket.visit_window_start).getTime()).to.equal(
+      new Date(bru.getVar("planning_window_original_start")).getTime()
+    );
+    expect(new Date(ticket.visit_window_end).getTime()).to.equal(
+      new Date(bru.getVar("planning_window_original_end")).getTime()
+    );
+  });
+}

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.security import create_access_token
-from app.db.models import DayPlanRevision, Route, ServiceArea, Ticket, TicketAppliance
+from app.db.models import DayPlanRevision, PlanningPlan, Route, ServiceArea, Ticket, TicketAppliance
 from app.db.session import get_session
 from app.main import app
 from app.modules.data_exchange.formats import parse_file, serialize
@@ -145,7 +145,19 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
-    def create_ticket(self, title, *, brigade_id=None):
+    def create_ticket(
+        self,
+        title,
+        *,
+        brigade_id=None,
+        appliance_office_id=None,
+        category="emergency",
+        window=None,
+    ):
+        window_start, window_end = window or (
+            "2030-01-15T11:00:00+03:00",
+            "2030-01-15T17:00:00+03:00",
+        )
         response = self.client.post(
             "/api/v1/tickets",
             json={
@@ -154,12 +166,12 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
                 "title": title,
                 "description": "Аварийная заявка для проверки остатка смены",
                 "work_type_id": self.receipt["id_map"]["work_types"]["1"],
-                "category": "emergency",
-                "priority": 1,
+                "category": category,
+                "priority": 1 if category == "emergency" else 3,
                 "received_at": self.now.isoformat(),
                 "sla_deadline_at": "2030-01-15T18:00:00+03:00",
-                "visit_window_start": "2030-01-15T11:00:00+03:00",
-                "visit_window_end": "2030-01-15T17:00:00+03:00",
+                "visit_window_start": window_start,
+                "visit_window_end": window_end,
                 "estimated_duration_minutes": 30,
             },
             headers=self.headers,
@@ -178,11 +190,75 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
                 TicketAppliance(
                     ticket_id=ticket["id"],
                     appliance_id=self.receipt["id_map"]["appliances"]["1"],
-                    office_id=self.receipt["id_map"]["offices"]["1"],
+                    office_id=appliance_office_id
+                    or self.receipt["id_map"]["offices"]["1"],
                     quantity=1,
                 )
             )
         return ticket
+
+    def test_regular_ticket_uses_only_a_free_gap_and_preserves_published_visits(self):
+        initial = self.apply(self.preview())
+        before = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        previous = {visit["ticket_id"]: visit for visit in before["visits"]}
+        regular = self.create_ticket(
+            "Обычная заявка в свободном интервале",
+            brigade_id=self.receipt["id_map"]["brigades"]["1"],
+            category="repair",
+            window=("2030-01-15T08:00:00+03:00", "2030-01-15T18:00:00+03:00"),
+        )
+
+        response = self.client.post(
+            self.day_url("/replan/preview"),
+            json={"base_day_revision": initial["day_revision"]},
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        proposal = response.json()
+        after_proposed = {visit["ticket_id"]: visit for visit in proposal["replan_diff"]["added"]}
+        self.assertEqual(proposal["replan_diff"]["changed"], [])
+        self.assertEqual(proposal["replan_diff"]["removed"], [])
+        self.assertIn(regular["id"], after_proposed)
+
+        applied = self.apply(proposal)
+        self.assertEqual(applied["day_revision"], initial["day_revision"] + 1)
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        actual = {visit["ticket_id"]: visit for visit in current["visits"]}
+        self.assertIn(regular["id"], actual)
+        for ticket_id, visit in previous.items():
+            with self.subTest(ticket_id=ticket_id):
+                self.assertEqual(actual[ticket_id]["worker_id"], visit["worker_id"])
+                self.assertEqual(actual[ticket_id]["sequence"], visit["sequence"])
+                self.assertEqual(actual[ticket_id]["service_start_at"], visit["service_start_at"])
+
+    def test_regular_ticket_without_a_gap_leaves_current_revision_untouched(self):
+        initial = self.apply(self.preview())
+        before = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        existing_start = before["visits"][0]["service_start_at"]
+        start = datetime.fromisoformat(existing_start)
+        regular = self.create_ticket(
+            "Обычная заявка без свободного интервала",
+            category="repair",
+            window=(start.isoformat(), (start + timedelta(minutes=1)).isoformat()),
+        )
+
+        response = self.client.post(
+            self.day_url("/replan/preview"),
+            json={"base_day_revision": initial["day_revision"]},
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertIn(
+            response.json()["detail"]["code"],
+            {"ordinary_insert_ticket_ineligible", "ordinary_insert_no_gap"},
+        )
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        self.assertEqual(current["revision"], initial["day_revision"])
+        self.assertEqual(current["visits"], before["visits"])
+        with Session(self.engine) as session:
+            ticket = session.get(Ticket, regular["id"])
+            self.assertIsNone(ticket.assigned_worker_id)
 
     def execution_event(
         self, ticket_id, event, revision, key, occurred_at, *, worker_id=None, location_id=None
@@ -342,6 +418,18 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
             emergency["id"],
             [stop["ticket_id"] for route in proposal["routes"] for stop in route["stops"]],
         )
+        response_estimate = next(
+            item
+            for item in proposal["replan_diff"]["emergency_response"]
+            if item["ticket_id"] == emergency["id"]
+        )
+        self.assertEqual(response_estimate["status"], "scheduled")
+        self.assertEqual(
+            datetime.fromisoformat(response_estimate["received_at"]),
+            datetime.fromisoformat(emergency["received_at"]),
+        )
+        self.assertIsNotNone(response_estimate["reaction_to_arrival_minutes"])
+        self.assertIsNotNone(response_estimate["reaction_to_service_start_minutes"])
 
         applied = self.apply(proposal)
         self.assertEqual(applied["day_revision"], initial["day_revision"] + 1)
@@ -385,6 +473,55 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         )
         self.assertEqual(missing_plan.status_code, 404, missing_plan.text)
         self.assertEqual(missing_plan.json()["detail"]["code"], "day_plan_not_found")
+
+    def test_window_experiment_compares_plans_without_persisting_or_changing_live_data(self):
+        initial = self.apply(self.preview())
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        ticket_id = current["visits"][0]["ticket_id"]
+        with Session(self.engine) as session:
+            ticket = session.get(Ticket, ticket_id)
+            original_start = ticket.visit_window_start
+            original_end = ticket.visit_window_end
+            plans_before = session.scalar(select(func.count()).select_from(PlanningPlan))
+
+        response = self.client.post(
+            self.day_url("/window-experiment"),
+            json={
+                "base_day_revision": initial["day_revision"],
+                "allow_partial": True,
+                "windows": [
+                    {
+                        "ticket_id": ticket_id,
+                        "visit_window_start": "2030-01-15T00:00:00+03:00",
+                        "visit_window_end": "2030-01-15T23:59:00+03:00",
+                    }
+                ],
+            },
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        self.assertTrue(result["experimental"])
+        self.assertFalse(result["applied"])
+        self.assertEqual(result["base_day_revision"], initial["day_revision"])
+        self.assertIn("metrics", result["baseline"])
+        self.assertIn("metrics", result["experiment"])
+        self.assertNotIn("plan_id", result["experiment"])
+        with Session(self.engine) as session:
+            ticket = session.get(Ticket, ticket_id)
+            plans_after = session.scalar(select(func.count()).select_from(PlanningPlan))
+            current_revision = session.scalar(
+                select(DayPlanRevision.revision).where(
+                    DayPlanRevision.service_area_id == self.area_id,
+                    DayPlanRevision.route_date == ROUTE_DATE,
+                    DayPlanRevision.is_current.is_(True),
+                )
+            )
+        self.assertEqual(ticket.visit_window_start, original_start)
+        self.assertEqual(ticket.visit_window_end, original_end)
+        self.assertEqual(plans_after, plans_before)
+        self.assertEqual(current_revision, initial["day_revision"])
 
     def test_empty_replan_unassigns_pending_tickets_without_cancelling_them(self):
         initial = self.apply(self.preview())
@@ -648,8 +785,24 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         self.assertEqual(delayed.json()["state"], "in_progress")
 
         self.now = self.now.replace(day=15, hour=7, minute=15)
+        with Session(self.engine) as session:
+            eligible_team = session.execute(
+                text(
+                    """
+                    SELECT member.brigade_id, brigade.office_id
+                    FROM brigade_members AS member
+                    JOIN brigades AS brigade ON brigade.id = member.brigade_id
+                    WHERE member.worker_id <> :active_worker_id
+                    ORDER BY member.worker_id
+                    LIMIT 1
+                    """
+                ),
+                {"active_worker_id": worker_id},
+            ).one()
         emergency = self.create_ticket(
-            "Авария после задержки", brigade_id=self.receipt["id_map"]["brigades"]["1"]
+            "Авария после задержки",
+            brigade_id=eligible_team.brigade_id,
+            appliance_office_id=eligible_team.office_id,
         )
         response = self.client.post(
             self.day_url("/replan/preview"),
@@ -662,14 +815,25 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         self.assertIn(
             emergency["id"],
             [item["ticket_id"] for item in proposal["replan_diff"]["added"]],
+            f"metrics={proposal['metrics']} unassigned={proposal['unassigned']}",
         )
-        worker_route = next(
-            route for route in proposal["routes"] if route["worker_id"] == worker_id
+        self.assertNotIn(
+            worker_id,
+            [route["worker_id"] for route in proposal["routes"]],
+            "an ETA is informative but not a confirmed safe point for a new route",
         )
-        self.assertEqual(worker_route["start_location_id"], destination_id)
-        self.assertGreaterEqual(
-            datetime.fromisoformat(worker_route["departure_at"]),
-            datetime.fromisoformat("2030-01-15T12:00:00+03:00"),
+        excluded = next(
+            worker for worker in proposal["excluded_workers"] if worker["worker_id"] == worker_id
+        )
+        self.assertEqual(excluded["reason"]["code"], "active_stage_not_completed")
+        response_estimate = next(
+            item
+            for item in proposal["replan_diff"]["emergency_response"]
+            if item["ticket_id"] == emergency["id"]
+        )
+        self.assertEqual(
+            datetime.fromisoformat(response_estimate["received_at"]),
+            datetime.fromisoformat(emergency["received_at"]),
         )
 
         applied = self.apply(proposal)
