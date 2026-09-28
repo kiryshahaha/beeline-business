@@ -20,7 +20,7 @@ class PreviewRequest(BaseModel):
     base_day_revision: PositiveInt32 | None = None
     route_end: Literal["open", "return_to_start", "specific_finish"] | None = None
     ticket_ids: list[PositiveInt32] = Field(min_length=1, max_length=100)
-    worker_ids: list[PositiveInt32] = Field(min_length=1, max_length=20)
+    worker_ids: list[PositiveInt32] = Field(min_length=1, max_length=50)
     allow_partial: bool = Field(default=True, strict=True)
 
     @model_validator(mode="after")
