@@ -44,6 +44,8 @@ TICKET_READ_EXAMPLE = {
     **TICKET_CREATE_EXAMPLE,
     "work_type": "Настройка сети",
     "id": 1,
+    "brigade_id": 1,
+    "district": "Невский район",
     "assigned_worker_id": 2,
     "is_pinned": False,
     "state": "waiting_assignment",
@@ -201,6 +203,14 @@ class TicketAssignmentUpdate(BaseModel):
     )
 
 
+class TicketBrigadeUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    brigade_id: PositiveInt32 | None = Field(
+        description="ID бригады этого участка или null, чтобы вернуть заявку диспетчеру."
+    )
+
+
 class AssignmentPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -259,6 +269,8 @@ class TicketRead(TicketFields):
     model_config = ConfigDict(json_schema_extra={"examples": [TICKET_READ_EXAMPLE]})
 
     id: int
+    brigade_id: PositiveInt32 | None = None
+    district: str | None = None
     work_type: str | None = None
     work_type_id: int | None = None
     category: TicketCategory

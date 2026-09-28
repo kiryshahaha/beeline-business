@@ -213,7 +213,10 @@ def get_schedule(
         )
         scoped = office_id is not None or foreman_id is not None
         area_ids = sorted(set(office_areas.values())) if scoped else None
-        open_tickets = repository.find_unassigned_tickets(session, day_start, day_end, area_ids)
+        visible_brigade_ids = [row["id"] for row in brigades] if foreman_id is not None else None
+        open_tickets = repository.find_unassigned_tickets(
+            session, day_start, day_end, area_ids, brigade_ids=visible_brigade_ids
+        )
         visible_areas = set(office_areas.values()) | {
             row["service_area_id"]
             for row in [*members, *unassigned]

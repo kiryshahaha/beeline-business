@@ -65,6 +65,7 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
         worker = data["workers"][i % workers]
         ticket.update(
             service_area_id=101,
+            brigade_id=members[worker["user_id"]],
             status="planned",
             lifecycle_state="waiting_assignment",
             revision=1,

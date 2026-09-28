@@ -3,10 +3,12 @@
 import math
 from datetime import datetime
 
+from pydantic import ValidationError
+
 from app.modules.planning.async_utils import bounded_map
 from app.modules.planning.errors import PlanningError
-from app.modules.planning.policy import execution_policy
-from app.modules.planning.solver_contract import SolveRequest
+from app.modules.planning.policy import ExecutionPolicy, execution_policy
+from app.modules.planning.solver_contract import OBJECTIVE_RANGE_ERROR, SolveRequest
 
 
 def _minute_offset(value, epoch, *, round_up: bool) -> int:
@@ -17,6 +19,9 @@ def _minute_offset(value, epoch, *, round_up: bool) -> int:
 
 async def build_problem(prepared: dict, provider, settings) -> tuple[SolveRequest, list[dict]]:
     policy = prepared.get("policy") or execution_policy(settings)
+    if not isinstance(policy, ExecutionPolicy):
+        # Older recorded rules can be applied as saved, never solved again.
+        raise PlanningError("planning_policy_unsupported", 409)
     open_end: bool = prepared.get("open_end", False)
     route_end = prepared.get("route_end")
     if route_end in ("return_to_start", "return_to_brigade_office"):
@@ -130,7 +135,7 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
     worker_id_to_vehicle_id = {
         w.get("user_id", w.get("worker_id")): i for i, w in enumerate(workers)
     }
-    request = SolveRequest(
+    request = solve_request(
         policy_version=policy.policy_version,
         num_vehicles=v,
         starts=starts,
@@ -155,8 +160,10 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
                     if ticket.get("sla_deadline_at")
                     else None
                 ),
-                "previous_vehicle_id": worker_id_to_vehicle_id.get(
-                    ticket.get("assigned_worker_id")
+                "previous_vehicle_id": (
+                    worker_id_to_vehicle_id.get(ticket["assigned_worker_id"])
+                    if ticket.get("assigned_worker_id") is not None
+                    else None
                 ),
             }
             for ticket in tickets
@@ -166,3 +173,12 @@ async def build_problem(prepared: dict, provider, settings) -> tuple[SolveReques
         search_time_limit_s=policy.search_time_limit_seconds,
     )
     return request, nodes
+
+
+def solve_request(**fields) -> SolveRequest:
+    try:
+        return SolveRequest(**fields)
+    except ValidationError as error:
+        if any(OBJECTIVE_RANGE_ERROR in item["msg"] for item in error.errors()):
+            raise PlanningError("planning_limit_exceeded", limit="objective_cost_range") from error
+        raise

@@ -40,6 +40,9 @@ tests {
     expect(b.outcome).to.equal("complete");
     expect(b.metrics.assigned_tickets).to.equal(24);
     expect(b.metrics.used_workers).to.equal(b.routes.length);
+    expect(Object.keys(b.objective_components).sort()).to.eql([...b.planning_policy.objective_order].sort());
+    expect(b.objective_components.unassigned_total).to.equal(0);
+    expect(b.objective_components.active_workers).to.equal(b.routes.length);
     expect(b.resource_estimate).to.equal(null);
     expect(b.routes.flatMap(r => r.stops)).to.have.lengthOf(24);
     for (const s of b.routes.flatMap(r => r.stops)) {

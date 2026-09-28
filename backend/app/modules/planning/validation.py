@@ -1,7 +1,11 @@
-"""Independently validate every solver-selected transition before publishing a plan."""
+"""Independently validate every solver-selected transition before publishing a plan.
+
+The objective breakdown is measured again from the checked routes; the solver's
+components, weights and total cost must match it exactly.
+"""
 
 from app.modules.planning.errors import PlanningError
-from app.modules.planning.solver_contract import SolveRequest, SolveResponse
+from app.modules.planning.solver_contract import ObjectiveComponents, SolveRequest, SolveResponse
 
 
 def validate_solution(problem: SolveRequest, solution: SolveResponse) -> None:
@@ -12,6 +16,7 @@ def validate_solution(problem: SolveRequest, solution: SolveResponse) -> None:
     depots = set(problem.starts) | set(problem.ends)
     tasks = set(range(len(problem.time_windows))) - depots
     ticket_policy_by_node = dict(zip(sorted(tasks), problem.ticket_policies, strict=True))
+    response_minutes = active_workers = reassigned = 0
     try:
         for route in solution.routes:
             v = route.vehicle_id
@@ -63,6 +68,10 @@ def validate_solution(problem: SolveRequest, solution: SolveResponse) -> None:
                         > ticket_policy.sla_deadline_at
                     ):
                         raise ValueError
+                    if ticket_policy.category == "emergency":
+                        response_minutes += b.arrival_time - ticket_policy.received_at
+                    if ticket_policy.previous_vehicle_id not in (None, v):
+                        reassigned += 1
             if (distance, travel, service, waiting) != (
                 route.distance,
                 route.travel_minutes,
@@ -70,10 +79,28 @@ def validate_solution(problem: SolveRequest, solution: SolveResponse) -> None:
                 route.waiting_minutes,
             ):
                 raise ValueError
+            active_workers += len(steps) > 2
         dropped = set(solution.dropped_nodes)
         if len(dropped) != len(solution.dropped_nodes) or seen & dropped or seen | dropped != tasks:
             raise ValueError
         if solution.total_distance != sum(r.distance for r in solution.routes):
+            raise ValueError
+        categories = [ticket_policy_by_node[node].category for node in dropped]
+        measured = ObjectiveComponents(
+            unassigned_emergencies=categories.count("emergency"),
+            emergency_response_minutes=response_minutes,
+            unassigned_connections=categories.count("connection"),
+            unassigned_total=len(dropped),
+            active_workers=active_workers,
+            travel_minutes=sum(r.travel_minutes for r in solution.routes),
+            reassigned_visits=reassigned,
+        )
+        weights = problem.objective_weights()
+        if (
+            solution.objective_components != measured
+            or solution.objective_weights != weights
+            or solution.total_cost != weights.cost(measured)
+        ):
             raise ValueError
     except (ValueError, IndexError, KeyError) as error:
         raise PlanningError("planner_invalid_response", 502) from error

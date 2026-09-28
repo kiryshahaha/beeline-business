@@ -18,6 +18,10 @@ assert {
   res.status: eq 200
 }
 
+script:post-response {
+  bru.setVar("ticket_service_area_id", res.getBody().service_area_id);
+}
+
 tests {
   test("Вернулась запрошенная заявка с адресом", function () {
     const ticket = res.getBody();

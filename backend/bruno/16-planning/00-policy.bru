@@ -20,8 +20,13 @@ assert {
 tests {
   test("Контракт кейса не выдан за активную конфигурацию solver", () => {
     const body = res.getBody();
-    expect(body.execution.policy_version).to.equal(1);
-    expect(body.execution.priority).to.equal("category_and_numeric_priority_penalties");
+    expect(body.execution.policy_version).to.equal(2);
+    expect(body.execution.priority).to.equal("emergency_then_connection_then_repair_or_additional");
+    expect(body.execution.objective_order).to.eql([
+      "unassigned_emergencies", "emergency_response_minutes", "unassigned_connections",
+      "unassigned_total", "active_workers", "travel_minutes", "reassigned_visits"
+    ]);
+    expect(body.execution).to.not.have.property("vehicle_fixed_cost");
     expect(body.case_contract.activation).to.equal("contract_only");
     expect(body.case_contract.objective_order[0]).to.equal("unassigned_emergencies");
     const covered = new Set(body.case_contract.rules.flatMap(r => r.acceptance));

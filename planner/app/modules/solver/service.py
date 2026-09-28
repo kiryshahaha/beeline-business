@@ -1,4 +1,10 @@
-"""Mixed-profile VRPTW with explicit eligibility and conservative time arithmetic."""
+"""Mixed-profile VRPTW with explicit eligibility and conservative time arithmetic.
+
+The objective is the lexicographic policy of SolveRequest.objective_weights: every
+weight exceeds the largest possible sum of all lower components, so the weighted
+sum ranks schedules in policy order. The search is heuristic and time limited; a
+FEASIBLE answer is the best schedule found, not a proven optimum.
+"""
 
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
@@ -10,23 +16,16 @@ from app.modules.solver.schemas import (
     Step,
 )
 
-W_CHANGE = 1
-W_TRAVEL = 1
-W_VEHICLE = 100_000
-W_DROP_TOTAL = 10_000_000
-W_DROP_CONN = 1_000_000_000
-W_DELAY_EMERG = 100_000_000_000
-W_DROP_EMERG = 30_000_000_000_000_000
-
 
 def solve(data: SolveRequest) -> SolveResponse:
     n = len(data.time_windows)
     manager = pywrapcp.RoutingIndexManager(n, data.num_vehicles, data.starts, data.ends)
     routing = pywrapcp.RoutingModel(manager)
+    weights = data.objective_weights()
     time_callbacks = {}
 
-    tasks = sorted(set(range(n)) - (set(data.starts) | set(data.ends)))
-    task_index_to_position = {node: i for i, node in enumerate(tasks)}
+    tasks = data.task_nodes()
+    policies = dict(zip(tasks, data.ticket_policies, strict=True))
 
     def make_time_callback(profile: str):
         matrix = data.matrices[profile].time_minutes
@@ -48,14 +47,14 @@ def solve(data: SolveRequest) -> SolveResponse:
             travel = matrix[a][b]
             if travel is None:
                 return data.time_capacity + 1
-            cost = travel * W_TRAVEL
-            if b in task_index_to_position:
-                policy = data.ticket_policies[task_index_to_position[b]]
-                if (
-                    policy.previous_vehicle_id is not None
-                    and policy.previous_vehicle_id != vehicle_id
-                ):
-                    cost += W_CHANGE
+            cost = travel * weights.travel_minutes
+            policy = policies.get(b)
+            if (
+                policy is not None
+                and policy.previous_vehicle_id is not None
+                and policy.previous_vehicle_id != vehicle_id
+            ):
+                cost += weights.reassigned_visits
             return cost
 
         return callback
@@ -72,29 +71,29 @@ def solve(data: SolveRequest) -> SolveResponse:
     )
     dimension = routing.GetDimensionOrDie("Time")
 
-    cost_callbacks = []
     for v, profile in enumerate(data.vehicle_profiles):
-        cb = routing.RegisterTransitCallback(make_cost_callback(profile, v))
-        cost_callbacks.append(cb)
-        routing.SetArcCostEvaluatorOfVehicle(cb, v)
-        routing.SetFixedCostOfVehicle(W_VEHICLE, v)
+        routing.SetArcCostEvaluatorOfVehicle(
+            routing.RegisterTransitCallback(make_cost_callback(profile, v)), v
+        )
+        # Charged only when the route serves at least one visit.
+        routing.SetFixedCostOfVehicle(weights.active_workers, v)
         a, b = data.vehicle_time_windows[v]
         dimension.CumulVar(routing.Start(v)).SetRange(a, b)
         dimension.CumulVar(routing.End(v)).SetRange(a, b)
 
-    for task_position, node in enumerate(tasks):
+    for node in tasks:
         index = manager.NodeToIndex(node)
+        policy = policies[node]
         lower, upper = data.time_windows[node]
-        ticket_policy = data.ticket_policies[task_position]
-        lower = max(lower, ticket_policy.received_at)
-        if ticket_policy.sla_deadline_at is not None:
-            upper = min(upper, ticket_policy.sla_deadline_at - data.service_times[node])
+        lower = max(lower, policy.received_at)
+        if policy.sla_deadline_at is not None:
+            upper = min(upper, policy.sla_deadline_at - data.service_times[node])
 
-        penalty = W_DROP_TOTAL
-        if ticket_policy.category == "emergency":
-            penalty += W_DROP_EMERG
-        elif ticket_policy.category == "connection":
-            penalty += W_DROP_CONN
+        penalty = weights.unassigned_total
+        if policy.category == "emergency":
+            penalty += weights.unassigned_emergencies
+        elif policy.category == "connection":
+            penalty += weights.unassigned_connections
 
         routing.AddDisjunction([index], penalty)
         if lower > upper:
@@ -102,8 +101,11 @@ def solve(data: SolveRequest) -> SolveResponse:
         else:
             dimension.CumulVar(index).SetRange(lower, upper)
 
-        if ticket_policy.category == "emergency":
-            dimension.SetCumulVarSoftUpperBound(index, ticket_policy.received_at, W_DELAY_EMERG)
+        if policy.category == "emergency":
+            # Every minute between receipt and service start is response delay.
+            dimension.SetCumulVarSoftUpperBound(
+                index, policy.received_at, weights.emergency_response_minutes
+            )
 
         allowed = data.allowed_vehicles[str(node)]
         if not allowed:
@@ -132,11 +134,7 @@ def solve(data: SolveRequest) -> SolveResponse:
         )
 
     routes = []
-    dropped_emergencies = 0
-    emergency_delays = 0
-    dropped_connections = 0
-    active_vehicles = 0
-    changed_assignments = 0
+    response_minutes = active_workers = reassigned = 0
 
     for vehicle in range(data.num_vehicles):
         matrix = data.matrices[data.vehicle_profiles[vehicle]]
@@ -170,18 +168,17 @@ def solve(data: SolveRequest) -> SolveResponse:
             waiting += wait
             steps.append(Step(node=node, arrival_time=arrival))
 
-            if node in task_index_to_position:
-                policy = data.ticket_policies[task_index_to_position[node]]
-                if policy.previous_vehicle_id is not None and policy.previous_vehicle_id != vehicle:
-                    changed_assignments += 1
+            policy = policies.get(node)
+            if policy is not None:
+                if policy.previous_vehicle_id not in (None, vehicle):
+                    reassigned += 1
                 if policy.category == "emergency":
-                    delay = max(0, arrival - policy.received_at)
-                    emergency_delays += delay
+                    response_minutes += arrival - policy.received_at
 
             previous = node
 
         if len(steps) > 2:
-            active_vehicles += 1
+            active_workers += 1
 
         routes.append(
             Route(
@@ -199,23 +196,18 @@ def solve(data: SolveRequest) -> SolveResponse:
         for node in tasks
         if assignment.Value(routing.NextVar(manager.NodeToIndex(node))) == manager.NodeToIndex(node)
     ]
-
-    for node in dropped:
-        policy = data.ticket_policies[task_index_to_position[node]]
-        if policy.category == "emergency":
-            dropped_emergencies += 1
-        elif policy.category == "connection":
-            dropped_connections += 1
-
+    dropped_categories = [policies[node].category for node in dropped]
     components = ObjectiveComponents(
-        dropped_emergencies=dropped_emergencies,
-        emergency_delays=emergency_delays,
-        dropped_connections=dropped_connections,
-        dropped_total=len(dropped),
-        active_vehicles=active_vehicles,
-        travel_time=sum(route.travel_minutes for route in routes),
-        changed_assignments=changed_assignments,
+        unassigned_emergencies=dropped_categories.count("emergency"),
+        emergency_response_minutes=response_minutes,
+        unassigned_connections=dropped_categories.count("connection"),
+        unassigned_total=len(dropped),
+        active_workers=active_workers,
+        travel_minutes=sum(route.travel_minutes for route in routes),
+        reassigned_visits=reassigned,
     )
+    if assignment.ObjectiveValue() != weights.cost(components):
+        raise RuntimeError("Solver objective does not match its components")
 
     return SolveResponse(
         contract_version=2,
@@ -226,4 +218,5 @@ def solve(data: SolveRequest) -> SolveResponse:
         total_cost=assignment.ObjectiveValue(),
         total_distance=sum(route.distance for route in routes),
         objective_components=components,
+        objective_weights=weights,
     )

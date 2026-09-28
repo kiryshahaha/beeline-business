@@ -127,6 +127,7 @@ class ScheduleBrigade(BaseModel):
 
 class ScheduleUnassignedTicket(BaseModel):
     id: int
+    brigade_id: int | None = None
     title: str
     work_type: str | None
     category: TicketCategory

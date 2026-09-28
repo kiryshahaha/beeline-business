@@ -7,7 +7,22 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 Minute = Annotated[int, Field(strict=True, ge=0, le=2880)]
 Index = Annotated[int, Field(strict=True, ge=0, le=1000)]
 Cost = Annotated[int, Field(strict=True, ge=0, le=9_000_000_000_000_000_000)]
+Weight = Annotated[int, Field(strict=True, ge=1, le=9_000_000_000_000_000_000)]
 MinuteOffset = Annotated[int, Field(strict=True, ge=-2_147_483_648, le=2_147_483_647)]
+
+# Policy version 2 minimizes these components lexicographically, most important first.
+OBJECTIVE_ORDER = (
+    "unassigned_emergencies",
+    "emergency_response_minutes",
+    "unassigned_connections",
+    "unassigned_total",
+    "active_workers",
+    "travel_minutes",
+    "reassigned_visits",
+)
+# Headroom below int64 for sums OR-Tools forms during the search.
+OBJECTIVE_COST_LIMIT = 2**62
+OBJECTIVE_RANGE_ERROR = "Objective weights exceed the 64-bit cost range"
 
 
 class StrictModel(BaseModel):
@@ -28,9 +43,39 @@ class TicketPolicy(StrictModel):
     previous_vehicle_id: Annotated[int, Field(strict=True, ge=0, le=19)] | None = None
 
 
+class ObjectiveComponents(StrictModel):
+    """Measured values of one schedule, named and ordered as OBJECTIVE_ORDER.
+
+    Response minutes are summed over served emergencies from received_at to the
+    service start. An empty route is not an active worker. A reassigned visit is
+    served by another vehicle than its previous_vehicle_id.
+    """
+
+    unassigned_emergencies: Cost
+    emergency_response_minutes: Cost
+    unassigned_connections: Cost
+    unassigned_total: Cost
+    active_workers: Cost
+    travel_minutes: Cost
+    reassigned_visits: Cost
+
+
+class ObjectiveWeights(StrictModel):
+    unassigned_emergencies: Weight
+    emergency_response_minutes: Weight
+    unassigned_connections: Weight
+    unassigned_total: Weight
+    active_workers: Weight
+    travel_minutes: Weight
+    reassigned_visits: Weight
+
+    def cost(self, components: ObjectiveComponents) -> int:
+        return sum(getattr(self, name) * getattr(components, name) for name in OBJECTIVE_ORDER)
+
+
 class SolveRequest(StrictModel):
     contract_version: Literal[2] = 2
-    policy_version: Literal[1] = 1
+    policy_version: Literal[2] = 2
     num_vehicles: Annotated[int, Field(strict=True, ge=1, le=20)]
     starts: list[Index]
     ends: list[Index]
@@ -43,9 +88,50 @@ class SolveRequest(StrictModel):
     ticket_policies: list[TicketPolicy]
     time_capacity: Annotated[int, Field(strict=True, ge=1, le=2880)]
     slack_max: Minute
-    vehicle_fixed_cost: Annotated[int, Field(strict=True, ge=0, le=0)] = 0
     search_time_limit_s: Annotated[int, Field(strict=True, ge=1, le=10)] = 5
     open_end: bool = False
+
+    def task_nodes(self) -> list[int]:
+        """Task nodes in ascending order; ticket_policies follow the same order."""
+        return sorted(set(range(len(self.time_windows))) - set(self.starts) - set(self.ends))
+
+    def objective_bounds(self) -> dict[str, int]:
+        """The largest value each component can reach in any schedule of this problem."""
+        emergencies = connections = response = reassignable = 0
+        for node, policy in zip(self.task_nodes(), self.ticket_policies, strict=True):
+            if policy.category == "emergency":
+                emergencies += 1
+                latest = self.time_windows[node][1]
+                if policy.sla_deadline_at is not None:
+                    latest = min(latest, policy.sla_deadline_at - self.service_times[node])
+                response += max(0, latest - policy.received_at)
+            elif policy.category == "connection":
+                connections += 1
+            reassignable += policy.previous_vehicle_id is not None
+        return {
+            "unassigned_emergencies": emergencies,
+            "emergency_response_minutes": response,
+            "unassigned_connections": connections,
+            "unassigned_total": len(self.ticket_policies),
+            "active_workers": self.num_vehicles,
+            # A route's travel fits between its start and end inside the vehicle window.
+            "travel_minutes": sum(end - start for start, end in self.vehicle_time_windows),
+            "reassigned_visits": reassignable,
+        }
+
+    def objective_weights(self) -> ObjectiveWeights:
+        """Each weight exceeds the largest possible sum of all lower components.
+
+        One unit of a higher component then outweighs any change below it, so the
+        weighted sum orders schedules exactly as the lexicographic policy does.
+        """
+        bounds, weights, lower = self.objective_bounds(), {}, 0
+        for name in reversed(OBJECTIVE_ORDER):
+            weights[name] = lower + 1
+            lower += weights[name] * bounds[name]
+        if lower > OBJECTIVE_COST_LIMIT:
+            raise ValueError(OBJECTIVE_RANGE_ERROR)
+        return ObjectiveWeights(**weights)
 
     @model_validator(mode="after")
     def validate_problem(self) -> Self:
@@ -90,6 +176,8 @@ class SolveRequest(StrictModel):
         for policy in self.ticket_policies:
             if policy.sla_deadline_at is not None and policy.sla_deadline_at <= policy.received_at:
                 raise ValueError("SLA deadline must be later than received_at")
+            if policy.previous_vehicle_id is not None and policy.previous_vehicle_id >= v:
+                raise ValueError("Previous vehicle outside num_vehicles")
         if set(self.allowed_vehicles) != {str(i) for i in tasks}:
             raise ValueError("Explicit eligibility is required for every task, only tasks")
         for allowed in self.allowed_vehicles.values():
@@ -107,6 +195,7 @@ class SolveRequest(StrictModel):
                         matrix.distance_meters[i][j] is None
                     ):
                         raise ValueError("Unreachable time and distance must both be null")
+        self.objective_weights()
         return self
 
 
@@ -124,16 +213,6 @@ class Route(StrictModel):
     waiting_minutes: Cost
 
 
-class ObjectiveComponents(StrictModel):
-    dropped_emergencies: Cost
-    emergency_delays: Cost
-    dropped_connections: Cost
-    dropped_total: Cost
-    active_vehicles: Cost
-    travel_time: Cost
-    changed_assignments: Cost
-
-
 class SolveResponse(StrictModel):
     contract_version: Literal[2] = 2
     status: Literal["FEASIBLE", "OPTIMAL", "INFEASIBLE", "NOT_SOLVED"]
@@ -143,3 +222,4 @@ class SolveResponse(StrictModel):
     total_cost: Cost = 0
     total_distance: Cost = 0
     objective_components: ObjectiveComponents | None = None
+    objective_weights: ObjectiveWeights | None = None

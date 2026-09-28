@@ -127,7 +127,11 @@ class PlanReportApiTests(CommittedDatabaseTestCase):
         self.assertEqual(summary["state"].value, "ready")
         self.assertEqual(summary["outcome"].value, "partial")
         self.assertEqual(summary["route_date"].value, plan["route_date"])
-        self.assertEqual(summary["objective_order"].value, "unassigned_total > travel_minutes")
+        self.assertEqual(
+            summary["objective_order"].value,
+            "unassigned_emergencies > emergency_response_minutes > unassigned_connections"
+            " > unassigned_total > active_workers > travel_minutes > reassigned_visits",
+        )
         for name, value in plan["metrics"].items():
             if name in {"unassigned_by_category", "routing"}:
                 continue

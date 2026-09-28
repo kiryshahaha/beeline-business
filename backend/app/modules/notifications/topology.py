@@ -1,12 +1,14 @@
-"""Which process delivers live notifications.
+"""Which process delivers live notifications and transient schedule signals.
 
-Supported mode: one backend process delivers WebSocket events, and a client that was
-offline or reconnects catches up from the stored history (`last_event_id`). There is no
-shared channel between processes, so a second process must not pretend to deliver:
-it would claim events, find no local socket and the recipient connected to the first
-process would silently get nothing.
+Supported mode: one backend process owns live WebSocket connections for durable
+notifications, and an offline client catches up from stored history via last_event_id.
+Those per-user events do not have a shared socket channel, so secondary processes must
+refuse new sockets. Transient schedule refresh signals use a separate PostgreSQL
+LISTEN/NOTIFY channel.
 
 The delivery role is a PostgreSQL session advisory lock held on a dedicated connection.
+The role also listens for committed schedule updates from other API processes through
+PostgreSQL LISTEN/NOTIFY.
 Only the holder runs the dispatcher and accepts WebSocket connections; another process
 closes new sockets with 1013 ("try again later"), so the client reconnects — possibly
 to the delivery process — and replays what it missed. If the holder's connection drops,
@@ -20,6 +22,7 @@ from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core import oplog
+from app.modules.notifications.schedule_updates import SCHEDULE_UPDATE_CHANNEL
 
 DELIVERY_LOCK_KEY = (17321, 2)
 
@@ -43,6 +46,9 @@ class DeliveryLease:
                 {"space": DELIVERY_LOCK_KEY[0], "key": DELIVERY_LOCK_KEY[1]},
             ).scalar_one()
             connection.commit()
+            if granted:
+                connection.execute(text(f"LISTEN {SCHEDULE_UPDATE_CHANNEL}"))
+                connection.commit()
         except Exception:
             connection.close()
             raise
@@ -66,6 +72,14 @@ class DeliveryLease:
             self._drop()
             oplog.log("notifications.delivery_role", logging.ERROR, role="lost")
             return False
+
+    def wait_for_schedule_update(self, timeout: float) -> bool:
+        """Wait for another backend process to commit a schedule revision."""
+        if self._connection is None:
+            return False
+        driver_connection = self._connection.connection.driver_connection
+        notifications = driver_connection.notifies(timeout=timeout, stop_after=1)
+        return next(notifications, None) is not None
 
     def release(self) -> None:
         if self._connection is None:

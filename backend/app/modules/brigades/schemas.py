@@ -62,6 +62,7 @@ class BrigadeRead(BaseModel):
     foreman_id: PositiveInt32
     office_id: PositiveInt32
     division_id: PositiveInt32
+    service_area_id: PositiveInt32
     worker_ids: list[PositiveInt32]
     created_at: AwareDatetime
     updated_at: AwareDatetime

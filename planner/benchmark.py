@@ -59,7 +59,7 @@ def generate_synthetic_problem(
 
     return {
         "contract_version": 2,
-        "policy_version": 1,
+        "policy_version": 2,
         "num_vehicles": n_vehicles,
         "starts": list(range(n_vehicles)),
         "ends": list(range(n_vehicles)),
@@ -77,7 +77,6 @@ def generate_synthetic_problem(
         "ticket_policies": ticket_policies,
         "time_capacity": horizon,
         "slack_max": 120,
-        "vehicle_fixed_cost": 0,
         "search_time_limit_s": time_limit_s,
         "open_end": False,
     }

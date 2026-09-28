@@ -8,7 +8,9 @@ from app.modules.notifications.enums import NotificationKind
 # Shared columns and joins keep single-ticket and list responses identical.
 TICKET_SELECT_SQL = """
     SELECT
-        t.id, t.location_id, t.service_area_id, t.title, t.description,
+        t.id, t.location_id, COALESCE(t.service_area_id, b.service_area_id) AS service_area_id,
+        t.brigade_id, COALESCE(ticket_district.name, ticket_area.name) AS district,
+        t.title, t.description,
         COALESCE(wt.name, t.work_type) AS work_type,
         t.work_type_id, t.category, t.priority,
         t.received_at, t.sla_deadline_at, t.required_transport_type, t.service_duration_source,
@@ -29,7 +31,8 @@ TICKET_SELECT_SQL = """
         t.created_at, t.updated_at,
         t.assigned_worker_id, t.is_pinned,
         c.id AS city_id, c.name AS city,
-        sa.id AS service_area_id, COALESCE(d.name, sa.name) AS district,
+        location_area.id AS location_service_area_id,
+        COALESCE(location_district.name, location_area.name) AS location_district,
         s.id AS street_id, s.name AS street,
         b.id AS building_id, b.number AS building_number, b.block,
         l.entrance_id, e.number AS entrance_number,
@@ -40,19 +43,32 @@ TICKET_SELECT_SQL = """
     JOIN buildings AS b ON b.id = l.building_id
     JOIN streets AS s ON s.id = b.street_id
     JOIN cities AS c ON c.id = s.city_id
-    JOIN service_areas AS sa ON sa.id = b.service_area_id
-    LEFT JOIN districts AS d ON sa.code = 'district_' || d.id
+    JOIN service_areas AS location_area ON location_area.id = b.service_area_id
+    LEFT JOIN districts AS location_district
+        ON location_area.code = 'district_' || location_district.id
+    LEFT JOIN service_areas AS ticket_area
+        ON ticket_area.id = COALESCE(t.service_area_id, b.service_area_id)
+    LEFT JOIN districts AS ticket_district
+        ON ticket_area.code = 'district_' || ticket_district.id
     LEFT JOIN entrances AS e ON e.id = l.entrance_id
 """
 
 # Reused by list, detail, and comment access checks; t is always the ticket alias.
 FOREMAN_VISIBILITY_SQL = """
-    EXISTS (
+    (
+        EXISTS (
+            SELECT 1
+            FROM brigades AS target_brigade
+            WHERE target_brigade.id = t.brigade_id
+              AND target_brigade.foreman_id = :foreman_id
+        )
+        OR EXISTS (
         SELECT 1
         FROM brigade_members AS visible_member
         JOIN brigades AS visible_brigade ON visible_brigade.id = visible_member.brigade_id
         WHERE visible_member.worker_id = t.assigned_worker_id
           AND visible_brigade.foreman_id = :foreman_id
+        )
     )
 """
 
@@ -78,18 +94,127 @@ def find_location_id(session: Session, location_id: int) -> int | None:
     ).scalar_one_or_none()
 
 
+def find_ticket_geocode_source(session: Session, location_id: int) -> RowMapping | None:
+    return (
+        session.execute(
+            text("""
+                SELECT location.latitude, location.longitude, building.service_area_id
+                FROM locations AS location
+                JOIN buildings AS building ON building.id = location.building_id
+                WHERE location.id = :location_id
+            """),
+            {"location_id": location_id},
+        )
+        .mappings()
+        .one_or_none()
+    )
+
+
+def find_service_area_for_district(
+    session: Session, district_name: str, city_name: str | None
+) -> int | None:
+    statement = """
+        SELECT area.id
+        FROM districts AS district
+        JOIN cities AS city ON city.id = district.city_id
+        JOIN service_areas AS area ON area.code = 'district_' || district.id
+        WHERE lower(district.name) = lower(:district_name)
+    """
+    parameters = {"district_name": district_name}
+    if city_name:
+        city_rows = (
+            session.execute(
+                text(statement + " AND lower(city.name) = lower(:city_name)"),
+                parameters | {"city_name": city_name},
+            )
+            .scalars()
+            .all()
+        )
+        if len(city_rows) == 1:
+            return city_rows[0]
+        if city_rows:
+            return None
+
+    matches = session.execute(text(statement), parameters).scalars().all()
+    return matches[0] if len(matches) == 1 else None
+
+
+def find_brigade_ids_for_service_area(session: Session, service_area_id: int) -> list[int]:
+    return list(
+        session.execute(
+            text("""
+                SELECT brigade.id
+                FROM brigades AS brigade
+                JOIN divisions AS division ON division.id = brigade.division_id
+                WHERE division.service_area_id = :service_area_id
+                ORDER BY brigade.id
+            """),
+            {"service_area_id": service_area_id},
+        ).scalars()
+    )
+
+
+def find_brigade_service_area(session: Session, brigade_id: int) -> int | None:
+    return session.execute(
+        text("""
+            SELECT division.service_area_id
+            FROM brigades AS brigade
+            JOIN divisions AS division ON division.id = brigade.division_id
+            WHERE brigade.id = :brigade_id
+        """),
+        {"brigade_id": brigade_id},
+    ).scalar_one_or_none()
+
+
+def find_worker_brigade_id(session: Session, worker_id: int) -> int | None:
+    return session.execute(
+        text("SELECT brigade_id FROM brigade_members WHERE worker_id = :worker_id"),
+        {"worker_id": worker_id},
+    ).scalar_one_or_none()
+
+
+def lock_ticket_brigade_context(session: Session, ticket_id: int) -> RowMapping | None:
+    return (
+        session.execute(
+            text("""
+                SELECT ticket.id, ticket.assigned_worker_id, ticket.brigade_id,
+                       COALESCE(ticket.service_area_id, building.service_area_id) AS service_area_id
+                FROM tickets AS ticket
+                JOIN locations AS location ON location.id = ticket.location_id
+                JOIN buildings AS building ON building.id = location.building_id
+                WHERE ticket.id = :ticket_id
+                FOR UPDATE OF ticket
+            """),
+            {"ticket_id": ticket_id},
+        )
+        .mappings()
+        .one_or_none()
+    )
+
+
+def update_ticket_brigade(session: Session, ticket_id: int, brigade_id: int | None) -> None:
+    session.execute(
+        text("""
+            UPDATE tickets
+            SET brigade_id = :brigade_id, updated_at = now()
+            WHERE id = :ticket_id
+        """),
+        {"ticket_id": ticket_id, "brigade_id": brigade_id},
+    )
+
+
 def add_ticket(session: Session, values: dict[str, object]) -> int:
     return session.execute(
         text("""
             INSERT INTO tickets (
-                location_id, service_area_id, title, description,
+                location_id, service_area_id, brigade_id, title, description,
                 work_type, work_type_id, category, priority,
                 received_at, sla_deadline_at, required_transport_type, service_duration_source,
                 status, lifecycle_state,
                 visit_window_start, visit_window_end, planned_start_at, planned_end_at,
                 estimated_duration_minutes, actual_duration_minutes
             ) VALUES (
-                :location_id, :service_area_id, :title, :description,
+                :location_id, :service_area_id, :brigade_id, :title, :description,
                 :work_type, :work_type_id, :category, :priority,
                 :received_at, :sla_deadline_at, :required_transport_type, :service_duration_source,
                 :status, :lifecycle_state,
@@ -107,7 +232,8 @@ def lock_ticket(session: Session, ticket_id: int) -> RowMapping | None:
         session.execute(
             text("""
                 SELECT id, title, status, lifecycle_state, revision, execution_cycle,
-                       location_id, service_area_id, visit_window_start, visit_window_end,
+                       location_id, service_area_id, brigade_id,
+                       visit_window_start, visit_window_end,
                        planned_start_at, planned_end_at
                 FROM tickets
                 WHERE id = :ticket_id
@@ -287,14 +413,18 @@ def find_tickets(
         conditions.append("b.city_id = :city_id")
         parameters["city_id"] = city_id
     if service_area_id is not None:
-        conditions.append("b.service_area_id = :service_area_id")
+        conditions.append("COALESCE(t.service_area_id, b.service_area_id) = :service_area_id")
         parameters["service_area_id"] = service_area_id
     if brigade_id is not None:
         conditions.append("""
-            EXISTS (
+            (
+                t.brigade_id = :brigade_id OR (
+                    t.brigade_id IS NULL AND EXISTS (
                 SELECT 1 FROM brigade_members AS brigade_member
                     WHERE brigade_member.worker_id = t.assigned_worker_id
                   AND brigade_member.brigade_id = :brigade_id
+                    )
+                )
             )
         """)
         parameters["brigade_id"] = brigade_id

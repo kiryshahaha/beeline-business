@@ -644,6 +644,29 @@ Ruff и форматирование; для этой правки обраще�
 Успех — `201 Created`, сохранённая заявка в теле ответа и заголовок
 `Location: /api/v1/tickets/<выданный id>` для её последующего получения.
 
+Сервер берёт координаты места из `locations.latitude` и `locations.longitude`.
+Когда обе координаты есть и настроен `GEOAPIFY_API_KEY`, он вызывает Geoapify
+Reverse Geocoding и сопоставляет район ответа со справочником. Если район не
+определился или не найден в справочнике, заявка сохраняет район адреса, но остаётся
+без бригады. Без ключа или координат сервер использует район здания. При одной
+бригаде на участке заявка получает её `brigade_id`; при нескольких ID остаётся
+`null`, пока наблюдатель не выберет бригаду вручную.
+
+```http
+PUT /api/v1/tickets/42/brigade
+Authorization: Bearer <observer access token>
+Content-Type: application/json
+
+{"brigade_id": 12}
+```
+
+Выбранная бригада должна обслуживать район заявки, а если исполнитель уже
+назначен — входить в его состав. Передайте `{"brigade_id": null}`, чтобы снять
+выбор у заявки без исполнителя. Сначала снимите назначение, если нужно изменить
+бригаду у заявки, которая уже назначена работнику. Планировщик исключает
+исполнителей других бригад и не назначает заявку, пока в одном районе есть
+несколько бригад и диспетчер не выбрал одну.
+
 Обязательны `location_id`, `title`, `work_type`, обе границы допустимого окна
 и `estimated_duration_minutes`. Можно также передать `description`, `status`,
 `planned_start_at`, `planned_end_at`, `actual_duration_minutes`.
@@ -682,6 +705,7 @@ Ruff и форматирование; для этой правки обраще�
 | `status` | `planned`, `in_progress`, `completed`, `wont_fix` | Без фильтра по статусу |
 | `city_id` | ID города, целое число от 1 до 2147483647 | Без фильтра по городу |
 | `service_area_id` | ID района, целое число от 1 до 2147483647 | Без фильтра по району |
+| `brigade_id` | ID целевой бригады, целое число от 1 до 2147483647 | Без фильтра по бригаде |
 | `limit` | Максимум заявок в ответе, от 1 до 100 | 20 |
 | `offset` | Сколько подходящих заявок пропустить, от 0 до 2147483647 | 0 |
 
@@ -691,6 +715,7 @@ Ruff и форматирование; для этой правки обраще�
 GET /api/v1/tickets
 GET /api/v1/tickets?city_id=1
 GET /api/v1/tickets?service_area_id=2&status=planned
+GET /api/v1/tickets?brigade_id=12&status=planned
 GET /api/v1/tickets?city_id=1&service_area_id=2&status=in_progress&limit=20&offset=0
 ```
 
@@ -718,14 +743,13 @@ GET /api/v1/tickets?city_id=1&service_area_id=2&status=in_progress&limit=20&offs
 4. Общая функция `_ticket_from_row()` собирает `TicketRead` из каждой строки.
    Дополнительного запроса к БД для каждой заявки или части адреса нет.
 
-Например, при передаче всех трёх фильтров к общему `SELECT` добавляется:
+Например, фильтр района проверяет участок заявки с запасным переходом к участку здания:
 
 ```sql
-WHERE t.status = :status AND b.city_id = :city_id AND b.service_area_id = :service_area_id
+WHERE COALESCE(t.service_area_id, b.service_area_id) = :service_area_id
 ORDER BY t.id ASC LIMIT :limit OFFSET :offset
 ```
 
-Для этой ручки миграция не нужна: используются существующие таблицы схемы `0002`.
 В Swagger откройте `GET /api/v1/tickets`, нажмите **Try it out**, задайте фильтры
 и нажмите **Execute**. Выбранный `id` из массива можно проверить через GET по ID.
 
@@ -733,8 +757,10 @@ ORDER BY t.id ASC LIMIT :limit OFFSET :offset
 
 `GET /api/v1/tickets/{id}`, где `id` — целое положительное число. Успех — `200 OK`.
 В Swagger UI раскройте GET и подставьте `ticket_id` из скрипта или `id` из POST.
-POST и GET по ID возвращают одинаковую структуру: все поля заявки, `id`, `created_at`,
-`updated_at` и вложенный объект `location`.
+POST и GET по ID возвращают одинаковую структуру: все поля заявки, включая целевой
+`service_area_id`, `district`, `brigade_id`, `id`, `created_at`, `updated_at` и
+вложенный объект `location`. Район внутри `location` описывает исходный адрес;
+`district` на верхнем уровне отражает участок, который использует заявка.
 
 `location` содержит ID и названия города/района/улицы, ID и номер дома, корпус,
 ID и номер подъезда, этаж, квартиру/помещение, широту, долготу и готовую строку

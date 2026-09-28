@@ -74,7 +74,9 @@ class PlanningBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sum(len(c["sources"]) * len(c["targets"]) for c in calls), 2 * 52 * 52)
         for matrix in problem.matrices.values():
             self.assertTrue(all(value is not None for row in matrix.time_minutes for value in row))
-        self.assertEqual(problem.vehicle_fixed_cost, 0)
+        self.assertEqual(problem.policy_version, 2)
+        self.assertEqual(problem.objective_weights().travel_minutes, 1)
+        self.assertGreater(problem.objective_weights().active_workers, 2 * 1000)
 
     async def test_profiles_keep_directed_times_and_unreachable_arcs(self):
         import json

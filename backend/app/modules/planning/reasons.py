@@ -30,12 +30,19 @@ STATUS = {
     "wont_fix": "отменена",
 }
 OBJECTIVE = {
+    "unassigned_emergencies": "больше назначенных аварий",
+    "emergency_response_minutes": "раньше начало аварий",
+    "unassigned_connections": "больше назначенных подключений",
     "unassigned_total": "больше назначенных заявок",
+    "active_workers": "меньше занятых инженеров",
     "travel_minutes": "меньше минут в пути",
+    "reassigned_visits": "меньше переназначений",
 }
 # Short phrases used when several engineers are rejected for different reasons.
 LABELS = {
     "missing_skill": "нет навыка",
+    "brigade_unresolved": "бригада не выбрана",
+    "brigade_mismatch": "другая бригада",
     "office_mismatch": "оборудование в другом офисе",
     "window_outside_shift": "окно вне смены",
     "service_after_shift_end": "работа не успевает до конца смены",
@@ -429,6 +436,28 @@ def service_area_mismatch(worker_area, ticket_area):
     )
 
 
+def brigade_resolution_required(service_area_id):
+    return explain(
+        "brigade_unresolved",
+        "area",
+        "Диспетчер должен выбрать одну из бригад участка",
+        constraint="ticket_brigade_required_for_ambiguous_area",
+        observed={"service_area_id": service_area_id, "brigade_id": None},
+        required={"brigade_id": "selected"},
+    )
+
+
+def brigade_mismatch(ticket_brigade_id, worker_brigade_id):
+    return explain(
+        "brigade_mismatch",
+        "area",
+        "Исполнитель не входит в выбранную бригаду заявки",
+        constraint="ticket_brigade=worker_brigade",
+        observed={"brigade_id": worker_brigade_id},
+        required={"brigade_id": ticket_brigade_id},
+    )
+
+
 def window_outside_shift(window_start, window_end, shift_start, shift_end, day):
     return explain(
         "window_outside_shift",
@@ -649,7 +678,7 @@ def priority_factor(category, priority):
     return explain(
         "priority_applied",
         "policy",
-        "Категория и численный приоритет заявки учтены при выборе маршрута",
+        "Категория заявки учтена в порядке целей плана: авария, подключение, остальные",
         constraint="priority=emergency_then_connection_then_repair_or_additional",
         observed={"category": category, "priority": priority},
         required={"category_order": ["emergency", "connection", "repair", "additional"]},

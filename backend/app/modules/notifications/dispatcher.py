@@ -13,6 +13,7 @@ from app.modules.notifications import repository
 from app.modules.notifications.connections import connection_manager as default_connection_manager
 from app.modules.notifications.enums import NotificationKind
 from app.modules.notifications.firebase import create_push_gateway
+from app.modules.notifications.schedule_updates import SCHEDULE_UPDATED_EVENT
 from app.modules.notifications.topology import DeliveryLease
 
 logger = logging.getLogger(__name__)
@@ -118,13 +119,31 @@ class NotificationDispatcher:
         """Deliver while this process holds the delivery role; retry taking it otherwise."""
         while True:
             try:
-                if lease is None or await self._still_delivering(lease):
+                delivering = lease is None or await self._still_delivering(lease)
+                if delivering:
                     await self.dispatch_once()
+                if lease is None or not delivering:
+                    await asyncio.sleep(poll_interval_seconds)
+                else:
+                    updated = await self._wait_for_schedule_update(lease, poll_interval_seconds)
+                    if updated:
+                        await self._connections.broadcast(SCHEDULE_UPDATED_EVENT)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception("Notification delivery cycle failed")
-            await asyncio.sleep(poll_interval_seconds)
+                await asyncio.sleep(poll_interval_seconds)
+
+    async def _wait_for_schedule_update(self, lease: DeliveryLease, timeout: float) -> bool:
+        waiter = asyncio.create_task(asyncio.to_thread(lease.wait_for_schedule_update, timeout))
+        try:
+            return await asyncio.shield(waiter)
+        except asyncio.CancelledError:
+            try:
+                await asyncio.shield(waiter)
+            except Exception:
+                pass
+            raise
 
     async def _still_delivering(self, lease: DeliveryLease) -> bool:
         if lease.held and await asyncio.to_thread(lease.alive):

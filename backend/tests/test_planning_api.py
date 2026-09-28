@@ -25,6 +25,7 @@ from app.db.models import (
 )
 from app.db.session import get_session
 from app.main import app
+from app.modules.brigades.models import BrigadeMember
 from app.modules.buildings.models import Building
 from app.modules.data_exchange.formats import parse_file, serialize
 from app.modules.data_exchange.service import import_data
@@ -133,6 +134,30 @@ class PlanningApiTests(CommittedDatabaseTestCase):
             for route in session.scalars(select(Route)):
                 self.assertEqual(route.geojson["features"][-1]["properties"]["source"], "geoapify")
 
+    def test_apply_publishes_schedule_update_once_and_replay_does_not(self):
+        plan = self.preview(allow_partial=False)
+        with patch("app.modules.planning.service.publish_schedule_updated") as publish:
+            applied = self.apply(plan)
+            self.assertEqual(applied.status_code, 200, applied.text)
+            self.assertEqual(publish.call_count, 1)
+
+            replay = self.apply(plan)
+            self.assertTrue(replay.json()["already_applied"])
+            self.assertEqual(publish.call_count, 1)
+
+    def test_rejected_stale_apply_does_not_publish_schedule_update(self):
+        current_plan = self.preview(allow_partial=False)
+        stale_plan = self.preview(allow_partial=False)
+        with patch("app.modules.planning.service.publish_schedule_updated") as publish:
+            applied = self.apply(current_plan)
+            self.assertEqual(applied.status_code, 200, applied.text)
+            self.assertEqual(publish.call_count, 1)
+
+            rejected = self.apply(stale_plan)
+            self.assertEqual(rejected.status_code, 409, rejected.text)
+            self.assertEqual(rejected.json()["detail"]["code"], "plan_stale")
+            self.assertEqual(publish.call_count, 1)
+
     def test_manual_assignment_recalculates_route_revision_when_planner_enabled(self):
         plan = self.preview(allow_partial=False)
         self.assertEqual(self.apply(plan).status_code, 200)
@@ -235,9 +260,31 @@ class PlanningApiTests(CommittedDatabaseTestCase):
             stored = session.get(PlanningPlan, UUID(plan["plan_id"]))
             self.assertEqual(stored.input_snapshot["planning_policy"], recorded)
             self.assertEqual(stored.result_snapshot["problem"]["search_time_limit_s"], 2)
-            self.assertEqual(stored.result_snapshot["problem"]["policy_version"], 1)
+            self.assertEqual(stored.result_snapshot["problem"]["policy_version"], 2)
+            weights = stored.result_snapshot["solution"]["objective_weights"]
+            self.assertEqual(set(weights), set(recorded["objective_order"]))
+        self.assertEqual(set(plan["objective_components"]), set(recorded["objective_order"]))
         self.settings.planning_solve_time_limit_seconds = 7
-        self.assertEqual(self.apply(plan).status_code, 200)
+        applied = self.apply(plan)
+        self.assertEqual(applied.status_code, 200)
+        with Session(self.engine) as session:
+            revision = session.scalar(
+                select(DayPlanRevision).where(
+                    DayPlanRevision.plan_id == UUID(plan["plan_id"]),
+                    DayPlanRevision.is_current.is_(True),
+                )
+            )
+            self.assertEqual(revision.plan_state["planning_policy"], recorded)
+            self.assertEqual(
+                revision.plan_state["objective_components"], plan["objective_components"]
+            )
+        area = self.client.get(
+            f"/api/v1/planning/areas/{plan['service_area_id']}/{plan['route_date']}/current",
+            headers=self.headers,
+        )
+        self.assertEqual(area.status_code, 200, area.text)
+        self.assertEqual(area.json()["planning_policy"], recorded)
+        self.assertEqual(area.json()["objective_components"], plan["objective_components"])
         read = self.client.get(f"/api/v1/planning/plans/{plan['plan_id']}", headers=self.headers)
         self.assertEqual(read.json()["planning_policy"], recorded)
         self.assertTrue(read.json()["is_current"])
@@ -247,7 +294,9 @@ class PlanningApiTests(CommittedDatabaseTestCase):
         plan = self.preview()
         with Session(self.engine) as session, session.begin():
             stored = session.get(PlanningPlan, UUID(plan["plan_id"]))
+            # Snapshots recorded before T01 carry version 1 without its parameters.
             legacy = {k: v for k, v in stored.input_snapshot.items() if k != "planning_policy"}
+            legacy["policy_version"] = 1
             stored.input_snapshot = legacy
             stored.input_fingerprint = fingerprint(legacy)
             result = dict(stored.result_snapshot)
@@ -293,9 +342,14 @@ class PlanningApiTests(CommittedDatabaseTestCase):
         response = self.client.get(url, headers=self.headers)
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["case_contract"]["activation"], "contract_only")
+        execution = response.json()["execution"]
+        self.assertEqual(execution["policy_version"], 2)
         self.assertEqual(
-            response.json()["execution"]["priority"],
-            "category_and_numeric_priority_penalties",
+            execution["priority"], "emergency_then_connection_then_repair_or_additional"
+        )
+        self.assertEqual(
+            execution["objective_order"][:-1],
+            response.json()["case_contract"]["objective_order"][:-1],
         )
 
     def test_preview_cannot_silently_activate_case_policy(self):
@@ -467,6 +521,17 @@ class PlanningApiTests(CommittedDatabaseTestCase):
         with self.engine.begin() as connection:
             connection.execute(TicketAppliance.__table__.delete())
             connection.execute(WorkTypeRequiredAppliance.__table__.delete())
+            first_brigade_id = connection.scalar(
+                select(BrigadeMember.brigade_id).where(
+                    BrigadeMember.worker_id == self.payload["worker_ids"][0]
+                )
+            )
+            connection.execute(
+                update(BrigadeMember)
+                .where(BrigadeMember.worker_id.in_(self.payload["worker_ids"]))
+                .values(brigade_id=first_brigade_id)
+            )
+            connection.execute(update(Ticket).values(brigade_id=first_brigade_id))
         plan = self.preview(allow_partial=False)
         for route in plan["routes"]:
             for visit in route["stops"]:
@@ -496,7 +561,15 @@ class PlanningApiTests(CommittedDatabaseTestCase):
             self.assertEqual(
                 {c["worker_id"] for c in item["candidates"]}, set(self.payload["worker_ids"])
             )
-            self.assertEqual({c["reason"]["code"] for c in item["candidates"]}, {"missing_skill"})
+            codes = {candidate["reason"]["code"] for candidate in item["candidates"]}
+            self.assertEqual(codes, {"brigade_mismatch", "missing_skill"})
+            self.assertEqual(
+                sum(
+                    candidate["reason"]["code"] == "missing_skill"
+                    for candidate in item["candidates"]
+                ),
+                1,
+            )
         self.assertEqual(plan["metrics"]["unassigned_by_category"], {"skill": 8})
 
     def test_full_routes_are_not_called_impossible_and_extra_staff_is_an_estimate(self):
@@ -510,7 +583,7 @@ class PlanningApiTests(CommittedDatabaseTestCase):
             self.assertEqual(item["reason"]["code"], "no_slot_in_computed_plan")
             self.assertIn("не доказательство невозможности", item["reason"]["message"])
             codes = sorted(c["reason"]["code"] for c in item["candidates"])
-            self.assertEqual(codes, ["office_mismatch"] * 3 + ["route_full"])
+            self.assertEqual(codes, ["brigade_mismatch"] * 3 + ["route_full"])
         estimate = plan["resource_estimate"]
         self.assertTrue(estimate["is_estimate"])
         self.assertTrue(estimate["complete"])

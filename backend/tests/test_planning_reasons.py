@@ -7,7 +7,7 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from app.modules.planning import diagnostics, reasons
-from app.modules.planning.eligibility import prepare
+from app.modules.planning.eligibility import candidate_reason, prepare
 from app.modules.planning.policy import ExecutionPolicy
 from app.modules.planning.solver_contract import SolveRequest
 
@@ -70,6 +70,37 @@ PREPARED = {
     "epoch": EPOCH,
     "policy": ExecutionPolicy(),
 }
+
+
+class TicketBrigadePrecheckTests(unittest.TestCase):
+    def test_ticket_in_ambiguous_area_is_not_offered_to_any_worker(self):
+        reason = candidate_reason(
+            {"brigade_resolution_required": True, "service_area_id": 8},
+            SHIFT,
+            60,
+            set(),
+            [],
+            {"brigade_id": 21, "skill_ids": set()},
+            EPOCH,
+        )
+
+        self.assertEqual(reason["code"], "brigade_unresolved")
+        self.assertEqual(reason["required"], {"brigade_id": "selected"})
+
+    def test_selected_brigade_excludes_workers_from_another_brigade(self):
+        reason = candidate_reason(
+            {"brigade_id": 21, "service_area_id": 8},
+            SHIFT,
+            60,
+            set(),
+            [],
+            {"brigade_id": 22, "skill_ids": set()},
+            EPOCH,
+        )
+
+        self.assertEqual(reason["code"], "brigade_mismatch")
+        self.assertEqual(reason["observed"], {"brigade_id": 22})
+        self.assertEqual(reason["required"], {"brigade_id": 21})
 
 
 def nodes(count):
