@@ -245,6 +245,8 @@ class ReplanDiff(BaseModel):
     changed: list[VisitChange]
     unchanged_ticket_ids: list[int]
     metrics: dict[str, MetricChange]
+    preempted_tickets: list[dict] = Field(default_factory=list)
+    emergency_sla_forecasts: list[dict] = Field(default_factory=list)
 
 
 class PlanRead(BaseModel):

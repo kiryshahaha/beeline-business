@@ -62,6 +62,7 @@ class Ticket(IntegerIdMixin, Base):
         DateTime(timezone=True), nullable=True
     )
     intake_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    request_type_hd: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     required_transport_type: Mapped[TransportType | None] = mapped_column(
         Enum(
             TransportType,

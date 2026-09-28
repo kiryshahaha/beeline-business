@@ -299,9 +299,17 @@ async def preview(
             item["id"]: item["lifecycle_state"] for item in snapshot["area_scope"]["tickets"]
         }
         proposed_state = build_replan_state(public, previous_state, lifecycle_by_ticket)
+        tickets_meta = {
+            t["id"]: {
+                "category": t.get("category"),
+                "received_at": t.get("received_at"),
+                "response_deadline_at": t.get("response_deadline_at"),
+            }
+            for t in snapshot.get("tickets", [])
+        }
         public["replan_diff"] = {
             "from_revision": snapshot.get("current_day_revision"),
-            **diff_states(previous_state, proposed_state),
+            **diff_states(previous_state, proposed_state, tickets_metadata=tickets_meta),
         }
 
     def persist():

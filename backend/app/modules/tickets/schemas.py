@@ -125,6 +125,11 @@ class TicketFields(BaseModel):
         default=None,
         description="Источник/способ фиксации времени поступления заявки.",
     )
+    request_type_hd: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Исходный тип заявки HelpDesk/выгрузки, определяющий классификацию.",
+    )
     required_transport_type: TransportType | None = Field(
         default=None,
         description=(
@@ -202,6 +207,23 @@ class TicketCreate(TicketFields):
     model_config = ConfigDict(
         extra="forbid", json_schema_extra={"examples": [TICKET_CREATE_EXAMPLE]}
     )
+
+    @model_validator(mode="after")
+    def validate_classification(self) -> Self:
+        from app.modules.source_import.classify import ClassificationError, classify_demand
+
+        try:
+            raw_category = (
+                self.category.value if isinstance(self.category, TicketCategory) else self.category
+            )
+            classify_demand(
+                request_type_hd=self.request_type_hd,
+                work_type_category=None,
+                explicit_category=raw_category,
+            )
+        except ClassificationError as exc:
+            raise ValueError(f"{exc.code}: {exc.message}") from exc
+        return self
 
 
 class TicketAssignmentUpdate(BaseModel):
@@ -293,6 +315,7 @@ class TicketRead(TicketFields):
     sla_deadline_at: AwareDatetime | None = None
     response_deadline_at: AwareDatetime | None = None
     intake_source: str | None = None
+    request_type_hd: str | None = None
     required_transport_type: TransportType | None = None
     service_duration_source: str | None = None
     state: TicketLifecycleState = Field(description="Каноническое состояние выполнения заявки.")

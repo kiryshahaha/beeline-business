@@ -104,3 +104,77 @@ def describe() -> dict:
         "emergency_hd_types": sorted(EMERGENCY_HD_TYPES),
         "known_hd_types": sorted(KNOWN_HD_TYPES),
     }
+
+
+class ClassificationError(ValueError):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def classify_demand(
+    request_type_hd: str | None,
+    work_type_category: str | None = None,
+    explicit_category: str | None = None,
+) -> tuple[str, bool]:
+    """Classify incoming demand into a normalized category without free-text heuristics.
+
+    Returns: (category, is_emergency)
+
+    Rules (T4-01):
+    1. Positive and negative cases are strictly classified by request_type_hd.
+    2. Empty request_type_hd:
+       - Never assumed to be an emergency silently.
+       - Takes explicit_category if not emergency, or falls back to work_type_category or 'repair'.
+       - If explicit_category is 'emergency' but request_type_hd is missing, rejects with
+         ClassificationError('emergency_hd_type_required').
+    3. Unknown request_type_hd (when provided):
+       - Rejects with ClassificationError('unknown_hd_type').
+    4. Conflicting classification:
+       - HD type is emergency but explicit_category is non-emergency, OR
+       - HD type is non-emergency but explicit_category is emergency ->
+         ClassificationError('category_classification_conflict').
+    """
+    norm_hd = normalize(request_type_hd) if request_type_hd else None
+
+    if norm_hd is not None:
+        if norm_hd not in KNOWN_HD_TYPES:
+            raise ClassificationError(
+                "unknown_hd_type",
+                f"Неизвестный тип заявки HD: '{request_type_hd}' не входит в перечень",
+            )
+        if norm_hd in EMERGENCY_HD_TYPES:
+            if explicit_category and explicit_category != "emergency":
+                raise ClassificationError(
+                    "category_classification_conflict",
+                    f"Конфликт классификации: признак HD '{request_type_hd}' определяет аварию, "
+                    f"но указана категория '{explicit_category}'",
+                )
+            return ("emergency", True)
+        else:
+            if explicit_category == "emergency":
+                raise ClassificationError(
+                    "category_classification_conflict",
+                    f"Конфликт классификации: признак HD '{request_type_hd}' не является аварией, "
+                    f"но указана категория 'emergency'",
+                )
+            cat = (
+                explicit_category
+                or (work_type_category if work_type_category != "emergency" else "repair")
+                or "repair"
+            )
+            return (cat, False)
+
+    # Empty / None request_type_hd
+    if explicit_category == "emergency":
+        raise ClassificationError(
+            "emergency_hd_type_required",
+            "Для аварийной заявки обязательно указание request_type_hd из перечня аварийных",
+        )
+    cat = (
+        explicit_category
+        or (work_type_category if work_type_category != "emergency" else "repair")
+        or "repair"
+    )
+    return (cat, False)

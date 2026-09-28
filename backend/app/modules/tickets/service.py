@@ -322,12 +322,24 @@ def create_ticket(
         values["service_duration_source"] = None
 
         # Defaults for category, priority, received_at, duration_source
-        if values.get("category") is None:
-            values["category"] = work_type_row["category"]
-        elif isinstance(values["category"], TicketCategory):
-            values["category"] = values["category"].value
+        from app.modules.source_import.classify import classify_demand
 
-        if values.get("priority") is None:
+        request_type_hd = values.get("request_type_hd")
+        raw_category = (
+            values["category"].value
+            if isinstance(values.get("category"), TicketCategory)
+            else values.get("category")
+        )
+        norm_category, is_emergency = classify_demand(
+            request_type_hd=request_type_hd,
+            work_type_category=work_type_row["category"],
+            explicit_category=raw_category,
+        )
+        values["category"] = norm_category
+
+        if is_emergency:
+            values["priority"] = 1
+        elif values.get("priority") is None:
             values["priority"] = work_type_row["default_priority"]
 
         if not values.get("received_at"):
@@ -379,7 +391,19 @@ def create_ticket(
             before_revision=None,
             after_revision=1,
             idempotency_key=idempotency_key or f"ticket-create:{ticket_id}",
-            payload={"source": "ticket_create"},
+            payload={
+                "source": "ticket_create",
+                "request_type_hd": values.get("request_type_hd"),
+                "category": values.get("category"),
+                "received_at": values["received_at"].isoformat()
+                if values.get("received_at")
+                else None,
+                "response_deadline_at": (
+                    values["response_deadline_at"].isoformat()
+                    if values.get("response_deadline_at")
+                    else None
+                ),
+            },
         )
         execution_repository.attach_last_event(session, ticket_id, event_id)
         # Build the response inside the transaction; a failed operation leaves no ticket.

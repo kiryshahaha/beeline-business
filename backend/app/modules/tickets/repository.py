@@ -14,6 +14,7 @@ TICKET_SELECT_SQL = """
         COALESCE(wt.name, t.work_type) AS work_type,
         t.work_type_id, t.category, t.priority,
         t.received_at, t.sla_deadline_at, t.response_deadline_at, t.intake_source,
+        t.request_type_hd,
         t.required_transport_type, t.service_duration_source,
         t.status,
         CASE
@@ -208,6 +209,7 @@ def add_ticket(session: Session, values: dict[str, object]) -> int:
     params = {
         "response_deadline_at": None,
         "intake_source": None,
+        "request_type_hd": None,
         **values,
     }
     return session.execute(
@@ -215,7 +217,7 @@ def add_ticket(session: Session, values: dict[str, object]) -> int:
             INSERT INTO tickets (
                 location_id, service_area_id, brigade_id, title, description,
                 work_type, work_type_id, category, priority,
-                received_at, sla_deadline_at, response_deadline_at, intake_source,
+                received_at, sla_deadline_at, response_deadline_at, intake_source, request_type_hd,
                 required_transport_type, service_duration_source,
                 status, lifecycle_state,
                 visit_window_start, visit_window_end, planned_start_at, planned_end_at,
@@ -223,7 +225,8 @@ def add_ticket(session: Session, values: dict[str, object]) -> int:
             ) VALUES (
                 :location_id, :service_area_id, :brigade_id, :title, :description,
                 :work_type, :work_type_id, :category, :priority,
-                :received_at, :sla_deadline_at, :response_deadline_at, :intake_source,
+                :received_at, :sla_deadline_at, :response_deadline_at,
+                :intake_source, :request_type_hd,
                 :required_transport_type, :service_duration_source,
                 :status, :lifecycle_state,
                 :visit_window_start, :visit_window_end, :planned_start_at, :planned_end_at,
