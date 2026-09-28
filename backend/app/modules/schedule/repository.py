@@ -1,13 +1,12 @@
-"""Parameterized SQL for the day timeline. Transaction boundaries belong to the service."""
-
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import RowMapping, text
 from sqlalchemy.orm import Session
 
 WORKER_COLUMNS_SQL = """
     u.id, u.surname, u.name, u.lastname,
-    w.workshift_start, w.workshift_end, w.transport_type, w.is_on_line, w.service_area_id
+    w.workshift_start, w.workshift_end, w.transport_type, w.is_on_line, w.service_area_id,
+    w.schedule_type, w.cycle_start_date, w.workdays_mask
 """
 
 # A ticket's area is its own, or the one of the building it is in.
@@ -178,6 +177,24 @@ def find_day_states(session: Session, worker_ids: list[int], day) -> list[RowMap
                 FROM worker_day_states AS s
                 WHERE s.worker_id = ANY(:worker_ids) AND s.route_date = :day
                 ORDER BY s.worker_id, s.available ASC, s.id DESC
+            """),
+            {"worker_ids": worker_ids, "day": day},
+        )
+        .mappings()
+        .all()
+    )
+
+
+def find_shift_exceptions(session: Session, worker_ids: list[int], day: date) -> list[RowMapping]:
+    """Dated shift exceptions for workers: overrides for day off or specific shift hours."""
+    if not worker_ids:
+        return []
+    return list(
+        session.execute(
+            text("""
+                SELECT id, worker_id, exception_date, is_working, workshift_start, workshift_end
+                FROM worker_shift_exceptions
+                WHERE worker_id = ANY(:worker_ids) AND exception_date = :day
             """),
             {"worker_ids": worker_ids, "day": day},
         )

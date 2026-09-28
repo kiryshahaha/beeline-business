@@ -218,6 +218,29 @@ def office_without_coordinates(office_id, location_id):
     )
 
 
+def worker_day_off(day):
+    date_str = day.isoformat() if hasattr(day, "isoformat") else str(day)
+    return explain(
+        "worker_day_off",
+        "availability",
+        f"У инженера выходной день {date_str} по графику работы",
+        constraint="eligible_workers=working_on_route_date",
+        observed={"route_date": str(day)},
+        required={"working_day": True},
+    )
+
+
+def worker_shift_ended(shift_end, now, day):
+    return explain(
+        "shift_ended",
+        "availability",
+        f"Смена инженера завершилась в {clock(shift_end, day)}",
+        constraint="eligible_workers=within_shift",
+        observed={"calculated_at": iso(now)},
+        required={"calculated_before": iso(shift_end)},
+    )
+
+
 def shift_already_started(shift_start, now, day):
     return explain(
         "shift_already_started",

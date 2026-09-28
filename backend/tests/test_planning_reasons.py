@@ -1,7 +1,7 @@
 """Structured reasons and bounded diagnostics on small hand-checked problems, without a DB."""
 
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 from types import SimpleNamespace
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
@@ -248,7 +248,7 @@ class ResourceEstimateTests(unittest.TestCase):
         self.assertIsNone(diagnostics.estimate_resources(PREPARED, self.data, self.graph, []))
 
 
-def snapshot(workers, *, allocations=None, reserved=1, stock=3):
+def snapshot(workers, *, allocations=None, reserved=1, stock=3, shift_exceptions=None):
     location = {"latitude": 55.75, "longitude": 37.61}
     return {
         "policy_version": 1,
@@ -273,6 +273,11 @@ def snapshot(workers, *, allocations=None, reserved=1, stock=3):
         "workers": [
             {k: w[k] for k in ("user_id", "workshift_start", "workshift_end")}
             | {"transport_type": "car", "is_on_line": w.get("on_line", True)}
+            | {
+                "schedule_type": w.get("schedule_type"),
+                "cycle_start_date": w.get("cycle_start_date"),
+                "workdays_mask": w.get("workdays_mask"),
+            }
             for w in workers
         ],
         "roles": [{"id": w["user_id"], "role": "worker"} for w in workers],
@@ -282,6 +287,7 @@ def snapshot(workers, *, allocations=None, reserved=1, stock=3):
         "members": [{"worker_id": w["user_id"], "brigade_id": w["office"]} for w in workers],
         "busy_tickets": [],
         "assignments": [],
+        "shift_exceptions": shift_exceptions or [],
         "skills": [
             {"worker_id": w["user_id"], "skill_id": s} for w in workers for s in w["skills"]
         ],
@@ -298,7 +304,17 @@ def snapshot(workers, *, allocations=None, reserved=1, stock=3):
     }
 
 
-def engineer(user_id, office=1, skills=(7,), start="09:00:00", end="18:00:00", on_line=True):
+def engineer(
+    user_id,
+    office=1,
+    skills=(7,),
+    start="09:00:00",
+    end="18:00:00",
+    on_line=True,
+    schedule_type=None,
+    cycle_start_date=None,
+    workdays_mask=None,
+):
     return {
         "user_id": user_id,
         "office": office,
@@ -306,6 +322,9 @@ def engineer(user_id, office=1, skills=(7,), start="09:00:00", end="18:00:00", o
         "workshift_start": start,
         "workshift_end": end,
         "on_line": on_line,
+        "schedule_type": schedule_type,
+        "cycle_start_date": cycle_start_date,
+        "workdays_mask": workdays_mask,
     }
 
 
@@ -415,6 +434,49 @@ class PrecheckReasonTests(unittest.TestCase):
 
         self.assertEqual(prepared["tickets"], [])
         self.assertEqual(prepared["unassigned"][0]["reason"]["code"], "sla_deadline_missed")
+
+    def test_worker_excluded_on_day_off_by_2_2_schedule(self):
+        # 2030-01-15 is Tuesday. If cycle started 2030-01-13 (Sunday):
+        # Day 0: Sun (work), Day 1: Mon (work), Day 2: Tue (off!)
+        off_engineer = engineer(21, schedule_type="2/2", cycle_start_date=date(2030, 1, 13))
+        prepared = prepare(snapshot([off_engineer]), NOW)
+        self.assertEqual(len(prepared["excluded_workers"]), 1)
+        self.assertEqual(prepared["excluded_workers"][0]["reason"]["code"], "worker_day_off")
+        self.assertEqual(prepared["workers"], [])
+
+    def test_worker_included_on_working_day_by_2_2_schedule(self):
+        # 2030-01-15 is Tuesday. If cycle started 2030-01-14 (Monday):
+        # Day 0: Mon (work), Day 1: Tue (work!)
+        working_engineer = engineer(21, schedule_type="2/2", cycle_start_date=date(2030, 1, 14))
+        prepared = prepare(snapshot([working_engineer]), NOW)
+        self.assertEqual(len(prepared["excluded_workers"]), 0)
+        self.assertEqual(len(prepared["workers"]), 1)
+
+    def test_worker_shift_exception_overrides_schedule(self):
+        # Working by 2/2 schedule, but exception marks is_working=False
+        eng = engineer(21, schedule_type="2/2", cycle_start_date=date(2030, 1, 14))
+        exc = {
+            "worker_id": 21,
+            "exception_date": date(2030, 1, 15),
+            "is_working": False,
+        }
+        prepared = prepare(snapshot([eng], shift_exceptions=[exc]), NOW)
+        self.assertEqual(len(prepared["excluded_workers"]), 1)
+        self.assertEqual(prepared["excluded_workers"][0]["reason"]["code"], "worker_day_off")
+
+        # Off by 2/2 schedule, but exception marks is_working=True with custom hours
+        off_eng = engineer(22, schedule_type="2/2", cycle_start_date=date(2030, 1, 13))
+        exc2 = {
+            "worker_id": 22,
+            "exception_date": date(2030, 1, 15),
+            "is_working": True,
+            "custom_workshift_start": "10:00:00",
+            "custom_workshift_end": "22:00:00",
+        }
+        prepared2 = prepare(snapshot([off_eng], shift_exceptions=[exc2]), NOW)
+        self.assertEqual(len(prepared2["excluded_workers"]), 0)
+        self.assertEqual(len(prepared2["workers"]), 1)
+        self.assertEqual(prepared2["workers"][0]["window"], [600, 1320])
 
 
 class TextHelpersTests(unittest.TestCase):

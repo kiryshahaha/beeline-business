@@ -21,6 +21,7 @@ from app.db.models import (
     User,
     Worker,
     WorkerDayState,
+    WorkerShiftException,
     WorkerSkillAssignment,
     WorkEvent,
     WorkType,
@@ -263,6 +264,12 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
     )
     locations = rows(session, Location, Location.id.in_(location_ids))
     skills = rows(session, WorkerSkillAssignment, WorkerSkillAssignment.worker_id.in_(worker_ids))
+    shift_exceptions = rows(
+        session,
+        WorkerShiftException,
+        WorkerShiftException.worker_id.in_(worker_ids),
+        WorkerShiftException.exception_date == request.route_date,
+    )
     wt_ids = {t["work_type_id"] for t in tickets if t.get("work_type_id")}
     work_types = rows(
         session,
@@ -356,6 +363,7 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
             "ticket_service_areas": ticket_service_areas,
             "worker_service_areas": worker_service_areas,
             "worker_day_states": worker_day_states,
+            "shift_exceptions": shift_exceptions,
             "current_day_revision": current_day_revision,
             "current_day_state": current_day_state or {},
             # The whole area-day, not only the chosen IDs: a ticket that appeared or
