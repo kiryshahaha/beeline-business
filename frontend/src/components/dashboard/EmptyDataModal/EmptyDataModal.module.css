@@ -1,0 +1,410 @@
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+    animation: fadeIn 0.25s ease-out;
+}
+
+.modal {
+    background-color: var(--tertiary, #1C1C1E);
+    border: 1px solid var(--stroke, #2C2C2E);
+    border-radius: 20px;
+    width: 100%;
+    max-width: 520px;
+    padding: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    position: relative;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    animation: slideUp 0.25s ease-out;
+}
+
+.closeBtn {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.08);
+    border: none;
+    color: #8E8E93;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.closeBtn:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+    color: #FFFFFF;
+}
+
+.headerBlock {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 8px;
+}
+
+.iconWrapper {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    background: rgba(255, 200, 0, 0.12);
+    border: 1px solid rgba(255, 200, 0, 0.3);
+    color: #FFC800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 4px;
+}
+
+.title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--foreground, #FFFFFF);
+    line-height: 1.2;
+}
+
+.subtitle {
+    font-size: 13px;
+    color: #8E8E93;
+    line-height: 1.4;
+    max-width: 420px;
+}
+
+/* Зона Drag & Drop */
+.dropZone {
+    border: 2px dashed rgba(255, 255, 255, 0.16);
+    border-radius: 14px;
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background-color: rgba(255, 255, 255, 0.02);
+    cursor: pointer;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+.dropZone:hover,
+.dropZoneActive {
+    border-color: #FFC800;
+    background-color: rgba(255, 200, 0, 0.04);
+}
+
+.dropIcon {
+    color: #8E8E93;
+}
+
+.dropText {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--foreground, #FFFFFF);
+    text-align: center;
+}
+
+.dropHint {
+    font-size: 11px;
+    color: #636366;
+}
+
+.selectedFileInfo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background-color: rgba(255, 200, 0, 0.1);
+    border: 1px solid rgba(255, 200, 0, 0.25);
+    border-radius: 10px;
+    font-size: 12px;
+    color: #FFC800;
+    font-weight: 600;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.hiddenInput {
+    display: none;
+}
+
+/* Действия */
+.actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.uploadBtn {
+    height: 44px;
+    border-radius: 12px;
+    background-color: #FFC800;
+    border: none;
+    color: #171717;
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.uploadBtn:hover:not(:disabled) {
+    background-color: #FFD633;
+}
+
+.uploadBtn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.secondaryBtn {
+    height: 40px;
+    border-radius: 12px;
+    background-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--stroke, #2C2C2E);
+    color: #FFFFFF;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.secondaryBtn:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.secondaryBtn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Сообщения */
+.errorMessage {
+    padding: 10px 14px;
+    border-radius: 10px;
+    background-color: rgba(255, 59, 48, 0.12);
+    border: 1px solid rgba(255, 59, 48, 0.3);
+    color: #FF3B30;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.successMessage {
+    padding: 10px 14px;
+    border-radius: 10px;
+    background-color: rgba(52, 199, 89, 0.12);
+    border: 1px solid rgba(52, 199, 89, 0.3);
+    color: #34C759;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.skipLink {
+    text-align: center;
+    font-size: 12px;
+    color: #8E8E93;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    padding: 4px;
+}
+
+.skipLink:hover {
+    color: #FFFFFF;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+/* Планирование (Planning State) */
+.planningState {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 16px 0;
+    gap: 12px;
+}
+
+.pulseIconWrapper {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(255, 200, 0, 0.12);
+    border: 1px solid rgba(255, 200, 0, 0.4);
+    margin-bottom: 8px;
+}
+
+.pulseRings {
+    position: absolute;
+    top: -6px;
+    left: -6px;
+    right: -6px;
+    bottom: -6px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 200, 0, 0.4);
+    animation: pulseRing 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+@keyframes pulseRing {
+    0% { transform: scale(0.9); opacity: 0.8; }
+    50% { transform: scale(1.15); opacity: 0.2; }
+    100% { transform: scale(0.9); opacity: 0.8; }
+}
+
+.progressContainer {
+    width: 100%;
+    max-width: 320px;
+    height: 6px;
+    background-color: rgba(255, 255, 255, 0.08);
+    border-radius: 99px;
+    overflow: hidden;
+    position: relative;
+    margin-top: 8px;
+}
+
+.progressBar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 40%;
+    background: linear-gradient(90deg, #FFC800, #FFE680);
+    border-radius: 99px;
+    animation: indeterminateProgress 1.4s infinite ease-in-out;
+}
+
+@keyframes indeterminateProgress {
+    0% { left: -40%; width: 40%; }
+    50% { left: 30%; width: 60%; }
+    100% { left: 100%; width: 40%; }
+}
+
+.planningStatusText {
+    font-size: 12px;
+    color: #8E8E93;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Утверждение плана (Approval State) */
+.approvalState {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.iconApproval {
+    background: rgba(52, 199, 89, 0.12);
+    border-color: rgba(52, 199, 89, 0.35);
+    color: #34C759;
+}
+
+.iconSuccess {
+    background: rgba(52, 199, 89, 0.15);
+    border-color: rgba(52, 199, 89, 0.4);
+    color: #34C759;
+}
+
+.metricsSummary {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--stroke, #2C2C2E);
+    border-radius: 14px;
+    padding: 14px;
+}
+
+.summaryItem {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.summaryLabel {
+    font-size: 11px;
+    color: #8E8E93;
+    font-weight: 500;
+}
+
+.summaryValue {
+    font-size: 15px;
+    font-weight: 700;
+    color: #FFFFFF;
+}
+
+.summarySub {
+    font-size: 11px;
+    color: #636366;
+}
+
+.slaOk {
+    color: #34C759;
+}
+
+.approvalNotice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background-color: rgba(255, 200, 0, 0.08);
+    border: 1px solid rgba(255, 200, 0, 0.2);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: #FFE680;
+    line-height: 1.4;
+}
+
+.spinner {
+    width: 24px;
+    height: 24px;
+    border: 2.5px solid rgba(255, 200, 0, 0.25);
+    border-top-color: #FFC800;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}

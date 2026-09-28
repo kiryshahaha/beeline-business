@@ -5,7 +5,6 @@
     flex-direction: column;
     gap: 20px;
     padding: 22px;
-
 }
 
 .topPanel {
@@ -23,9 +22,9 @@
 .refreshBtn {
     width: 36px;
     height: 36px;
-    background-color: var(--tertiary);
+    background-color: var(--tertiary, #2C2C2E);
     border-radius: 12px;
-    border: 2px solid var(--stroke);
+    border: 2px solid var(--stroke, #333333);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -33,6 +32,37 @@
     padding: 0;
     flex-shrink: 0;
     margin-left: 8px;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+.refreshBtn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.refreshBtn:active {
+    transform: rotate(45deg);
+}
+
+.importBtn {
+    height: 36px;
+    background-color: rgba(255, 200, 0, 0.12);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 200, 0, 0.3);
+    color: #FFC800;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 600;
+    flex-shrink: 0;
+    margin-left: 8px;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+.importBtn:hover {
+    background-color: rgba(255, 200, 0, 0.2);
 }
 
 .statusGroup {
@@ -48,31 +78,74 @@
     align-items: center;
     gap: 6px;
     padding: 4px 8px;
-    border: 1px solid var(--sla-color);
+    border: 1px solid var(--sla-color, #FFCC00);
     border-radius: 4px;
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     line-height: 1;
-    color: var(--sla-color);
+    color: var(--sla-color, #FFCC00);
+    background-color: rgba(255, 204, 0, 0.08);
 }
 
 .slaDot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background-color: var(--sla-color);
+    background-color: var(--sla-color, #FFCC00);
 }
 
 .timeText {
     font-size: 20px;
-    font-weight: bold;
-    color: var(--foreground);
+    font-weight: 700;
+    color: var(--foreground, #FFFFFF);
     line-height: 1;
+    letter-spacing: -0.3px;
 }
 
-.smallStats {
-    display: flex;
+/* Основная сетка Dashboard Grid */
+.dashboardGrid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
     gap: 16px;
     width: 100%;
+}
+
+.kpiCol {
+    grid-column: span 4;
+    display: flex;
+}
+
+.workloadCol {
+    grid-column: span 7;
+}
+
+.activityCol {
+    grid-column: span 5;
+}
+
+.reportsCol {
+    grid-column: span 12;
+}
+
+/* Адаптивность для средних и мобильных экранов */
+@media (max-width: 1150px) {
+    .workloadCol {
+        grid-column: span 12;
+    }
+    
+    .activityCol {
+        grid-column: span 12;
+    }
+}
+
+@media (max-width: 860px) {
+    .kpiCol {
+        grid-column: span 12;
+    }
+
+    .topPanel {
+        flex-direction: column;
+        gap: 12px;
+    }
 }
