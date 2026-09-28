@@ -11,9 +11,13 @@ import { useTickets } from "@/hooks/useTickets";
 
 const ALL_FILTERS = ['бригады', 'работники', 'заявки'];
 
-const Search = ({ onSelectResult }) => {
+const Search = ({
+  searchQuery = "",
+  onSearchChange,
+  onSelectResult,
+  onClear,
+}) => {
   const [activeFilters, setActiveFilters] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const containerRef = useRef(null);
 
@@ -73,7 +77,6 @@ const Search = ({ onSelectResult }) => {
       return;
     }
     setUnavailableMessage("");
-    setSearchQuery("");
     setIsFocused(false);
   };
 
@@ -97,7 +100,7 @@ const Search = ({ onSelectResult }) => {
             className={styles.input}
             value={searchQuery}
             onChange={(e) => {
-              setSearchQuery(e.target.value);
+              onSearchChange?.(e.target.value);
               setUnavailableMessage("");
             }}
             onFocus={() => setIsFocused(true)}
@@ -105,6 +108,25 @@ const Search = ({ onSelectResult }) => {
               if (event.key === "Escape") setIsFocused(false);
             }}
           />
+          {searchQuery && (
+            <button
+              type="button"
+              className={styles.clearButton}
+              onClick={(e) => {
+                e.stopPropagation();
+                onClear?.();
+                setUnavailableMessage("");
+                setIsFocused(false);
+              }}
+              title="Очистить поиск"
+              aria-label="Очистить поиск"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          )}
         </div>
         <div className={styles.suggestionsWrapper}>
           <div className={styles.suggestions}>

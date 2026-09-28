@@ -150,36 +150,68 @@ export default function EmptyDataModal({ isOpen, onClose }) {
 
             {/* Кнопки действий */}
             <div className={styles.actions}>
-              {selectedFile && (
+              {selectedFile ? (
                 <button
                   type="button"
                   className={styles.uploadBtn}
                   onClick={handleUploadSelected}
                   disabled={isUploading}
                 >
-                  {isUploading ? "Импортируем данные..." : `Загрузить ${selectedFile.name}`}
+                  {isUploading ? (
+                    <>
+                      <div className={styles.buttonSpinner} />
+                      <span>Импортируем данные...</span>
+                    </>
+                  ) : (
+                    `Загрузить ${selectedFile.name}`
+                  )}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.uploadBtn}
+                  onClick={handleUploadDemoData}
+                  disabled={isUploading}
+                >
+                  {isUploading ? (
+                    <>
+                      <div className={styles.buttonSpinner} />
+                      <span>Импортируем данные...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                      </svg>
+                      <span>Загрузить стандартный демо-набор</span>
+                    </>
+                  )}
                 </button>
               )}
 
-              <button
-                type="button"
-                className={selectedFile ? styles.secondaryBtn : styles.uploadBtn}
-                onClick={handleUploadDemoData}
-                disabled={isUploading}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                </svg>
-                <span>{isUploading ? "Импортируем данные..." : "Загрузить стандартный демо-набор"}</span>
-              </button>
+              {/* Нижняя кнопка показывается ТОЛЬКО когда нет активной загрузки */}
+              {selectedFile && !isUploading && (
+                <button
+                  type="button"
+                  className={styles.secondaryBtn}
+                  onClick={handleUploadDemoData}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                  </svg>
+                  <span>Или загрузить стандартный демо-набор</span>
+                </button>
+              )}
 
-              <button
-                type="button"
-                className={styles.skipLink}
-                onClick={onClose}
-              >
-                Продолжить без загрузки
-              </button>
+              {!isUploading && (
+                <button
+                  type="button"
+                  className={styles.skipLink}
+                  onClick={onClose}
+                >
+                  Продолжить без загрузки
+                </button>
+              )}
             </div>
           </>
         )}

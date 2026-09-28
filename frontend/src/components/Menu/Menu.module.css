@@ -419,12 +419,24 @@
 
 .workerCard {
     background-color: #2A2A2A;
+    border: 1px solid transparent;
     border-radius: 12px;
     padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 12px
-        /* margin-bottom: 12px; */
+    gap: 12px;
+    transition: all 0.18s ease;
+    cursor: pointer;
+}
+
+.workerCard:hover {
+    background-color: #323232;
+}
+
+.activeWorkerCard {
+    border-color: var(--beeline);
+    background-color: #333333;
+    box-shadow: 0 0 0 1px var(--beeline), 0 4px 16px rgba(255, 200, 0, 0.15);
 }
 
 .workerCardHeader {

@@ -6,7 +6,7 @@ import Image from "next/image";
 import { BrigadesPanel } from "./BrigadesPanel";
 import { FastStatsPanel } from "./FastStatsPanel";
 
-const Menu = () => {
+const Menu = ({ selectedBrigade, onSelectBrigade, selectedWorker, onSelectWorker }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState("");
     const [stage, setStage] = useState(0); // 0=default, 1=wide, 2=tall
@@ -75,6 +75,8 @@ const Menu = () => {
 
     const handleClosePanel = (e) => {
         if (e) e.stopPropagation();
+        onSelectBrigade?.(null);
+        onSelectWorker?.(null);
         setStage(1);
         if (transitionRef.current) clearTimeout(transitionRef.current);
         transitionRef.current = setTimeout(() => {
@@ -121,6 +123,8 @@ const Menu = () => {
 
     const handleClose = (e) => {
         e.stopPropagation();
+        onSelectBrigade?.(null);
+        onSelectWorker?.(null);
         setIsOpen(false);
         setActiveTab("");
         setStage(0);
@@ -183,7 +187,13 @@ const Menu = () => {
             {/* Expanded Panel */}
             <div className={styles.panelWrapper}>
                 {isOpen && stage === 2 && activeTab === 'users' && (
-                    <BrigadesPanel onClose={handleClosePanel} />
+                    <BrigadesPanel
+                        selectedBrigade={selectedBrigade}
+                        onSelectBrigade={onSelectBrigade}
+                        selectedWorker={selectedWorker}
+                        onSelectWorker={onSelectWorker}
+                        onClose={handleClosePanel}
+                    />
                 )}
                 {isOpen && stage === 2 && activeTab === 'vector' && (
                     <FastStatsPanel onClose={handleClosePanel} />
