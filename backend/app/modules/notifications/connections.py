@@ -82,6 +82,26 @@ class ConnectionManager:
             await self.disconnect(user_id, websocket)
         return delivered
 
+    async def broadcast(self, payload: dict) -> int:
+        """Send a transient event to every connected user."""
+        async with self._lock:
+            subscribers = tuple(
+                (user_id, subscriber)
+                for user_id, entries in self._connections.items()
+                for subscriber in entries.values()
+            )
+        delivered = 0
+        stale = []
+        for user_id, subscriber in subscribers:
+            try:
+                await subscriber.websocket.send_json(payload)
+                delivered += 1
+            except RuntimeError:
+                stale.append((user_id, subscriber.websocket))
+        for user_id, websocket in stale:
+            await self.disconnect(user_id, websocket)
+        return delivered
+
     async def close_all(self, code: int, reason: str) -> None:
         """Drop every socket, e.g. when this process stops being the delivery process."""
         async with self._lock:

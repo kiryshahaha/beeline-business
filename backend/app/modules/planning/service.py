@@ -10,6 +10,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
+from app.modules.notifications.schedule_updates import publish_schedule_updated
 from app.modules.planning.day_models import DayPlanRevision
 from app.modules.planning.day_plans import (
     build_plan_state,
@@ -622,6 +623,7 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
             plan.applied_fingerprint = applied_fingerprint
             plan.apply_result = result
             plan.state = "applied"
+            publish_schedule_updated(session)
     if error is not None:
         raise error
     return result
