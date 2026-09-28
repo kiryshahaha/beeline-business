@@ -9,18 +9,21 @@ export default function PointTooltip({
   if (!text && !tag) return null;
 
   return (
-    <div className={styles.microChip} role="tooltip">
+    <div className={styles.pointTooltip} role="tooltip">
       {tag && (
-        <span
-          className={`${styles.microChipTag} ${
-            styles[`microChipTag_${tagVariant}`] || ""
-          }`}
-        >
-          {tag}
-        </span>
+        <div className={styles.pointTooltipHeader}>
+          <span
+            className={`${styles.pointTooltipTag} ${
+              styles[`pointTooltipTag_${tagVariant}`] || ""
+            }`}
+          >
+            {tag}
+          </span>
+        </div>
       )}
-      {text && <span className={styles.microChipText}>{text}</span>}
-      {subtext && <span className={styles.microChipSub}>{subtext}</span>}
+      {text && <div className={styles.pointTooltipTitle}>{text}</div>}
+      {subtext && <div className={styles.pointTooltipSub}>{subtext}</div>}
+      <div className={styles.pointTooltipArrow} />
     </div>
   );
 }
