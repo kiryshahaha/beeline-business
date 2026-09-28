@@ -190,8 +190,7 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
                 TicketAppliance(
                     ticket_id=ticket["id"],
                     appliance_id=self.receipt["id_map"]["appliances"]["1"],
-                    office_id=appliance_office_id
-                    or self.receipt["id_map"]["offices"]["1"],
+                    office_id=appliance_office_id or self.receipt["id_map"]["offices"]["1"],
                     quantity=1,
                 )
             )

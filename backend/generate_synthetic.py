@@ -53,6 +53,9 @@ def generate_dataset(*, seed=42, start_date=date(2026, 9, 21), tickets=1500, wor
                 values[key] = len(tables[entity]) + 1
             elif key in ("created_at", "updated_at", "assigned_at", "next_attempt_at"):
                 values[key] = stamp
+            elif column.default is not None and getattr(column.default, "arg", None) is not None:
+                arg = column.default.arg
+                values[key] = arg() if callable(arg) else arg
             elif column.nullable:
                 values[key] = None
         tables[entity].append(values)

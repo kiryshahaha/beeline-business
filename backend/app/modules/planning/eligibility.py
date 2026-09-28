@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from app.modules.planning import reasons
 from app.modules.planning.errors import PlanningError
 from app.modules.planning.policy import snapshot_policy
+from app.modules.users.shifts import get_worker_shift
 
 MOSCOW = ZoneInfo("Europe/Moscow")
 PROFILES = {
@@ -21,6 +22,12 @@ def dt(value: str) -> datetime:
     return value if isinstance(value, datetime) else datetime.fromisoformat(value)
 
 
+def by_id(mapping: dict | None, key):
+    """A normalized snapshot keys its maps by strings, a hand-built one by integers."""
+    mapping = mapping or {}
+    return mapping.get(key, mapping.get(str(key)))
+
+
 def worker_replan_anchor(day_state, active_ticket, now, *, default_location_id):
     """Return the confirmed or promised point and time from which the remainder can start."""
     current_ticket_id = day_state.get("current_ticket_id") if day_state else None
@@ -31,9 +38,8 @@ def worker_replan_anchor(day_state, active_ticket, now, *, default_location_id):
     if current_ticket_id is not None:
         lifecycle_state = (active_ticket or {}).get("lifecycle_state")
         if lifecycle_state in {"en_route", "in_progress"}:
-            # A predicted finish is useful for display, but it is not a confirmed
-            # departure point. Keep this worker outside the new solve until the
-            # active stage has a completion event with an actual location/time.
+            # The current trip or service is a frozen stage. Do not use its ETA as
+            # a route start until execution records completion at a known location.
             return {
                 "location_id": day_state.get("current_destination_id")
                 or day_state.get("last_location_id"),
@@ -89,7 +95,9 @@ def candidate_reason(
         return reasons.missing_skill(missing, skills)
     worker_area = worker.get("service_area_id")
     ticket_area = ticket.get("service_area_id")
-    if worker_area is not None and ticket_area is not None and worker_area != ticket_area:
+    if (worker_area is None) != (ticket_area is None):
+        return reasons.service_area_unknown(worker_area, ticket_area)
+    if worker_area != ticket_area:
         return reasons.service_area_mismatch(worker_area, ticket_area)
     offices = sorted({a["office_id"] for a in allocations})
     if any(office != worker["office_id"] for office in offices):
@@ -144,17 +152,27 @@ def prepare(snapshot: dict, now: datetime) -> dict:
     archived = set(snapshot.get("archived_worker_ids", []))
     day_states = {x["worker_id"]: x for x in snapshot.get("worker_day_states", [])}
     busy = {x["id"]: x for x in snapshot["busy_tickets"]}
+    area_id = snapshot.get("service_area_id")
+    resolved_worker_areas = snapshot.get("worker_service_areas")
     workers, excluded_workers = [], []
     for worker in snapshot["workers"]:
         worker = dict(worker)
         wid = worker["user_id"]
         day_state = day_states.get(wid)
-        start = datetime.combine(
-            epoch.date(), time.fromisoformat(worker["workshift_start"]), MOSCOW
-        )
-        end = datetime.combine(epoch.date(), time.fromisoformat(worker["workshift_end"]), MOSCOW)
-        if end <= start:
-            end += timedelta(days=1)
+        exceptions = [e for e in snapshot.get("shift_exceptions", []) if e.get("worker_id") == wid]
+        shift = get_worker_shift(worker, day, exceptions=exceptions)
+        if shift is None:
+            # Worker is off-duty (day off by schedule or exception)
+            start = datetime.combine(
+                epoch.date(), time.fromisoformat(worker["workshift_start"]), MOSCOW
+            )
+            end = datetime.combine(
+                epoch.date(), time.fromisoformat(worker["workshift_end"]), MOSCOW
+            )
+            if end <= start:
+                end += timedelta(days=1)
+        else:
+            start, end = shift
         brigade = brigades.get(members.get(wid))
         office_id = worker.get("stock_office_id") or (brigade["office_id"] if brigade else None)
         office = offices.get(office_id) if office_id else None
@@ -191,15 +209,37 @@ def prepare(snapshot: dict, now: datetime) -> dict:
             end_location_id = start_location_id
 
         location = locations.get(start_location_id) if start_location_id else None
+        # The resolved area never falls back to the area of this request.
+        worker_area_id = (
+            by_id(resolved_worker_areas, wid)
+            if resolved_worker_areas is not None
+            else worker.get("service_area_id")
+        )
+        area_issue = by_id(snapshot.get("worker_area_issues"), wid)
         reason = None
         if roles.get(wid) != "worker":
             reason = reasons.invalid_worker_role(roles.get(wid))
         elif wid in archived:
             reason = reasons.worker_archived()
-        elif replan and anchor and anchor["reason"] in {
-            "active_work_eta_unknown",
-            "active_stage_not_completed",
-        }:
+        elif area_issue:
+            reason = reasons.worker_service_area_unresolved(area_issue)
+        elif area_id is not None and worker_area_id is None:
+            reason = reasons.worker_service_area_unresolved(
+                {"code": "service_area_missing", "subject_id": wid, "sources": {}}
+            )
+        elif area_id is not None and worker_area_id != area_id:
+            reason = reasons.worker_outside_service_area(worker_area_id, area_id)
+        elif shift is None:
+            reason = reasons.worker_day_off(day)
+        elif (
+            replan
+            and anchor
+            and anchor["reason"]
+            in {
+                "active_work_eta_unknown",
+                "active_stage_not_completed",
+            }
+        ):
             active_stage_not_completed = anchor["reason"] == "active_stage_not_completed"
             reason = reasons.explain(
                 anchor["reason"],
@@ -242,6 +282,8 @@ def prepare(snapshot: dict, now: datetime) -> dict:
             reason = reasons.office_without_coordinates(
                 office["id"], start_location_id or office["location_id"]
             )
+        elif replan and end <= now:
+            reason = reasons.worker_shift_ended(end, now, day)
         elif start <= now and not (day_state and day_state.get("last_location_id")) and not replan:
             reason = reasons.shift_already_started(start, now, day)
         elif day_state and day_state.get("current_ticket_id") and not replan:
@@ -285,11 +327,6 @@ def prepare(snapshot: dict, now: datetime) -> dict:
             available_at = max(start, now, anchor["available_at"] if anchor else now)
         elif day_state and day_state.get("expected_available_at"):
             available_at = max(available_at, dt(day_state["expected_available_at"]))
-        worker_area_id = (
-            worker.get("service_area_id")
-            or snapshot.get("worker_service_areas", {}).get(wid)
-            or snapshot.get("service_area_id")
-        )
         worker.update(
             {
                 "office_id": office["id"],
@@ -300,6 +337,8 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 "end_location_id": end_location_id,
                 "profile": PROFILES[worker["transport_type"]],
                 "transport_type": worker["transport_type"],
+                "shift_start": start,
+                "shift_end": end,
                 "window": [
                     math.ceil((available_at - epoch).total_seconds() / 60),
                     math.floor((end - epoch).total_seconds() / 60),
@@ -406,10 +445,11 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 allowed = []
                 ticket_area_id = (
                     ticket.get("service_area_id")
-                    or snapshot.get("ticket_service_areas", {}).get(tid)
-                    or snapshot.get("service_area_id")
+                    if ticket.get("service_area_id") is not None
+                    else by_id(snapshot.get("ticket_service_areas"), tid)
                 )
-                area_brigade_ids = snapshot.get("service_area_brigades", {}).get(ticket_area_id, [])
+                area_brigades = snapshot.get("service_area_brigades")
+                area_brigade_ids = by_id(area_brigades, ticket_area_id) or []
                 candidate_ticket = dict(
                     ticket,
                     brigade_id=(
@@ -453,6 +493,12 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                         priority=ticket.get("priority") or work_type.get("default_priority") or 3,
                         received_at=received_at.isoformat() if received_at else None,
                         sla_deadline_at=(sla_deadline_at.isoformat() if sla_deadline_at else None),
+                        response_deadline_at=(
+                            dt(ticket["response_deadline_at"]).isoformat()
+                            if ticket.get("response_deadline_at")
+                            else None
+                        ),
+                        intake_source=ticket.get("intake_source"),
                         work_type_id=work_type["id"],
                         rejected=candidates,
                         required_skill_ids=sorted(skills),

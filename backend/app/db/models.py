@@ -39,6 +39,7 @@ from app.modules.users.models import (
     RefreshToken,
     User,
     Worker,
+    WorkerShiftException,
     WorkerSkill,
     WorkerSkillAssignment,
 )
@@ -84,6 +85,7 @@ __all__ = [
     "TicketComment",
     "User",
     "Worker",
+    "WorkerShiftException",
     "WorkerSkill",
     "WorkerSkillAssignment",
     "WorkEvent",

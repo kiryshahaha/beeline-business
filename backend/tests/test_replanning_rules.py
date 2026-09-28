@@ -23,8 +23,7 @@ class ReplanningAnchorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         path = (
-            Path(__file__).resolve().parents[2]
-            / "data/planning/dynamic_replanning_scenarios.json"
+            Path(__file__).resolve().parents[2] / "data/planning/dynamic_replanning_scenarios.json"
         )
         cls.synthetic = json.loads(path.read_text(encoding="utf-8"))
 
@@ -245,15 +244,9 @@ class ReplanningStateTests(unittest.TestCase):
 
         scenario = snapshot_with_experimental_windows(snapshot, windows, date(2030, 1, 15))
 
-        self.assertEqual(
-            snapshot["tickets"][0]["visit_window_start"], "2030-01-15T10:00:00+03:00"
-        )
-        self.assertEqual(
-            scenario["tickets"][0]["visit_window_start"], "2030-01-15T09:00:00+03:00"
-        )
-        self.assertEqual(
-            scenario["tickets"][0]["visit_window_end"], "2030-01-15T14:00:00+03:00"
-        )
+        self.assertEqual(snapshot["tickets"][0]["visit_window_start"], "2030-01-15T10:00:00+03:00")
+        self.assertEqual(scenario["tickets"][0]["visit_window_start"], "2030-01-15T09:00:00+03:00")
+        self.assertEqual(scenario["tickets"][0]["visit_window_end"], "2030-01-15T14:00:00+03:00")
 
     def test_experiment_rejects_window_shrink_unknown_ticket_and_other_day(self):
         snapshot = {
@@ -294,6 +287,71 @@ class ReplanningStateTests(unittest.TestCase):
 
 
 class OrdinaryInsertRulesTests(unittest.TestCase):
+    def test_area_backlog_created_before_the_published_revision_is_not_new_demand(self):
+        snapshot = {
+            "current_day_state": {
+                "visits": [{"ticket_id": 1}],
+                "unassigned_ticket_ids": [],
+                "area_scope_tickets": [
+                    {"id": 1, "assigned_worker_id": 10},
+                    {"id": 2, "assigned_worker_id": None},
+                ],
+            },
+            "tickets": [
+                {"id": 1, "category": "repair", "lifecycle_state": "assigned"},
+                {
+                    "id": 2,
+                    "category": "repair",
+                    "lifecycle_state": "waiting_assignment",
+                    "assigned_worker_id": None,
+                },
+            ],
+        }
+
+        self.assertIsNone(_ordinary_insert_ticket_ids(snapshot))
+
+    def test_request_absent_from_published_area_scope_is_new_demand(self):
+        snapshot = {
+            "current_day_state": {
+                "visits": [{"ticket_id": 1}],
+                "unassigned_ticket_ids": [],
+                "area_scope_tickets": [{"id": 1, "assigned_worker_id": 10}],
+            },
+            "tickets": [
+                {"id": 1, "category": "repair", "lifecycle_state": "assigned"},
+                {
+                    "id": 2,
+                    "category": "repair",
+                    "lifecycle_state": "waiting_assignment",
+                },
+            ],
+        }
+
+        self.assertEqual(_ordinary_insert_ticket_ids(snapshot), {2})
+
+    def test_new_manual_assignment_of_an_existing_request_is_new_demand(self):
+        snapshot = {
+            "current_day_state": {
+                "visits": [{"ticket_id": 1}],
+                "unassigned_ticket_ids": [],
+                "area_scope_tickets": [
+                    {"id": 1, "assigned_worker_id": 10},
+                    {"id": 2, "assigned_worker_id": None},
+                ],
+            },
+            "tickets": [
+                {"id": 1, "category": "repair", "lifecycle_state": "assigned"},
+                {
+                    "id": 2,
+                    "category": "repair",
+                    "lifecycle_state": "assigned",
+                    "assigned_worker_id": 11,
+                },
+            ],
+        }
+
+        self.assertEqual(_ordinary_insert_ticket_ids(snapshot), {2})
+
     def test_new_regular_ticket_is_pinned_around_published_visits(self):
         snapshot = {
             "current_day_state": {
@@ -350,8 +408,7 @@ class OrdinaryInsertRulesTests(unittest.TestCase):
 
     def test_synthetic_emergency_response_cases_measure_from_received_at(self):
         path = (
-            Path(__file__).resolve().parents[2]
-            / "data/planning/dynamic_replanning_scenarios.json"
+            Path(__file__).resolve().parents[2] / "data/planning/dynamic_replanning_scenarios.json"
         )
         cases = json.loads(path.read_text(encoding="utf-8"))["response_cases"]
         for index, case in enumerate(cases, start=1):

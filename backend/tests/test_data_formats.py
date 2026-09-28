@@ -66,6 +66,7 @@ class DataFormatTests(unittest.TestCase):
                 "planning_plan_routes",
                 "ticket_work_type_migration_issues",
                 "ticket_assignment_events",
+                "worker_shift_exceptions",
             },
         )
         for url in ("postgresql://localhost/production", "sqlite:///example_test"):

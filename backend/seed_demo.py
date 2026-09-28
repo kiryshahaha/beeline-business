@@ -373,6 +373,31 @@ def seed_users_and_skills(session: Session) -> None:
                     )
 
 
+def demo_area_office(session: Session, service_area_id, results, *, fallback: int) -> int:
+    """The office of the demo tickets' service area, where the demo brigade works.
+
+    The demo engineers serve the area of the demo tickets. Their brigade must belong
+    to the same area, otherwise their profile and brigade would state two areas and the
+    planner would rightly refuse them.
+    """
+    if service_area_id is None or not results:
+        return fallback
+    existing = session.execute(
+        text("SELECT id FROM offices WHERE service_area_id = :area_id"),
+        {"area_id": service_area_id},
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    return session.execute(
+        text("""
+            INSERT INTO offices (name, location_id, service_area_id)
+            VALUES ('Офис участка демо-заявок', :location_id, :area_id)
+            RETURNING id
+        """),
+        {"location_id": results[0].location_id, "area_id": service_area_id},
+    ).scalar_one()
+
+
 def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
     """Caller owns the transaction. Existing tickets and filled coordinates are preserved."""
     # Serialize copies of this script; the lock is released on commit or rollback.
@@ -650,6 +675,7 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
             )
 
     # Seed offices and brigades after buildings are created
+    brigade_office_id = None
     for i, office_data in enumerate(DEMO_OFFICES):
         office_city_id = get_or_create_id(
             session,
@@ -728,11 +754,14 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                 text("SELECT id FROM users WHERE username = 'demo_foreman'")
             ).scalar_one_or_none()
             if foreman_id:
+                brigade_office_id = demo_area_office(
+                    session, demo_service_area_id, results, fallback=office_id
+                )
                 brigade_id = get_or_create_id(
                     session,
                     "SELECT id FROM brigades WHERE name = 'Альфа'",
                     "INSERT INTO brigades (name, foreman_id, office_id) VALUES ('Альфа', :foreman_id, :office_id) RETURNING id",  # noqa: E501
-                    {"foreman_id": foreman_id, "office_id": office_id},
+                    {"foreman_id": foreman_id, "office_id": brigade_office_id},
                 )
                 worker_ids = (
                     session.execute(text("SELECT id FROM users WHERE role = 'worker'"))
@@ -792,7 +821,7 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
     # Attach equipment to the first demo ticket if exists
     if results and office_ids:
         first_ticket_id = results[0].ticket_id
-        first_office_id = office_ids[0]
+        first_office_id = brigade_office_id or office_ids[0]
         router_id = appliance_ids.get("Wi-Fi роутер Beeline SmartBox GIGA")
         cable_id = appliance_ids.get("Кабель витая пара UTP Cat.5e")
         tool_id = appliance_ids.get("Обжимной инструмент (Кримпер)")

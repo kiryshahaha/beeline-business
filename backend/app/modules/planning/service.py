@@ -18,8 +18,11 @@ from app.modules.planning.day_models import DayPlanRevision
 from app.modules.planning.day_plans import (
     build_plan_state,
     build_replan_state,
+    day_roster,
     diff_states,
     publish_revision,
+    roster_from_snapshot,
+    roster_ids,
 )
 from app.modules.planning.diagnostics import (
     diagnose_dropped,
@@ -41,7 +44,7 @@ from app.modules.planning.snapshot import fingerprint, normalize
 from app.modules.planning.validation import validate_solution
 from app.modules.routing.client import GeoapifyRoutingError
 from app.modules.routing.schemas import RouteCreate
-from app.modules.routing.service import save_routes_in_transaction
+from app.modules.routing.service import RouteValidationError, save_routes_in_transaction
 from app.modules.routing.telemetry import RoutingTelemetry
 from app.modules.tickets.models import Ticket
 from app.modules.tickets.service import update_assignment_in_transaction
@@ -114,24 +117,12 @@ def read_replan_snapshot(
                 {"area_id": service_area_id, "route_date": route_date},
             ).scalars()
         )
-        worker_ids = list(
-            session.execute(
-                text(
-                    """
-                    SELECT DISTINCT worker.user_id
-                    FROM workers AS worker
-                    JOIN users AS user_account ON user_account.id = worker.user_id
-                    LEFT JOIN brigade_members AS membership ON membership.worker_id = worker.user_id
-                    LEFT JOIN brigades AS brigade ON brigade.id = membership.brigade_id
-                    LEFT JOIN divisions AS division ON division.id = brigade.division_id
-                    WHERE user_account.role = 'worker'
-                      AND COALESCE(worker.service_area_id, division.service_area_id) = :area_id
-                    ORDER BY worker.user_id
-                    """
-                ),
-                {"area_id": service_area_id},
-            ).scalars()
-        )
+        # The remainder is recalculated for the engineers admitted to this day only; new
+        # demand never pulls in the rest of the area.
+        roster = day_roster(session, service_area_id, route_date)
+        if roster is None:
+            raise PlanningError("day_roster_unrecoverable", 409, current_revision=current_revision)
+        worker_ids = roster_ids(roster)
         validate_replan_limits(
             len(ticket_ids),
             len(worker_ids),
@@ -156,14 +147,32 @@ def _ordinary_insert_ticket_ids(snapshot):
     day_state = snapshot.get("current_day_state") or {}
     previous_ids = {visit["ticket_id"] for visit in day_state.get("visits", [])}
     previous_ids.update(day_state.get("unassigned_ticket_ids", []))
-    new_tickets = [ticket for ticket in snapshot["tickets"] if ticket["id"] not in previous_ids]
+    area_scope_tickets = day_state.get("area_scope_tickets")
+    if area_scope_tickets is not None:
+        baseline = {ticket["id"]: ticket for ticket in area_scope_tickets}
+        new_tickets = [
+            ticket
+            for ticket in snapshot["tickets"]
+            if ticket["id"] not in previous_ids
+            and (
+                ticket["id"] not in baseline
+                or ticket.get("assigned_worker_id")
+                != baseline[ticket["id"]].get("assigned_worker_id")
+            )
+        ]
+    else:
+        # Legacy revisions do not record area demand. Fall back to the visible plan.
+        new_tickets = [ticket for ticket in snapshot["tickets"] if ticket["id"] not in previous_ids]
+    if not new_tickets:
+        # The area query also sees older demand that was outside the original
+        # preview. It is not a new arrival and must not turn this into insertion-only.
+        return None
     if any(ticket.get("category") == "emergency" for ticket in new_tickets):
         return None
     return {
         ticket["id"]
         for ticket in new_tickets
-        if ticket.get("lifecycle_state")
-        in {"waiting_assignment", "assigned", "dispatched"}
+        if ticket.get("lifecycle_state") in {"waiting_assignment", "assigned", "dispatched"}
     }
 
 
@@ -440,6 +449,7 @@ async def preview(
         )
 
     if persist:
+
         def save_preview():
             with Session(engine) as session, session.begin():
                 session.add(
@@ -509,9 +519,7 @@ def emergency_response_estimates(snapshot: dict, public: dict) -> list[dict]:
             continue
         stop = scheduled.get(ticket["id"])
         received = (
-            datetime.fromisoformat(ticket["received_at"])
-            if ticket.get("received_at")
-            else None
+            datetime.fromisoformat(ticket["received_at"]) if ticket.get("received_at") else None
         )
         arrival = datetime.fromisoformat(stop["arrival_at"]) if stop else None
         service_start = datetime.fromisoformat(stop["service_start_at"]) if stop else None
@@ -625,9 +633,7 @@ async def compare_window_experiment(
                 "original_visit_window_start": original_tickets[window.ticket_id][
                     "visit_window_start"
                 ],
-                "original_visit_window_end": original_tickets[window.ticket_id][
-                    "visit_window_end"
-                ],
+                "original_visit_window_end": original_tickets[window.ticket_id]["visit_window_end"],
                 "scenario_visit_window_start": window.visit_window_start,
                 "scenario_visit_window_end": window.visit_window_end,
             }
@@ -755,6 +761,17 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
         elif plan.state != "ready" or fingerprint(current) != plan.input_fingerprint:
             plan.state = "stale"
             error = PlanningError("plan_stale", 409)
+        elif request.replan and not set(request.worker_ids) <= set(
+            roster_ids(current.get("current_day_roster"))
+        ):
+            plan.state = "stale"
+            error = PlanningError(
+                "day_roster_expanded",
+                409,
+                worker_ids=sorted(
+                    set(request.worker_ids) - set(roster_ids(current.get("current_day_roster")))
+                ),
+            )
         else:
             prepared = prepare(current, apply_at)
             selected = {r["worker_id"] for r in plan.result_snapshot["route_creates"]}
@@ -776,7 +793,15 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                 .order_by(Ticket.id)
                 .with_for_update()
             ).all()
-            saved = save_routes_in_transaction(session, data)
+            try:
+                saved = save_routes_in_transaction(session, data)
+            except RouteValidationError as route_error:
+                raise PlanningError(
+                    "plan_routes_rejected",
+                    409,
+                    reason=route_error.code,
+                    message=str(route_error),
+                ) from route_error
             visits = {
                 s["ticket_id"]: s
                 for r in plan.result_snapshot["public"]["routes"]
@@ -883,6 +908,7 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                                 route.worker_id: stored.id
                                 for route, stored in zip(data, saved, strict=True)
                             },
+                            current["area_scope"]["tickets"],
                         )
                         if request.replan
                         else build_plan_state(
@@ -891,11 +917,19 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                                 route.worker_id: stored.id
                                 for route, stored in zip(data, saved, strict=True)
                             },
+                            current["area_scope"]["tickets"],
                         )
                     ),
                     result=result,
                     at=clock(),
                     plan_id=plan_id,
+                    # A replan keeps the day's roster; a dispatcher's own selection is
+                    # admitted with everyone selected, including engineers left idle.
+                    roster_additions=(
+                        ()
+                        if request.replan
+                        else roster_from_snapshot(current, current["service_area_id"])
+                    ),
                 )
                 result["day_revision"] = revision_row.revision
                 revision_row.result = result

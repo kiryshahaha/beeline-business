@@ -22,6 +22,14 @@ assert {
   res.status: eq 200
 }
 
+script:post-response {
+  // A ticket of another area for the cross-area checks in 13-routes.
+  if (res.getStatus() === 200 && res.getBody().length > 0) {
+    bru.setVar("primorsky_ticket_id", res.getBody()[0].id);
+    bru.setVar("primorsky_location_id", res.getBody()[0].location.id);
+  }
+}
+
 tests {
   test("Каждая заявка соответствует заданным фильтрам", function () {
     res.getBody().forEach(function (ticket) {

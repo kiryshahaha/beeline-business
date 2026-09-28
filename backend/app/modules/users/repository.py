@@ -1,4 +1,5 @@
-"""Literal, parameterized SQL for users, worker profiles, and skills."""
+import json
+from datetime import date
 
 from sqlalchemy import RowMapping, text
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ USER_SELECT_COLUMNS = """
     u.created_at, u.updated_at, u.archived_at,
     w.workshift_start, w.workshift_end, w.transport_type, w.is_on_line,
     w.service_area_id, w.start_location_id, w.stock_office_id, w.end_location_id,
+    w.schedule_type, w.cycle_start_date, w.workdays_mask,
     b.id AS brigade_id, b.name AS brigade_name,
     COALESCE(
         array_remove(array_agg(ws.skill ORDER BY ws.skill), NULL),
@@ -29,6 +31,7 @@ USER_SELECT_GROUP_BY = """
              u.created_at, u.updated_at, u.archived_at, w.workshift_start, w.workshift_end,
              w.transport_type, w.is_on_line,
              w.service_area_id, w.start_location_id, w.stock_office_id, w.end_location_id,
+             w.schedule_type, w.cycle_start_date, w.workdays_mask,
              b.id, b.name
 """
 
@@ -45,25 +48,35 @@ def add_user(session: Session, values: dict[str, object]) -> int:
 
 
 def add_worker(session: Session, values: dict[str, object]) -> None:
+    workdays_mask = values.get("workdays_mask")
+    if workdays_mask is not None and not isinstance(workdays_mask, str):
+        workdays_mask = json.dumps(workdays_mask)
+
+    params = {
+        "transport_type": "walking",
+        "service_area_id": None,
+        "start_location_id": None,
+        "stock_office_id": None,
+        "end_location_id": None,
+        "schedule_type": "5/2",
+        "cycle_start_date": None,
+        **values,
+        "workdays_mask": workdays_mask,
+    }
     session.execute(
         text("""
             INSERT INTO workers (
                 user_id, workshift_start, workshift_end, transport_type,
-                service_area_id, start_location_id, stock_office_id, end_location_id
+                service_area_id, start_location_id, stock_office_id, end_location_id,
+                schedule_type, cycle_start_date, workdays_mask
             )
             VALUES (
                 :user_id, :workshift_start, :workshift_end, :transport_type,
-                :service_area_id, :start_location_id, :stock_office_id, :end_location_id
+                :service_area_id, :start_location_id, :stock_office_id, :end_location_id,
+                :schedule_type, :cycle_start_date, CAST(:workdays_mask AS JSONB)
             )
         """),
-        {
-            "transport_type": "walking",
-            "service_area_id": None,
-            "start_location_id": None,
-            "stock_office_id": None,
-            "end_location_id": None,
-            **values,
-        },
+        params,
     )
 
 
@@ -253,15 +266,33 @@ def update_user(session: Session, user_id: int, values: dict[str, object]) -> No
 
 
 def upsert_worker(session: Session, user_id: int, values: dict[str, object]) -> None:
+    workdays_mask = values.get("workdays_mask")
+    if workdays_mask is not None and not isinstance(workdays_mask, str):
+        workdays_mask = json.dumps(workdays_mask)
+
+    params = {
+        "user_id": user_id,
+        "transport_type": "walking",
+        "service_area_id": None,
+        "start_location_id": None,
+        "stock_office_id": None,
+        "end_location_id": None,
+        "schedule_type": "5/2",
+        "cycle_start_date": None,
+        **values,
+        "workdays_mask": workdays_mask,
+    }
     session.execute(
         text("""
             INSERT INTO workers (
                 user_id, workshift_start, workshift_end, transport_type,
-                service_area_id, start_location_id, stock_office_id, end_location_id
+                service_area_id, start_location_id, stock_office_id, end_location_id,
+                schedule_type, cycle_start_date, workdays_mask
             )
             VALUES (
                 :user_id, :workshift_start, :workshift_end, :transport_type,
-                :service_area_id, :start_location_id, :stock_office_id, :end_location_id
+                :service_area_id, :start_location_id, :stock_office_id, :end_location_id,
+                :schedule_type, :cycle_start_date, CAST(:workdays_mask AS JSONB)
             )
             ON CONFLICT (user_id) DO UPDATE SET
                 workshift_start = EXCLUDED.workshift_start,
@@ -270,17 +301,12 @@ def upsert_worker(session: Session, user_id: int, values: dict[str, object]) -> 
                 service_area_id = EXCLUDED.service_area_id,
                 start_location_id = EXCLUDED.start_location_id,
                 stock_office_id = EXCLUDED.stock_office_id,
-                end_location_id = EXCLUDED.end_location_id
+                end_location_id = EXCLUDED.end_location_id,
+                schedule_type = EXCLUDED.schedule_type,
+                cycle_start_date = EXCLUDED.cycle_start_date,
+                workdays_mask = EXCLUDED.workdays_mask
         """),
-        {
-            "user_id": user_id,
-            "transport_type": "walking",
-            "service_area_id": None,
-            "start_location_id": None,
-            "stock_office_id": None,
-            "end_location_id": None,
-            **values,
-        },
+        params,
     )
 
 
@@ -518,3 +544,81 @@ def list_worker_day_contexts(session: Session, worker_id: int) -> list[RowMappin
         .mappings()
         .all()
     )
+
+
+def add_shift_exception(session: Session, values: dict[str, object]) -> int:
+    return session.execute(
+        text("""
+            INSERT INTO worker_shift_exceptions (
+                worker_id, exception_date, is_working, workshift_start, workshift_end
+            )
+            VALUES (
+                :worker_id, :exception_date, :is_working, :workshift_start, :workshift_end
+            )
+            ON CONFLICT (worker_id, exception_date) DO UPDATE SET
+                is_working = EXCLUDED.is_working,
+                workshift_start = EXCLUDED.workshift_start,
+                workshift_end = EXCLUDED.workshift_end
+            RETURNING id
+        """),
+        values,
+    ).scalar_one()
+
+
+def find_shift_exceptions_for_workers(
+    session: Session, worker_ids: list[int], target_date: date
+) -> list[RowMapping]:
+    if not worker_ids:
+        return []
+    return list(
+        session.execute(
+            text("""
+                SELECT id, worker_id, exception_date, is_working, workshift_start, workshift_end
+                FROM worker_shift_exceptions
+                WHERE worker_id = ANY(:worker_ids)
+                  AND exception_date = :target_date
+            """),
+            {"worker_ids": worker_ids, "target_date": target_date},
+        )
+        .mappings()
+        .all()
+    )
+
+
+def list_shift_exceptions(
+    session: Session,
+    worker_id: int,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> list[RowMapping]:
+    conditions = ["worker_id = :worker_id"]
+    params: dict[str, object] = {"worker_id": worker_id}
+    if start_date is not None:
+        conditions.append("exception_date >= :start_date")
+        params["start_date"] = start_date
+    if end_date is not None:
+        conditions.append("exception_date <= :end_date")
+        params["end_date"] = end_date
+
+    where_clause = " WHERE " + " AND ".join(conditions)
+    return list(
+        session.execute(
+            text(f"""
+                SELECT id, worker_id, exception_date, is_working, workshift_start, workshift_end
+                FROM worker_shift_exceptions
+                {where_clause}
+                ORDER BY exception_date ASC
+            """),
+            params,
+        )
+        .mappings()
+        .all()
+    )
+
+
+def delete_shift_exception(session: Session, exception_id: int) -> bool:
+    res = session.execute(
+        text("DELETE FROM worker_shift_exceptions WHERE id = :id"),
+        {"id": exception_id},
+    )
+    return res.rowcount > 0

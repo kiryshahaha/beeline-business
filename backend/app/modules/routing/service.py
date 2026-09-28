@@ -18,12 +18,61 @@ from app.db.models import (
 from app.modules.planning.models import PlanningPlanRoute
 from app.modules.routing.models import Route
 from app.modules.routing.schemas import RouteCreate, RouteGeoJSON, RouteRead
+from app.modules.service_areas.territory import resolve_tickets, resolve_workers
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
 
 
 class RouteValidationError(ValueError):
-    pass
+    def __init__(self, message: str, code: str | None = None, **details):
+        self.code = code
+        self.details = details
+        super().__init__(message)
+
+    def detail(self):
+        if self.code is None:
+            return str(self)
+        return {"code": self.code, "message": str(self), **self.details}
+
+
+def check_route_territory(session: Session, data: list[RouteCreate]) -> None:
+    """A saved route may visit only tickets of its engineer's service area.
+
+    This is the same rule the planner and the manual assignment enforce; without it a
+    direct route save would be the one way to send an engineer across areas.
+    """
+    ticket_ids = {stop.ticket_id for route in data for stop in route.stops if stop.ticket_id}
+    if not ticket_ids:
+        return
+    ticket_areas, ticket_errors = resolve_tickets(session, ticket_ids)
+    worker_areas, worker_errors = resolve_workers(
+        session,
+        {route.worker_id for route in data if any(stop.ticket_id for stop in route.stops)},
+    )
+    for route in data:
+        for sequence, stop in enumerate(route.stops, 1):
+            if stop.ticket_id is None or stop.ticket_id not in ticket_areas:
+                if stop.ticket_id in ticket_errors:
+                    error = ticket_errors[stop.ticket_id]
+                    raise RouteValidationError(
+                        f"Точка {sequence}: участок заявки не определён", **error.details()
+                    )
+                continue
+            if route.worker_id in worker_errors:
+                error = worker_errors[route.worker_id]
+                raise RouteValidationError(
+                    "Участок исполнителя не определён или указан противоречиво",
+                    **error.details(),
+                )
+            if worker_areas.get(route.worker_id) != ticket_areas[stop.ticket_id]:
+                raise RouteValidationError(
+                    f"Точка {sequence}: заявка другого участка обслуживания",
+                    "service_area_mismatch",
+                    worker_id=route.worker_id,
+                    ticket_id=stop.ticket_id,
+                    worker_service_area_id=worker_areas.get(route.worker_id),
+                    ticket_service_area_id=ticket_areas[stop.ticket_id],
+                )
 
 
 def visible_routes(viewer: UserRead):
@@ -183,6 +232,7 @@ def save_routes_in_transaction(session: Session, data: list[RouteCreate]) -> lis
     )
     if workers != ids:
         raise RouteValidationError("Исполнитель не найден или в архиве")
+    check_route_territory(session, data)
     result = []
     for item in data:
         number = (

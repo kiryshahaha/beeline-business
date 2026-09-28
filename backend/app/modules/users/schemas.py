@@ -1,6 +1,4 @@
-"""Request and response schemas for users, workers, and skills."""
-
-from datetime import time
+from datetime import date, time
 from typing import Annotated, Self
 
 from pydantic import (
@@ -13,7 +11,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.modules.users.enums import TransportType, UserRole
+from app.modules.users.enums import ScheduleType, TransportType, UserRole
 
 PositiveInt32 = Annotated[int, Field(strict=True, ge=1, le=2_147_483_647)]
 
@@ -24,6 +22,9 @@ WORKER_PROFILE_CREATE_EXAMPLE = {
     "transport_type": "walking",
     "workshift_start": "09:00:00",
     "workshift_end": "18:00:00",
+    "schedule_type": "5/2",
+    "cycle_start_date": None,
+    "workdays_mask": [0, 1, 2, 3, 4],
     "skills": ["Монтаж ВОЛС", "Настройка роутеров"],
     "service_area_id": 1,
     "start_location_id": 1,
@@ -35,6 +36,9 @@ WORKER_PROFILE_READ_EXAMPLE = {
     "transport_type": "walking",
     "workshift_start": "09:00:00",
     "workshift_end": "18:00:00",
+    "schedule_type": "5/2",
+    "cycle_start_date": None,
+    "workdays_mask": [0, 1, 2, 3, 4],
     "skills": ["Монтаж ВОЛС", "Настройка роутеров"],
     "is_on_line": True,
     "service_area_id": 1,
@@ -171,6 +175,15 @@ class WorkerProfileCreate(BaseModel):
     end_location_id: PositiveInt32 | None = Field(
         default=None, description="Точка завершения смены при фиксированном финише"
     )
+    schedule_type: ScheduleType = Field(
+        default=ScheduleType.FIVE_TWO, description="Тип графика: 2/2 или 5/2"
+    )
+    cycle_start_date: date | None = Field(
+        default=None, description="Опорная дата начала цикла для графика 2/2"
+    )
+    workdays_mask: list[int] | None = Field(
+        default=None, description="Список рабочих дней недели для графика 5/2 (0=пн..6=вс)"
+    )
 
     @field_validator("skills")
     @classmethod
@@ -206,6 +219,9 @@ class WorkerProfileRead(BaseModel):
     start_location_id: PositiveInt32 | None = None
     stock_office_id: PositiveInt32 | None = None
     end_location_id: PositiveInt32 | None = None
+    schedule_type: ScheduleType = ScheduleType.FIVE_TWO
+    cycle_start_date: date | None = None
+    workdays_mask: list[int] | None = None
 
 
 class WorkerLineStatusUpdate(BaseModel):
@@ -343,6 +359,9 @@ class WorkerProfileUpdate(BaseModel):
     start_location_id: PositiveInt32 | None = None
     stock_office_id: PositiveInt32 | None = None
     end_location_id: PositiveInt32 | None = None
+    schedule_type: ScheduleType | None = None
+    cycle_start_date: date | None = None
+    workdays_mask: list[int] | None = None
 
     @field_validator("skills")
     @classmethod
@@ -419,3 +438,34 @@ class UserUpdate(BaseModel):
         if self.role in (UserRole.OBSERVER, UserRole.FOREMAN) and self.worker_profile is not None:
             raise ValueError("Профиль worker_profile недопустим для ролей observer и foreman")
         return self
+
+
+class WorkerShiftExceptionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    exception_date: date = Field(description="Дата разового исключения графика")
+    is_working: bool = Field(description="Является ли день рабочим")
+    workshift_start: time | None = Field(
+        default=None, description="Начало смены, если рабочий день"
+    )
+    workshift_end: time | None = Field(default=None, description="Конец смены, если рабочий день")
+
+    @model_validator(mode="after")
+    def validate_hours(self) -> Self:
+        if self.is_working:
+            if self.workshift_start is None or self.workshift_end is None:
+                raise ValueError(
+                    "Для рабочего дня исключения требуется указать workshift_start и workshift_end"
+                )
+            if self.workshift_start == self.workshift_end:
+                raise ValueError("Начало и окончание рабочей смены не могут совпадать")
+        return self
+
+
+class WorkerShiftExceptionRead(BaseModel):
+    id: PositiveInt32
+    worker_id: PositiveInt32
+    exception_date: date
+    is_working: bool
+    workshift_start: time | None = None
+    workshift_end: time | None = None

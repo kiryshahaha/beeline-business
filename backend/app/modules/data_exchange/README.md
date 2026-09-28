@@ -37,7 +37,7 @@ data_imports и ticket_work_type_migration_issues (отчёт миграции 0
 оборудование на руках с журналом операций (office_kit_reserves, worker_appliances,
 appliance_operations, appliance_movements, ticket_appliance_states) и происхождение исходных
 файлов (source_imports, source_addresses, source_records). ID в составном ключе
-ticket_appliance_states и в `request` операций переносятся; `report` импорта исходного файла —
+ticket_appliance_states, в `request` операций и в `roster` ревизий плана дня (инженер и участок) переносятся; `report` импорта исходного файла —
 квитанция исходной базы, ID в нём не переносятся. Сохранённые GeoJSON-маршруты экспортируются
 полностью. Исходные файлы организатора загружаются отдельным профилем:
 [source_import](../source_import/README.md).

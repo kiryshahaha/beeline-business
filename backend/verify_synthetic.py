@@ -70,9 +70,7 @@ def verify_packages(root: Path = ROOT) -> dict:
             raise ValueError(f"Policy comparison mismatch: {example['id']}")
         report["policy_comparisons"] += 1
     dynamic = json.loads(
-        (root / "data/planning/dynamic_replanning_scenarios.json").read_text(
-            encoding="utf-8"
-        )
+        (root / "data/planning/dynamic_replanning_scenarios.json").read_text(encoding="utf-8")
     )
     if dynamic.get("schema_version") != 1 or dynamic.get("timezone") != "Europe/Moscow":
         raise ValueError("Unsupported dynamic replanning scenario contract")

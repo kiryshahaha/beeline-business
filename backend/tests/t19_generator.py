@@ -22,6 +22,26 @@ def generate_t19_dataset(variant="base", seed=1900):
                 values[key] = len(tables[entity]) + 1
             elif key in ("created_at", "updated_at", "assigned_at", "next_attempt_at"):
                 values[key] = stamp
+            elif column.default is not None and getattr(column.default, "arg", None) is not None:
+                arg = column.default.arg
+                if callable(arg):
+                    try:
+                        val = arg()
+                    except TypeError:
+                        try:
+                            val = arg(None)
+                        except TypeError:
+                            val = None
+                else:
+                    val = arg
+                if val is not None:
+                    values[key] = val.value if hasattr(val, "value") else val
+            elif column.server_default is not None:
+                arg = getattr(column.server_default, "arg", None)
+                if hasattr(arg, "text"):
+                    values[key] = arg.text.strip("'\"")
+                elif isinstance(arg, str):
+                    values[key] = arg.strip("'\"")
             elif column.nullable:
                 values[key] = None
         tables[entity].append(values)
@@ -102,6 +122,7 @@ def generate_t19_dataset(variant="base", seed=1900):
                 workshift_start=w_start,
                 workshift_end=w_end,
                 is_on_line=not is_offline,
+                schedule_type="5/2",
             )
             add("brigade_members", brigade_id=area_idx, worker_id=user_id)
 

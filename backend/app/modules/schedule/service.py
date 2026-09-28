@@ -29,6 +29,7 @@ from app.modules.schedule.schemas import (
 from app.modules.schedule.timeline import WorkerDay, attribution_window, build_worker_day
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
+from app.modules.users.shifts import get_worker_shift
 
 __all__ = ["MOSCOW", "OfficeNotFoundError", "day_bounds", "get_schedule", "today"]
 
@@ -64,8 +65,31 @@ def load_worker_days(session: Session, day: date, workers: list[RowMapping]) -> 
     if not workers:
         return {}
     ids = [row["id"] for row in workers]
+    exceptions_list = repository.find_shift_exceptions(session, ids, day)
+    exceptions_by_worker: dict[int, list[dict]] = defaultdict(list)
+    for exc in exceptions_list:
+        exceptions_by_worker[exc["worker_id"]].append(dict(exc))
+
+    worker_shifts = {}
+    for row in workers:
+        worker_exc = exceptions_by_worker.get(row["id"], [])
+        shift = get_worker_shift(row, day, exceptions=worker_exc)
+        worker_shifts[row["id"]] = shift
+
     windows = {
-        row["id"]: attribution_window(day, row["workshift_start"], row["workshift_end"])
+        row["id"]: attribution_window(
+            day,
+            (
+                worker_shifts[row["id"]].start.time()
+                if worker_shifts[row["id"]] is not None
+                else row["workshift_start"]
+            ),
+            (
+                worker_shifts[row["id"]].end.time()
+                if worker_shifts[row["id"]] is not None
+                else row["workshift_end"]
+            ),
+        )
         for row in workers
     }
     tickets = repository.find_worker_day_tickets(
@@ -86,14 +110,18 @@ def load_worker_days(session: Session, day: date, workers: list[RowMapping]) -> 
     for row in workers:
         state = states.get(row["id"])
         route = routes.get(row["id"])
+        shift = worker_shifts[row["id"]]
+        is_working = shift is not None
+        shift_start = shift.start.time() if shift is not None else row["workshift_start"]
+        shift_end = shift.end.time() if shift is not None else row["workshift_end"]
         result[row["id"]] = LoadedDay(
             timeline=build_worker_day(
                 day,
-                shift_start=row["workshift_start"],
-                shift_end=row["workshift_end"],
+                shift_start=shift_start,
+                shift_end=shift_end,
                 route_stops=_route_stops(route),
                 tickets=by_worker.get(row["id"], []),
-                available=state["available"] if state else True,
+                available=((state["available"] if state else True) and is_working),
                 unavailable_at=state["unavailable_at"] if state else None,
                 unavailable_until=state["unavailable_until"] if state else None,
             ),
@@ -111,11 +139,11 @@ def _worker_day(loaded: LoadedDay) -> ScheduleWorkerDay:
         shift_start=day.shift_start,
         shift_end=day.shift_end,
         availability=ScheduleAvailability(
-            available=state["available"] if state else True,
+            available=day.available,
             unavailable_at=state["unavailable_at"] if state else None,
             unavailable_until=state["unavailable_until"] if state else None,
             expected_available_at=state["expected_available_at"] if state else None,
-            reason=state["reason"] if state else None,
+            reason=state["reason"] if state else (None if day.available else "Выходной день"),
         ),
         route=ScheduleRoute(
             id=route["id"],
