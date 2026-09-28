@@ -32,11 +32,18 @@ RouteId = Annotated[int, Path(ge=1, le=2_147_483_647)]
 
 
 def get_geoapify_routing_client() -> GeoapifyRoutingClient:
-    """Build the provider boundary with configured key or fallback client."""
+    """Build the provider boundary only after the server has its secret configuration."""
+
     settings = get_settings()
+    api_key = getattr(settings, "geoapify_api_key", None)
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Сервис построения маршрутов не настроен",
+        )
     return GeoapifyRoutingClient(
-        api_key=settings.geoapify_api_key or "",
-        timeout_seconds=settings.geoapify_timeout_seconds,
+        api_key=api_key,
+        timeout_seconds=getattr(settings, "geoapify_timeout_seconds", 10.0),
     )
 
 
@@ -55,13 +62,12 @@ def _raise_route_error(error: GeoapifyRoutingError) -> None:
 
 
 @router.post("", response_model=RouteResult | RouteRead)
-@router.post("/calculate", response_model=RouteResult | RouteRead)
 def handle_route(
     data: dict[str, Any],
     request: Request,
     response: Response,
     session: DatabaseSession,
-    _viewer: Viewer,
+    _viewer: Observer,
 ):
     """Построить маршрут через Geoapify или сохранить снимок маршрута в БД."""
 
@@ -73,12 +79,14 @@ def handle_route(
 
         client = resolve_routing_client(request)
         try:
-            result = client.build_route(
-                origin=route_req.origin,
-                destination=route_req.destination,
-                waypoints=route_req.waypoints,
-                mode=route_req.mode,
-            )
+            kwargs = {
+                "origin": route_req.origin,
+                "destination": route_req.destination,
+                "mode": route_req.mode,
+            }
+            if route_req.waypoints:
+                kwargs["waypoints"] = route_req.waypoints
+            result = client.build_route(**kwargs)
             response.status_code = status.HTTP_200_OK
             return result
         except GeoapifyRoutingError as error:
@@ -111,12 +119,14 @@ def calculate_route(
 
     client = resolve_routing_client(request)
     try:
-        return client.build_route(
-            origin=data.origin,
-            destination=data.destination,
-            waypoints=data.waypoints,
-            mode=data.mode,
-        )
+        kwargs = {
+            "origin": data.origin,
+            "destination": data.destination,
+            "mode": data.mode,
+        }
+        if data.waypoints:
+            kwargs["waypoints"] = data.waypoints
+        return client.build_route(**kwargs)
     except GeoapifyRoutingError as error:
         _raise_route_error(error)
 

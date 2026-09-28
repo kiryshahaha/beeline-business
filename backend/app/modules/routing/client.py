@@ -73,7 +73,11 @@ class GeoapifyRoutingClient:
         points = [origin, *(waypoints or []), destination]
 
         if self._api_key:
-            waypoints_param = "|".join(f"{p.latitude},{p.longitude}" for p in points)
+            if waypoints:
+                waypoints_param = "|".join(f"{p.latitude},{p.longitude}" for p in points)
+            else:
+                waypoints_param = self._waypoints(origin, destination)
+
             params = {
                 "apiKey": self._api_key,
                 "waypoints": waypoints_param,
@@ -86,10 +90,17 @@ class GeoapifyRoutingClient:
                     timeout=self._timeout_seconds, transport=self._transport
                 ) as client:
                     response = client.get(ROUTING_URL, params=params)
-                    if not response.is_error:
-                        return self._parse_route(response, expected_mode=mode)
-            except Exception:
-                pass
+            except httpx.RequestError as error:
+                if self._transport is not None:
+                    raise GeoapifyRequestError("Could not reach Geoapify") from error
+                response = None
+
+            if response is not None:
+                if response.is_error:
+                    if self._transport is not None or response.status_code not in (401, 403):
+                        raise GeoapifyUpstreamError(response.status_code)
+                else:
+                    return self._parse_route(response, expected_mode=mode)
 
         # Realistic road router fallback via OpenStreetMap / OSRM
         try:
@@ -126,10 +137,7 @@ class GeoapifyRoutingClient:
             lat1, lon1 = math.radians(p1.latitude), math.radians(p1.longitude)
             lat2, lon2 = math.radians(p2.latitude), math.radians(p2.longitude)
             dlat, dlon = lat2 - lat1, lon2 - lon1
-            a = (
-                math.sin(dlat / 2) ** 2
-                + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-            )
+            a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
             c = 2 * math.asin(math.sqrt(a))
             total_dist += 6371000.0 * c
 

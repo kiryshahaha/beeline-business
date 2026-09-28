@@ -244,14 +244,13 @@ export default function Home() {
     return workersFullInfo;
   }, [workersFullInfo, selectedBrigade, selectedWorker]);
 
-  // Сброс выбранной заявки, если она не принадлежит выбранной бригаде или воркеру
-  useEffect(() => {
+  // Выбранный объект с проверкой его присутствия среди отображаемых тасок
+  const effectiveSelectedObject = useMemo(() => {
     if (selectedObject?.type === "ticket") {
       const stillExists = displayedTickets.some((t) => t.id === selectedObject.id);
-      if (!stillExists) {
-        setSelectedObject(null);
-      }
+      return stillExists ? selectedObject : null;
     }
+    return selectedObject;
   }, [displayedTickets, selectedObject]);
 
   // Плавное центрирование карты на тасках выбранной бригады или воркера
@@ -448,7 +447,7 @@ export default function Home() {
         routes={routes}
         workerRoute={workerRoute}
         locationById={locationById}
-        selectedObject={selectedObject}
+        selectedObject={effectiveSelectedObject}
         ticketStatusFilter={ticketStatusFilter}
         visibleLayers={visibleLayers}
         onSelectObject={selectObject}
