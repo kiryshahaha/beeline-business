@@ -79,8 +79,16 @@ def load_worker_days(session: Session, day: date, workers: list[RowMapping]) -> 
     windows = {
         row["id"]: attribution_window(
             day,
-            worker_shifts[row["id"]].start or row["workshift_start"],
-            worker_shifts[row["id"]].end or row["workshift_end"],
+            (
+                worker_shifts[row["id"]].start.time()
+                if worker_shifts[row["id"]] is not None
+                else row["workshift_start"]
+            ),
+            (
+                worker_shifts[row["id"]].end.time()
+                if worker_shifts[row["id"]] is not None
+                else row["workshift_end"]
+            ),
         )
         for row in workers
     }
@@ -103,12 +111,18 @@ def load_worker_days(session: Session, day: date, workers: list[RowMapping]) -> 
         state = states.get(row["id"])
         route = routes.get(row["id"])
         shift = worker_shifts[row["id"]]
-        is_working = shift.is_working
+        is_working = shift is not None
+        shift_start = (
+            shift.start.time() if shift is not None else row["workshift_start"]
+        )
+        shift_end = (
+            shift.end.time() if shift is not None else row["workshift_end"]
+        )
         result[row["id"]] = LoadedDay(
             timeline=build_worker_day(
                 day,
-                shift_start=shift.start or row["workshift_start"],
-                shift_end=shift.end or row["workshift_end"],
+                shift_start=shift_start,
+                shift_end=shift_end,
                 route_stops=_route_stops(route),
                 tickets=by_worker.get(row["id"], []),
                 available=((state["available"] if state else True) and is_working),

@@ -79,13 +79,24 @@ def get_shift_for_worker(
     exc_end = None
     if exceptions:
         for exc in exceptions:
-            exc_date = _get(exc, "exception_date")
+            exc_date = _get(exc, "exception_date") or _get(exc, "route_date")
             if isinstance(exc_date, str):
                 exc_date = date.fromisoformat(exc_date)
             if exc_date == target_date:
-                exc_is_working = _get(exc, "is_working")
-                s = _get(exc, "custom_workshift_start")
-                e = _get(exc, "custom_workshift_end")
+                if _get(exc, "is_working") is not None:
+                    exc_is_working = _get(exc, "is_working")
+                elif _get(exc, "is_day_off") is not None:
+                    exc_is_working = not _get(exc, "is_day_off")
+                s = (
+                    _get(exc, "workshift_start")
+                    or _get(exc, "custom_workshift_start")
+                    or _get(exc, "shift_start")
+                )
+                e = (
+                    _get(exc, "workshift_end")
+                    or _get(exc, "custom_workshift_end")
+                    or _get(exc, "shift_end")
+                )
                 exc_start = time.fromisoformat(s) if isinstance(s, str) else s
                 exc_end = time.fromisoformat(e) if isinstance(e, str) else e
                 break

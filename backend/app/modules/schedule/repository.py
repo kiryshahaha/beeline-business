@@ -192,9 +192,9 @@ def find_shift_exceptions(session: Session, worker_ids: list[int], day: date) ->
     return list(
         session.execute(
             text("""
-                SELECT worker_id, route_date, is_day_off, shift_start, shift_end, comment
+                SELECT id, worker_id, exception_date, is_working, workshift_start, workshift_end
                 FROM worker_shift_exceptions
-                WHERE worker_id = ANY(:worker_ids) AND route_date = :day
+                WHERE worker_id = ANY(:worker_ids) AND exception_date = :day
             """),
             {"worker_ids": worker_ids, "day": day},
         )
