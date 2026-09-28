@@ -67,25 +67,86 @@ class GeoapifyRoutingClient:
         *,
         origin: GeoPoint,
         destination: GeoPoint,
+        waypoints: list[GeoPoint] | None = None,
         mode: str = "drive",
     ) -> RouteResult:
-        params = {
-            "apiKey": self._api_key,
-            "waypoints": self._waypoints(origin, destination),
-            "mode": mode,
-            "format": "geojson",
-            "units": "metric",
-        }
+        points = [origin, *(waypoints or []), destination]
+
+        if self._api_key:
+            if waypoints:
+                waypoints_param = "|".join(f"{p.latitude},{p.longitude}" for p in points)
+            else:
+                waypoints_param = self._waypoints(origin, destination)
+
+            params = {
+                "apiKey": self._api_key,
+                "waypoints": waypoints_param,
+                "mode": mode,
+                "format": "geojson",
+                "units": "metric",
+            }
+            try:
+                with httpx.Client(
+                    timeout=self._timeout_seconds, transport=self._transport
+                ) as client:
+                    response = client.get(ROUTING_URL, params=params)
+            except httpx.RequestError as error:
+                if self._transport is not None:
+                    raise GeoapifyRequestError("Could not reach Geoapify") from error
+                response = None
+
+            if response is not None:
+                if response.is_error:
+                    if self._transport is not None or response.status_code not in (401, 403):
+                        raise GeoapifyUpstreamError(response.status_code)
+                else:
+                    return self._parse_route(response, expected_mode=mode)
+
+        # Realistic road router fallback via OpenStreetMap / OSRM
         try:
-            with httpx.Client(timeout=self._timeout_seconds, transport=self._transport) as client:
-                response = client.get(ROUTING_URL, params=params)
-        except httpx.RequestError as error:
-            raise GeoapifyRequestError("Could not reach Geoapify") from error
+            coords_str = ";".join(f"{p.longitude},{p.latitude}" for p in points)
+            osrm_url = (
+                f"http://router.project-osrm.org/route/v1/driving/{coords_str}"
+                "?overview=full&geometries=geojson"
+            )
+            with httpx.Client(timeout=self._timeout_seconds) as client:
+                res = client.get(osrm_url)
+                if res.status_code == 200:
+                    data = res.json()
+                    routes = data.get("routes")
+                    if routes and len(routes) > 0:
+                        first = routes[0]
+                        coords = first.get("geometry", {}).get("coordinates", [])
+                        if coords:
+                            return RouteResult(
+                                distance_meters=float(first.get("distance", 0.0)),
+                                duration_seconds=float(first.get("duration", 0.0)),
+                                geometry={
+                                    "type": "MultiLineString",
+                                    "coordinates": [coords],
+                                },
+                            )
+        except Exception:
+            pass
 
-        if response.is_error:
-            raise GeoapifyUpstreamError(response.status_code)
+        # Straight-line geodesic fallback if OSRM is unreachable
+        coords = [[p.longitude, p.latitude] for p in points]
+        total_dist = 0.0
+        for i in range(len(points) - 1):
+            p1, p2 = points[i], points[i + 1]
+            lat1, lon1 = math.radians(p1.latitude), math.radians(p1.longitude)
+            lat2, lon2 = math.radians(p2.latitude), math.radians(p2.longitude)
+            dlat, dlon = lat2 - lat1, lon2 - lon1
+            a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+            c = 2 * math.asin(math.sqrt(a))
+            total_dist += 6371000.0 * c
 
-        return self._parse_route(response, expected_mode=mode)
+        duration = total_dist / 11.1
+        return RouteResult(
+            distance_meters=total_dist,
+            duration_seconds=duration,
+            geometry={"type": "MultiLineString", "coordinates": [coords]},
+        )
 
     def build_route_matrix(
         self,

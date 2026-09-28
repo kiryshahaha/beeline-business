@@ -35,14 +35,15 @@ def get_geoapify_routing_client() -> GeoapifyRoutingClient:
     """Build the provider boundary only after the server has its secret configuration."""
 
     settings = get_settings()
-    if not settings.geoapify_api_key:
+    api_key = getattr(settings, "geoapify_api_key", None)
+    if not api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Сервис построения маршрутов не настроен",
         )
     return GeoapifyRoutingClient(
-        api_key=settings.geoapify_api_key,
-        timeout_seconds=settings.geoapify_timeout_seconds,
+        api_key=api_key,
+        timeout_seconds=getattr(settings, "geoapify_timeout_seconds", 10.0),
     )
 
 
@@ -78,11 +79,14 @@ def handle_route(
 
         client = resolve_routing_client(request)
         try:
-            result = client.build_route(
-                origin=route_req.origin,
-                destination=route_req.destination,
-                mode=route_req.mode,
-            )
+            kwargs = {
+                "origin": route_req.origin,
+                "destination": route_req.destination,
+                "mode": route_req.mode,
+            }
+            if route_req.waypoints:
+                kwargs["waypoints"] = route_req.waypoints
+            result = client.build_route(**kwargs)
             response.status_code = status.HTTP_200_OK
             return result
         except GeoapifyRoutingError as error:
@@ -115,11 +119,14 @@ def calculate_route(
 
     client = resolve_routing_client(request)
     try:
-        return client.build_route(
-            origin=data.origin,
-            destination=data.destination,
-            mode=data.mode,
-        )
+        kwargs = {
+            "origin": data.origin,
+            "destination": data.destination,
+            "mode": data.mode,
+        }
+        if data.waypoints:
+            kwargs["waypoints"] = data.waypoints
+        return client.build_route(**kwargs)
     except GeoapifyRoutingError as error:
         _raise_route_error(error)
 

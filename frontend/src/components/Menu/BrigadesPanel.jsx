@@ -7,7 +7,13 @@ import { useUsers } from '@/hooks/useUsers';
 import { useServiceAreas } from '@/hooks/useServiceAreas';
 import { BrigadeDetailsPanel } from './BrigadeDetailsPanel';
 
-export const BrigadesPanel = ({ onClose }) => {
+export const BrigadesPanel = ({
+    selectedBrigade,
+    onSelectBrigade,
+    selectedWorker,
+    onSelectWorker,
+    onClose
+}) => {
     const { brigades = [] } = useBrigades();
     const { offices = [] } = useOffices();
     const { users = [] } = useUsers({ role: 'worker' });
@@ -17,7 +23,35 @@ export const BrigadesPanel = ({ onClose }) => {
     const [filterOpen, setFilterOpen] = React.useState(false);
     const [selectedOfficeId, setSelectedOfficeId] = React.useState(null);
     const filterRef = React.useRef(null);
-    const [selectedBrigade, setSelectedBrigade] = React.useState(null);
+    const [localSelectedBrigade, setLocalSelectedBrigade] = React.useState(null);
+    const activeBrigade = selectedBrigade || localSelectedBrigade;
+
+    // Reset brigade and worker filter when BrigadesPanel unmounts
+    React.useEffect(() => {
+        return () => {
+            onSelectBrigade?.(null);
+            onSelectWorker?.(null);
+        };
+    }, [onSelectBrigade, onSelectWorker]);
+
+    const handleSelectBrigade = (brigade) => {
+        setLocalSelectedBrigade(brigade);
+        onSelectBrigade?.(brigade);
+        onSelectWorker?.(null);
+    };
+
+    const handleBack = () => {
+        setLocalSelectedBrigade(null);
+        onSelectBrigade?.(null);
+        onSelectWorker?.(null);
+    };
+
+    const handleClose = (e) => {
+        setLocalSelectedBrigade(null);
+        onSelectBrigade?.(null);
+        onSelectWorker?.(null);
+        onClose?.(e);
+    };
 
     React.useEffect(() => {
         const handleClickOutside = (e) => {
@@ -79,8 +113,16 @@ export const BrigadesPanel = ({ onClose }) => {
 
     const displayGroups = Object.keys(grouped).length > 0 ? grouped : {};
 
-    if (selectedBrigade) {
-        return <BrigadeDetailsPanel brigade={selectedBrigade} onBack={() => setSelectedBrigade(null)} onClose={onClose} />;
+    if (activeBrigade) {
+        return (
+            <BrigadeDetailsPanel
+                brigade={activeBrigade}
+                selectedWorker={selectedWorker}
+                onSelectWorker={onSelectWorker}
+                onBack={handleBack}
+                onClose={handleClose}
+            />
+        );
     }
 
     return (
@@ -96,7 +138,7 @@ export const BrigadesPanel = ({ onClose }) => {
                         <circle cx="8" cy="15" r="1.5" fill="currentColor"/>
                     </svg>
                 </div>
-                <button className={styles.closeBtn} onClick={onClose}>
+                <button className={styles.closeBtn} onClick={handleClose}>
                     <Image src="/icons/Frame 33.svg" alt="close" width={16} height={16} />
                 </button>
             </div>
@@ -112,7 +154,7 @@ export const BrigadesPanel = ({ onClose }) => {
                             <div 
                                 key={brigade.id} 
                                 className={styles.brigadeCard} 
-                                onClick={() => setSelectedBrigade(brigade)}
+                                onClick={() => handleSelectBrigade(brigade)}
                                 style={{ cursor: 'pointer' }}
                             >
                                 <div className={styles.brigadeCardHeader}>

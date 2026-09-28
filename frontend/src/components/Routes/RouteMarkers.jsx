@@ -82,7 +82,7 @@ export default function RouteMarkers({
       selectedObject.id === selectedRoute.id &&
       selectedObject.stopSequence === stop.sequence;
 
-    const isStart = stop.sequence === 1 && !stop.ticket_id;
+    const isStart = (stop.isStart || stop.sequence === 1 || stop.sequence === 0) && !stop.ticket_id;
     const isFinish =
       stop.sequence === selectedRoute.stops.length &&
       !stop.ticket_id &&
@@ -90,7 +90,7 @@ export default function RouteMarkers({
 
     return (
       <Marker
-        key={`route-${selectedRoute.id}-stop-${stop.sequence}`}
+        key={`route-${selectedRoute.id}-stop-${stop.sequence}-${stop.ticket_id || 'base'}`}
         longitude={stop.longitude}
         latitude={stop.latitude}
         anchor="center"

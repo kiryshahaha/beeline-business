@@ -53,6 +53,7 @@ class RouteRequest(BaseModel):
 
     origin: GeoPoint
     destination: GeoPoint
+    waypoints: list[GeoPoint] = Field(default_factory=list)
     mode: RouteMode = "drive"
 
 
