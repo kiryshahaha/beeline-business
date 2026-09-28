@@ -27,15 +27,19 @@ def _ticket_filters(
         conditions.append("b.city_id = :city_id")
         parameters["city_id"] = city_id
     if service_area_id is not None:
-        conditions.append("b.service_area_id = :service_area_id")
+        conditions.append("COALESCE(t.service_area_id, b.service_area_id) = :service_area_id")
         parameters["service_area_id"] = service_area_id
     if brigade_id is not None:
         conditions.append("""
-            EXISTS (
+            (
+                t.brigade_id = :brigade_id OR (
+                    t.brigade_id IS NULL AND EXISTS (
                 SELECT 1
                 FROM brigade_members AS brigade_member
                     WHERE brigade_member.worker_id = t.assigned_worker_id
                   AND brigade_member.brigade_id = :brigade_id
+                    )
+                )
             )
         """)
         parameters["brigade_id"] = brigade_id

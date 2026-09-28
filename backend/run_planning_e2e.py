@@ -11,7 +11,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 import httpx
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from planning_scenarios import ROUTE_DATE
 from seed_demo import run_seed
@@ -37,6 +37,56 @@ def stop(process):
             process.wait(timeout=5)
 
 
+def align_demo_brigade_with_ticket_area(engine):
+    """Keep the demo worker brigade in the same district as Bruno ticket 1."""
+    with engine.begin() as connection:
+        target = connection.execute(
+            text("""
+                SELECT COALESCE(ticket.service_area_id, building.service_area_id), ticket.location_id
+                FROM tickets AS ticket
+                JOIN locations AS location ON location.id = ticket.location_id
+                JOIN buildings AS building ON building.id = location.building_id
+                WHERE ticket.id = 1
+            """)
+        ).one_or_none()
+        foreman_id = connection.execute(
+            text("SELECT id FROM users WHERE username = 'demo_foreman'")
+        ).scalar_one_or_none()
+        if target is None or foreman_id is None:
+            return
+
+        area_id, location_id = target
+        brigade = connection.execute(
+            text("""
+                SELECT brigade.id, division.service_area_id
+                FROM brigades AS brigade
+                JOIN divisions AS division ON division.id = brigade.division_id
+                WHERE brigade.foreman_id = :foreman_id
+            """),
+            {"foreman_id": foreman_id},
+        ).one_or_none()
+        if brigade is None or brigade.service_area_id == area_id:
+            return
+
+        office_id = connection.execute(
+            text("SELECT id FROM offices WHERE service_area_id = :area_id"),
+            {"area_id": area_id},
+        ).scalar_one_or_none()
+        if office_id is None:
+            office_id = connection.execute(
+                text("""
+                    INSERT INTO offices (name, location_id, service_area_id)
+                    VALUES ('E2E target-area office', :location_id, :area_id)
+                    RETURNING id
+                """),
+                {"location_id": location_id, "area_id": area_id},
+            ).scalar_one()
+        connection.execute(
+            text("UPDATE brigades SET office_id = :office_id WHERE id = :brigade_id"),
+            {"office_id": office_id, "brigade_id": brigade.id},
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--planner-python", default=sys.executable)
@@ -54,6 +104,9 @@ def main():
         with isolated.connect() as connection:
             schema = connection.exec_driver_sql("SELECT current_schema()").scalar_one()
         run_seed(isolated, ROUTE_DATE)
+        # The demo seed's only brigade is attached to a Moscow office while its
+        # ticket 1 and demo workers belong to Saint Petersburg.
+        align_demo_brigade_with_ticket_area(isolated)
         env = {
             **os.environ,
             "APP_ENV": "test",

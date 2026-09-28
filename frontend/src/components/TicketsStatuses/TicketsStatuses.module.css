@@ -129,6 +129,35 @@
     /* margin-bottom: 2px; */
 }
 
+.ticketArea {
+    color: rgba(235, 235, 245, 0.7);
+    font-size: 12px;
+}
+
+.brigadePicker {
+    display: grid;
+    gap: 6px;
+    color: rgba(235, 235, 245, 0.7);
+    font-size: 12px;
+}
+
+.brigadePicker select {
+    max-width: 100%;
+    padding: 8px 10px;
+    border: 1px solid rgba(235, 235, 245, 0.2);
+    border-radius: 8px;
+    color: #FFFFFF;
+    background: #3A3A3C;
+}
+
+.brigadePicker select:disabled {
+    opacity: 0.6;
+}
+
+.brigadeError {
+    color: #FF4245;
+}
+
 .ticketFooter {
     display: flex;
     justify-content: space-between;

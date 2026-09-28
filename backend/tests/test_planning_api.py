@@ -25,6 +25,7 @@ from app.db.models import (
 )
 from app.db.session import get_session
 from app.main import app
+from app.modules.brigades.models import BrigadeMember
 from app.modules.buildings.models import Building
 from app.modules.data_exchange.formats import parse_file, serialize
 from app.modules.data_exchange.service import import_data
@@ -467,6 +468,17 @@ class PlanningApiTests(CommittedDatabaseTestCase):
         with self.engine.begin() as connection:
             connection.execute(TicketAppliance.__table__.delete())
             connection.execute(WorkTypeRequiredAppliance.__table__.delete())
+            first_brigade_id = connection.scalar(
+                select(BrigadeMember.brigade_id).where(
+                    BrigadeMember.worker_id == self.payload["worker_ids"][0]
+                )
+            )
+            connection.execute(
+                update(BrigadeMember)
+                .where(BrigadeMember.worker_id.in_(self.payload["worker_ids"]))
+                .values(brigade_id=first_brigade_id)
+            )
+            connection.execute(update(Ticket).values(brigade_id=first_brigade_id))
         plan = self.preview(allow_partial=False)
         for route in plan["routes"]:
             for visit in route["stops"]:
@@ -496,7 +508,15 @@ class PlanningApiTests(CommittedDatabaseTestCase):
             self.assertEqual(
                 {c["worker_id"] for c in item["candidates"]}, set(self.payload["worker_ids"])
             )
-            self.assertEqual({c["reason"]["code"] for c in item["candidates"]}, {"missing_skill"})
+            codes = {candidate["reason"]["code"] for candidate in item["candidates"]}
+            self.assertEqual(codes, {"brigade_mismatch", "missing_skill"})
+            self.assertEqual(
+                sum(
+                    candidate["reason"]["code"] == "missing_skill"
+                    for candidate in item["candidates"]
+                ),
+                1,
+            )
         self.assertEqual(plan["metrics"]["unassigned_by_category"], {"skill": 8})
 
     def test_full_routes_are_not_called_impossible_and_extra_staff_is_an_estimate(self):
@@ -510,7 +530,7 @@ class PlanningApiTests(CommittedDatabaseTestCase):
             self.assertEqual(item["reason"]["code"], "no_slot_in_computed_plan")
             self.assertIn("не доказательство невозможности", item["reason"]["message"])
             codes = sorted(c["reason"]["code"] for c in item["candidates"])
-            self.assertEqual(codes, ["office_mismatch"] * 3 + ["route_full"])
+            self.assertEqual(codes, ["brigade_mismatch"] * 3 + ["route_full"])
         estimate = plan["resource_estimate"]
         self.assertTrue(estimate["is_estimate"])
         self.assertTrue(estimate["complete"])

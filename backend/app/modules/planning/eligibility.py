@@ -68,6 +68,11 @@ def candidate_reason(
 ):
     """First failed hard rule for one engineer; the order goes from qualification to time."""
     day = epoch.date()
+    if ticket.get("brigade_resolution_required"):
+        return reasons.brigade_resolution_required(ticket.get("service_area_id"))
+    ticket_brigade_id = ticket.get("brigade_id")
+    if ticket_brigade_id is not None and worker.get("brigade_id") != ticket_brigade_id:
+        return reasons.brigade_mismatch(ticket_brigade_id, worker.get("brigade_id"))
     missing = sorted(skills - worker["skill_ids"])
     if missing:
         return reasons.missing_skill(missing, skills)
@@ -259,6 +264,7 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         worker.update(
             {
                 "office_id": office["id"],
+                "brigade_id": members.get(wid),
                 "service_area_id": worker_area_id,
                 "location_id": start_location_id,
                 "start_location_id": start_location_id,
@@ -374,9 +380,20 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                     or snapshot.get("ticket_service_areas", {}).get(tid)
                     or snapshot.get("service_area_id")
                 )
+                area_brigade_ids = snapshot.get("service_area_brigades", {}).get(ticket_area_id, [])
                 candidate_ticket = dict(
                     ticket,
+                    brigade_id=(
+                        ticket.get("brigade_id")
+                        if ticket.get("brigade_id") is not None
+                        else area_brigade_ids[0]
+                        if len(area_brigade_ids) == 1
+                        else None
+                    ),
                     service_area_id=ticket_area_id,
+                    brigade_resolution_required=(
+                        ticket.get("brigade_id") is None and len(area_brigade_ids) > 1
+                    ),
                     visit_window_start=window_start.isoformat(),
                     visit_window_end=window_end.isoformat(),
                 )

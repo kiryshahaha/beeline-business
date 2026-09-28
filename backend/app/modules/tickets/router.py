@@ -13,6 +13,7 @@ from app.modules.auth.dependencies import get_current_user, require_roles
 from app.modules.execution import service as execution_service
 from app.modules.execution.enums import WorkEventType
 from app.modules.execution.schemas import ExecutionCommand, WindowChangeCommand
+from app.modules.locations.reverse_geocoding import GeoapifyReverseGeocoder
 from app.modules.planning.errors import PlanningError
 from app.modules.planning.planner_client import PlannerClient
 from app.modules.planning.router import (
@@ -26,6 +27,7 @@ from app.modules.tickets.schemas import (
     AssignmentPreviewRequest,
     AssignmentPreviewResponse,
     TicketAssignmentUpdate,
+    TicketBrigadeUpdate,
     TicketCreate,
     TicketRead,
     TicketSlaEstimateRead,
@@ -39,6 +41,16 @@ DatabaseSession = Annotated[Session, Depends(get_session)]
 CurrentUser = Annotated[UserRead, Depends(get_current_user)]
 CurrentObserver = Annotated[UserRead, Depends(require_roles(UserRole.OBSERVER))]
 IdempotencyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
+
+
+def get_reverse_geocoder() -> GeoapifyReverseGeocoder | None:
+    settings = get_settings()
+    if not settings.geoapify_api_key:
+        return None
+    return GeoapifyReverseGeocoder(
+        settings.geoapify_api_key,
+        timeout_seconds=settings.geoapify_timeout_seconds,
+    )
 
 
 def optional_planning_settings():
@@ -109,7 +121,7 @@ def list_tickets(
     ] = None,
     brigade_id: Annotated[
         int | None,
-        Query(ge=1, le=2_147_483_647, description="ID бригады назначенных исполнителей."),
+        Query(ge=1, le=2_147_483_647, description="ID целевой бригады заявки."),
     ] = None,
     limit: Annotated[int, Query(ge=1, le=100, description="Максимум заявок в ответе.")] = 20,
     offset: Annotated[
@@ -142,10 +154,16 @@ def create_ticket(
     session: DatabaseSession,
     response: Response,
     current_user: CurrentObserver,
+    reverse_geocoder: GeoapifyReverseGeocoder | None = Depends(get_reverse_geocoder),
 ) -> TicketRead:
     """Создать заявку на существующее место выполнения из адресного справочника."""
     try:
-        ticket = service.create_ticket(session, data, actor_id=current_user.id)
+        ticket = service.create_ticket(
+            session,
+            data,
+            actor_id=current_user.id,
+            reverse_geocoder=reverse_geocoder,
+        )
     except service.LocationNotFoundError as error:
         raise HTTPException(status_code=422, detail="Место выполнения не найдено") from error
     except service.WorkTypeNotFoundError as error:
@@ -156,6 +174,32 @@ def create_ticket(
         ) from error
     response.headers["Location"] = f"/api/v1/tickets/{ticket.id}"
     return ticket
+
+
+@router.put("/{id}/brigade", response_model=TicketRead)
+def update_ticket_brigade(
+    id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    data: TicketBrigadeUpdate,
+    session: DatabaseSession,
+    _current_user: CurrentObserver,
+) -> TicketRead:
+    """Choose or clear the brigade responsible for a ticket's service area."""
+    try:
+        return service.update_ticket_brigade(session, id, data.brigade_id)
+    except service.TicketNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Заявка не найдена") from error
+    except service.BrigadeNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Бригада не найдена") from error
+    except service.BrigadeServiceAreaMismatchError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Бригада не обслуживает район заявки",
+        ) from error
+    except service.TicketWorkerBrigadeMismatchError as error:
+        raise HTTPException(
+            status_code=409,
+            detail="Бригада заявки должна совпадать с бригадой назначенного исполнителя",
+        ) from error
 
 
 @router.get(
@@ -239,6 +283,16 @@ async def update_ticket_assignment(
         raise HTTPException(
             status_code=422,
             detail="Исполнитель принадлежит другому участку обслуживания",
+        ) from error
+    except service.BrigadeResolutionRequiredError as error:
+        raise HTTPException(
+            status_code=409,
+            detail="Сначала выберите бригаду заявки",
+        ) from error
+    except service.TicketWorkerBrigadeMismatchError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Исполнитель не входит в выбранную бригаду заявки",
         ) from error
     except service.AssignmentValidationError as error:
         raise HTTPException(

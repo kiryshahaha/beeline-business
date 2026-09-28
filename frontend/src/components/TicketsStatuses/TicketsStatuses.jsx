@@ -1,10 +1,14 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useMemo } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import styles from "./TicketsStatuses.module.css"
 import Status from "./Status"
 import { useClickOutside } from "@/hooks/useClickOutside"
 import { useTickets } from "@/hooks/useTickets"
+import { useBrigades } from "@/hooks/useBrigades"
+import { useAuth } from "@/providers/AuthProvider"
+import { apiFetch } from "@/lib/apiFetch"
 
 const STATUS_LABELS = {
     planned: "Ожидание", // По макету
@@ -40,11 +44,27 @@ const formatAddress = (loc) => {
     return parts.join(', ') || loc.address;
 };
 
+const tokenRole = (token) => {
+    try {
+        const encoded = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+        const payload = JSON.parse(atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, "=")));
+        return payload.role;
+    } catch {
+        return null;
+    }
+};
+
 const TicketsStatuses = () => {
     const { tickets, ticketsData } = useTickets({ limit: 100 });
+    const { brigades = [] } = useBrigades();
+    const { token } = useAuth();
+    const queryClient = useQueryClient();
     const [isOpen, setIsOpen] = useState(false);
     const [activeFilter, setActiveFilter] = useState("all");
+    const [savingTicketId, setSavingTicketId] = useState(null);
+    const [brigadeErrors, setBrigadeErrors] = useState({});
     const containerRef = useRef(null);
+    const isObserver = useMemo(() => tokenRole(token || "") === "observer", [token]);
 
     useClickOutside(containerRef, () => setIsOpen(false));
 
@@ -58,6 +78,27 @@ const TicketsStatuses = () => {
         if (activeFilter === "completed") return t.status === "completed";
         return true;
     });
+
+    const updateBrigade = async (ticket, value) => {
+        const brigadeId = value === "clear" ? null : Number(value);
+        setSavingTicketId(ticket.id);
+        setBrigadeErrors((errors) => ({ ...errors, [ticket.id]: null }));
+        try {
+            const response = await apiFetch(`/tickets/${ticket.id}/brigade`, {
+                method: "PUT",
+                body: JSON.stringify({ brigade_id: brigadeId }),
+            });
+            if (!response.ok) {
+                const body = await response.json().catch(() => null);
+                throw new Error(typeof body?.detail === "string" ? body.detail : "Не удалось выбрать бригаду");
+            }
+            await queryClient.invalidateQueries({ queryKey: ["ticketsList"] });
+        } catch (error) {
+            setBrigadeErrors((errors) => ({ ...errors, [ticket.id]: error.message }));
+        } finally {
+            setSavingTicketId(null);
+        }
+    };
 
     return (
         <div 
@@ -114,6 +155,44 @@ const TicketsStatuses = () => {
                                 <div className={styles.ticketAddress}>
                                     {formatAddress(t.location)}
                                 </div>
+                                <div className={styles.ticketArea}>
+                                    Район: {t.district || t.location?.district || "не определён"}
+                                    {t.brigade_id && ` · Бригада: ${brigades.find((item) => item.id === t.brigade_id)?.name || t.brigade_id}`}
+                                </div>
+                                {isObserver && !t.assigned_worker_id && !t.brigade_id && brigades.some((item) => item.service_area_id === t.service_area_id) && (
+                                    <label className={styles.brigadePicker}>
+                                        <span>Выбрать бригаду</span>
+                                        <select
+                                            aria-label={`Бригада заявки ${t.id}`}
+                                            value=""
+                                            disabled={savingTicketId === t.id}
+                                            onChange={(event) => updateBrigade(t, event.target.value)}
+                                        >
+                                            <option value="" disabled>Выберите бригаду</option>
+                                            {brigades
+                                                .filter((item) => item.service_area_id === t.service_area_id)
+                                                .map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                                        </select>
+                                        {brigadeErrors[t.id] && <span className={styles.brigadeError}>{brigadeErrors[t.id]}</span>}
+                                    </label>
+                                )}
+                                {isObserver && !t.assigned_worker_id && t.brigade_id && brigades.some((item) => item.id === t.brigade_id) && (
+                                    <label className={styles.brigadePicker}>
+                                        <span>Бригада</span>
+                                        <select
+                                            aria-label={`Бригада заявки ${t.id}`}
+                                            value={t.brigade_id}
+                                            disabled={savingTicketId === t.id}
+                                            onChange={(event) => updateBrigade(t, event.target.value)}
+                                        >
+                                            <option value="clear">Снять назначение</option>
+                                            {brigades
+                                                .filter((item) => item.service_area_id === t.service_area_id)
+                                                .map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                                        </select>
+                                        {brigadeErrors[t.id] && <span className={styles.brigadeError}>{brigadeErrors[t.id]}</span>}
+                                    </label>
+                                )}
                                 <div className={styles.ticketFooter}>
                                     <div className={styles.ticketTime}>
                                         <ClockIcon />

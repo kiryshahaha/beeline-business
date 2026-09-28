@@ -133,6 +133,7 @@ class TicketsSummaryApiTests(DatabaseTestCase):
         created_at: datetime,
         worker_id: int | None = None,
         *,
+        brigade_id: int | None = None,
         completed_at: datetime | None = None,
         updated_at: datetime | None = None,
         planned_start_at: datetime | None = None,
@@ -140,17 +141,20 @@ class TicketsSummaryApiTests(DatabaseTestCase):
         return self.connection.execute(
             text(
                 "INSERT INTO tickets ("
-                "location_id, title, work_type, status, visit_window_start, visit_window_end, "
+                "location_id, brigade_id, title, work_type, status, visit_window_start, "
+                "visit_window_end, "
                 "estimated_duration_minutes, assigned_worker_id, actual_completed_at, "
                 "planned_start_at, planned_end_at, created_at, updated_at"
                 ") VALUES ("
-                ":location_id, :title, 'Настройка сети', :status, :created_at, :window_end, "
+                ":location_id, :brigade_id, :title, 'Настройка сети', :status, :created_at, "
+                ":window_end, "
                 "60, :worker_id, :completed_at, :planned_start, :planned_end, :created_at, "
                 ":updated_at"
                 ") RETURNING id"
             ),
             {
                 "location_id": location_id,
+                "brigade_id": brigade_id,
                 "title": f"Заявка {status.value} {created_at.timestamp()}",
                 "status": status.value,
                 "created_at": created_at,
@@ -167,7 +171,9 @@ class TicketsSummaryApiTests(DatabaseTestCase):
         now = datetime.now(UTC).replace(microsecond=0)
         self.now = now
         # Open queue opened long ago: it must not vanish from a "today" board (A31).
-        self.add_ticket(location_id, TicketStatus.PLANNED, now - timedelta(days=40))
+        self.open_ticket_id = self.add_ticket(
+            location_id, TicketStatus.PLANNED, now - timedelta(days=40)
+        )
         self.add_ticket(location_id, TicketStatus.PLANNED, now, self.worker_one.id)
         self.add_ticket(location_id, TicketStatus.IN_PROGRESS, now, self.worker_one.id)
         self.add_ticket(
@@ -229,6 +235,21 @@ class TicketsSummaryApiTests(DatabaseTestCase):
         )
 
     def test_foreman_sees_own_brigade_and_the_queue_of_its_office_area(self):
+        self.current_user = self.foreman_one
+        body = self.summary(period="month", office_id=self.office_two)
+
+        self.assertEqual(
+            self.counts(body),
+            {"open": 0, "assigned": 1, "in_progress": 1, "created_in_period": 3, "completed": 1},
+        )
+
+        self.current_user = self.observer
+        response = self.client.put(
+            f"/api/v1/tickets/{self.open_ticket_id}/brigade",
+            json={"brigade_id": self.brigade_one},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
         self.current_user = self.foreman_one
         body = self.summary(period="month", office_id=self.office_two)
 

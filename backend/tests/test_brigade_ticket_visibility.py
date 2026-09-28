@@ -49,9 +49,10 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
         self.own_brigade = self.new_brigade(self.foreman, [self.worker, self.coworker])
         self.other_brigade = self.new_brigade(self.other_foreman, [self.other_worker])
         # Foreign and unassigned tickets precede own tickets to test SQL pagination.
-        self.foreign_ticket = self.new_ticket([self.other_worker])
+        self.foreign_ticket = self.new_ticket([self.other_worker], self.other_brigade)
         self.unassigned_ticket = self.new_ticket([])
-        self.own_ticket = self.new_ticket([self.worker])
+        self.own_unassigned_ticket = self.new_ticket([], self.own_brigade)
+        self.own_ticket = self.new_ticket([self.worker], self.own_brigade)
 
     def save(self, instance):
         self.session.add(instance)
@@ -96,7 +97,7 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()["id"]
 
-    def new_ticket(self, workers):
+    def new_ticket(self, workers, brigade_id=None):
         response = self.client.post(
             "/api/v1/tickets",
             json={
@@ -111,6 +112,13 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
         )
         self.assertEqual(response.status_code, 201, response.text)
         ticket_id = response.json()["id"]
+        if brigade_id is not None:
+            response = self.client.put(
+                f"/api/v1/tickets/{ticket_id}/brigade",
+                headers=self.auth(self.observer),
+                json={"brigade_id": brigade_id},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
         response = self.client.put(
             f"/api/v1/tickets/{ticket_id}/assignees",
             headers=self.auth(self.observer),
@@ -132,17 +140,33 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
             [
                 self.foreign_ticket,
                 self.unassigned_ticket,
+                self.own_unassigned_ticket,
                 self.own_ticket,
             ],
         )
         self.assertEqual(
             self.listed_ids(self.observer, brigade_id=self.own_brigade),
-            [self.own_ticket],
+            [self.own_unassigned_ticket, self.own_ticket],
         )
         response = self.client.get(
             f"/api/v1/tickets/{self.foreign_ticket}", headers=self.auth(self.observer)
         )
         self.assertEqual(response.status_code, 200, response.text)
+
+    def test_manual_assignment_requires_resolved_brigade_and_matching_worker(self):
+        unresolved = self.client.put(
+            f"/api/v1/tickets/{self.unassigned_ticket}/assignees",
+            headers=self.auth(self.observer),
+            json={"worker_id": self.worker.id},
+        )
+        self.assertEqual(unresolved.status_code, 409, unresolved.text)
+
+        wrong_brigade = self.client.put(
+            f"/api/v1/tickets/{self.own_unassigned_ticket}/assignees",
+            headers=self.auth(self.observer),
+            json={"worker_id": self.other_worker.id},
+        )
+        self.assertEqual(wrong_brigade.status_code, 422, wrong_brigade.text)
 
     def test_worker_reads_only_assigned_tickets_in_lists_and_by_id(self):
         self.assertEqual(self.listed_ids(self.worker), [self.own_ticket])
@@ -168,9 +192,13 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
             self.assertEqual(response.status_code, 404, response.text)
 
     def test_foreman_scope_is_intersected_with_filter_before_pagination(self):
-        self.assertEqual(self.listed_ids(self.foreman), [self.own_ticket])
+        self.assertEqual(
+            self.listed_ids(self.foreman), [self.own_unassigned_ticket, self.own_ticket]
+        )
         self.assertEqual(self.listed_ids(self.foreman, brigade_id=self.other_brigade), [])
-        self.assertEqual(self.listed_ids(self.foreman, limit=1, offset=0), [self.own_ticket])
+        self.assertEqual(
+            self.listed_ids(self.foreman, limit=1, offset=0), [self.own_unassigned_ticket]
+        )
         self.assertEqual(
             self.listed_ids(
                 self.foreman,
@@ -179,7 +207,7 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
                 service_area_id=self.service_area_id,
                 brigade_id=self.own_brigade,
             ),
-            [self.own_ticket],
+            [self.own_unassigned_ticket, self.own_ticket],
         )
         self.assertEqual(self.listed_ids(self.foreman, status="completed"), [])
         self.assertEqual(self.listed_ids(self.lonely_foreman), [])
@@ -192,7 +220,7 @@ class BrigadeTicketVisibilityTests(DatabaseTestCase):
                     f"/api/v1/tickets/{ticket_id}{suffix}", headers=self.auth(self.foreman)
                 )
                 self.assertEqual(response.status_code, 404, response.text)
-        for ticket_id in (self.own_ticket,):
+        for ticket_id in (self.own_unassigned_ticket, self.own_ticket):
             for suffix in ("", "/comments"):
                 response = self.client.get(
                     f"/api/v1/tickets/{ticket_id}{suffix}", headers=self.auth(self.foreman)

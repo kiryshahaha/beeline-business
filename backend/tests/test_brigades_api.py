@@ -59,6 +59,7 @@ class BrigadesApiTests(DatabaseTestCase):
             ),
             {"location_id": location_id},
         ).scalar_one()
+        self.service_area_id = service_area_id
 
         self.session.commit()
 
@@ -110,6 +111,7 @@ class BrigadesApiTests(DatabaseTestCase):
         )
         self.assertEqual(brigade["name"], "Север")
         self.assertEqual(brigade["foreman_id"], self.foreman_one.id)
+        self.assertEqual(brigade["service_area_id"], self.service_area_id)
         self.assertCountEqual(brigade["worker_ids"], [self.worker_one.id, self.worker_two.id])
 
         duplicate = self.client.post(

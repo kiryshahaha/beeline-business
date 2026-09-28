@@ -15,6 +15,7 @@ from app.modules.execution import service as execution_service
 from app.modules.execution.enums import TicketLifecycleState, WorkEventType
 from app.modules.execution.schemas import ExecutionCommand
 from app.modules.locations.models import Location
+from app.modules.locations.reverse_geocoding import GeoapifyReverseGeocoder
 from app.modules.locations.schemas import LocationRead
 from app.modules.notifications.enums import NotificationKind
 from app.modules.routing.service import save_routes_in_transaction
@@ -70,6 +71,22 @@ class PermissionDeniedError(Exception):
 
 
 class ServiceAreaMismatchError(Exception):
+    pass
+
+
+class BrigadeNotFoundError(Exception):
+    pass
+
+
+class BrigadeServiceAreaMismatchError(Exception):
+    pass
+
+
+class TicketWorkerBrigadeMismatchError(Exception):
+    pass
+
+
+class BrigadeResolutionRequiredError(Exception):
     pass
 
 
@@ -208,6 +225,8 @@ def _ticket_from_row(details: RowMapping) -> TicketRead:
     data = TicketFields.model_validate(details).model_dump()
     data.update(
         id=details["id"],
+        brigade_id=details["brigade_id"],
+        district=details["district"],
         work_type=details["work_type"],
         work_type_id=details["work_type_id"],
         category=category or TicketCategory.REPAIR,
@@ -231,8 +250,8 @@ def _ticket_from_row(details: RowMapping) -> TicketRead:
             id=details["location_id"],
             city_id=details["city_id"],
             city=details["city"],
-            service_area_id=details["service_area_id"],
-            district=details["district"],
+            service_area_id=details["location_service_area_id"],
+            district=details["location_district"],
             street_id=details["street_id"],
             street=details["street"],
             building_id=details["building_id"],
@@ -255,13 +274,44 @@ def create_ticket(
     *,
     actor_id: int | None = None,
     idempotency_key: str | None = None,
+    reverse_geocoder: GeoapifyReverseGeocoder | None = None,
 ) -> TicketRead:
     with session.begin_nested() if session.in_transaction() else session.begin():
+        geocode_source = repository.find_ticket_geocode_source(session, data.location_id)
+        if geocode_source is None:
+            raise LocationNotFoundError
+
+        geocoding_attempted = (
+            reverse_geocoder is not None
+            and geocode_source["latitude"] is not None
+            and geocode_source["longitude"] is not None
+        )
+        reverse_geocoded_area_id = None
+        if geocoding_attempted:
+            result = reverse_geocoder.reverse_geocode(
+                latitude=geocode_source["latitude"], longitude=geocode_source["longitude"]
+            )
+            if result is not None and result.district is not None:
+                reverse_geocoded_area_id = repository.find_service_area_for_district(
+                    session, result.district, result.city
+                )
+
         lock_planning_mutation(session)
         if repository.find_location_id(session, data.location_id) is None:
             raise LocationNotFoundError
         values = data.model_dump()
         values["status"] = data.status.value
+
+        service_area_id = (
+            reverse_geocoded_area_id or data.service_area_id or geocode_source["service_area_id"]
+        )
+        brigade_id = None
+        if not geocoding_attempted or reverse_geocoded_area_id is not None:
+            area_brigades = repository.find_brigade_ids_for_service_area(session, service_area_id)
+            if len(area_brigades) == 1:
+                brigade_id = area_brigades[0]
+        values["service_area_id"] = service_area_id
+        values["brigade_id"] = brigade_id
 
         work_type_id = data.work_type_id
         work_type_row = work_types_repository.find_work_type(session, work_type_id)
@@ -304,33 +354,7 @@ def create_ticket(
             TicketStatus.COMPLETED: TicketLifecycleState.COMPLETED.value,
             TicketStatus.WONT_FIX: TicketLifecycleState.CANCELLED.value,
         }[data.status]
-        if not values.get("service_area_id"):
-            resolved_area = session.execute(
-                text(
-                    """
-                    SELECT b.service_area_id
-                    FROM locations AS loc
-                    JOIN buildings AS b ON b.id = loc.building_id
-                    WHERE loc.id = :location_id
-                    LIMIT 1
-                    """
-                ),
-                {"location_id": values["location_id"]},
-            ).scalar_one_or_none()
-            values["service_area_id"] = resolved_area
         ticket_id = repository.add_ticket(session, values)
-        service_area_id = session.execute(
-            text(
-                """
-                SELECT building.service_area_id
-                FROM tickets AS ticket
-                JOIN locations AS location ON location.id = ticket.location_id
-                JOIN buildings AS building ON building.id = location.building_id
-                WHERE ticket.id = :ticket_id
-                """
-            ),
-            {"ticket_id": ticket_id},
-        ).scalar_one()
         event_id = execution_repository.insert_work_event(
             session,
             event_type=WorkEventType.NEW_TICKET.value,
@@ -350,6 +374,31 @@ def create_ticket(
         )
         execution_repository.attach_last_event(session, ticket_id, event_id)
         # Build the response inside the transaction; a failed operation leaves no ticket.
+        return get_ticket_unscoped(session, ticket_id)
+
+
+def update_ticket_brigade(session: Session, ticket_id: int, brigade_id: int | None) -> TicketRead:
+    with session.begin_nested() if session.in_transaction() else session.begin():
+        lock_planning_mutation(session)
+        ticket = repository.lock_ticket_brigade_context(session, ticket_id)
+        if ticket is None:
+            raise TicketNotFoundError
+
+        if brigade_id is not None:
+            brigade_area_id = repository.find_brigade_service_area(session, brigade_id)
+            if brigade_area_id is None:
+                raise BrigadeNotFoundError
+            if brigade_area_id != ticket["service_area_id"]:
+                raise BrigadeServiceAreaMismatchError
+
+        if ticket["assigned_worker_id"] is not None:
+            worker_brigade_id = repository.find_worker_brigade_id(
+                session, ticket["assigned_worker_id"]
+            )
+            if worker_brigade_id != brigade_id:
+                raise TicketWorkerBrigadeMismatchError
+
+        repository.update_ticket_brigade(session, ticket_id, brigade_id)
         return get_ticket_unscoped(session, ticket_id)
 
 
@@ -386,6 +435,7 @@ async def update_assignment(
 
     new_preview = None
     if worker_id is not None:
+        _resolve_assignment_brigade(session, ticket_info, worker_id)
         new_preview = await preview_assignment(
             session,
             ticket_id,
@@ -495,6 +545,7 @@ def _manual_assignment_ticket_info(session: Session, ticket_id: int) -> dict | N
                 SELECT
                     t.id,
                     t.assigned_worker_id,
+                    t.brigade_id,
                     COALESCE(t.service_area_id, building.service_area_id) AS service_area_id,
                     (COALESCE(t.planned_start_at, t.visit_window_start)
                         AT TIME ZONE 'Europe/Moscow')::date AS route_date
@@ -510,6 +561,45 @@ def _manual_assignment_ticket_info(session: Session, ticket_id: int) -> dict | N
         .one_or_none()
     )
     return dict(row) if row is not None else None
+
+
+def _resolve_assignment_brigade(
+    session: Session, ticket: dict | RowMapping, worker_id: int
+) -> int | None:
+    """Validate the selected worker against the ticket's explicit or unique brigade."""
+    ticket_area_id = ticket.get("service_area_id")
+    ticket_brigade_id = ticket.get("brigade_id")
+    worker_brigade_id = repository.find_worker_brigade_id(session, worker_id)
+    worker_brigade_area_id = (
+        repository.find_brigade_service_area(session, worker_brigade_id)
+        if worker_brigade_id is not None
+        else None
+    )
+
+    if (
+        ticket_area_id is not None
+        and worker_brigade_area_id is not None
+        and ticket_area_id != worker_brigade_area_id
+    ):
+        raise ServiceAreaMismatchError
+
+    if ticket_brigade_id is not None:
+        if worker_brigade_id != ticket_brigade_id:
+            raise TicketWorkerBrigadeMismatchError
+        return ticket_brigade_id
+
+    area_brigades = (
+        repository.find_brigade_ids_for_service_area(session, ticket_area_id)
+        if ticket_area_id is not None
+        else []
+    )
+    if len(area_brigades) > 1:
+        raise BrigadeResolutionRequiredError
+    if len(area_brigades) == 1:
+        if worker_brigade_id != area_brigades[0]:
+            raise TicketWorkerBrigadeMismatchError
+        return area_brigades[0]
+    return None
 
 
 def _manual_worker_ticket_ids(
@@ -864,6 +954,13 @@ def update_assignment_in_transaction(
 
         if t_area is not None and w_area is not None and t_area != w_area:
             raise ServiceAreaMismatchError
+        selected_brigade_id = _resolve_assignment_brigade(
+            session,
+            {"service_area_id": t_area, "brigade_id": ticket.get("brigade_id")},
+            worker_id,
+        )
+        if selected_brigade_id != ticket.get("brigade_id"):
+            repository.update_ticket_brigade(session, ticket_id, selected_brigade_id)
     from app.modules.appliances import inventory
 
     inventory.check_reassignment(session, ticket_id, [worker_id] if worker_id else [])
