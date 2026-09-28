@@ -71,6 +71,13 @@ export const FastStatsPanel = ({ onClose }) => {
                             {stats.active_brigades_count} бригад на смене
                         </div>
 
+                        <div className={styles.brigadesCountBadge}>
+                            {/* <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0095FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4 }}>
+                                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                            </svg> */}
+                            ~{stats.avg_km_per_worker_per_day} км/день на техника
+                        </div>
+
                         <div className={styles.slaBadge} style={{ borderColor: stats.sla_compliance_percent >= 90 ? '#21CC51' : '#FF4444' }}>
                             <div className={styles.slaDot} style={{ backgroundColor: stats.sla_compliance_percent >= 90 ? '#21CC51' : '#FF4444' }} />
                             <span style={{ color: stats.sla_compliance_percent >= 90 ? '#21CC51' : '#FF4444', fontFamily: 'monospace', letterSpacing: '1px' }}>

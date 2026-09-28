@@ -132,6 +132,9 @@ const Dashboard = () => {
     // Просроченные или требующие внимания заявки
     const atRiskCount = stats?.at_risk_tickets_count ?? 0;
 
+    // Среднее количество км на техника в день
+    const avgKmPerWorker = stats?.avg_km_per_worker_per_day ?? 0;
+
     return (
         <div className={styles.container}>
             {/* Верхняя панель */}
@@ -305,6 +308,18 @@ const Dashboard = () => {
                         trendType="negative"
                         svg="/icons/expiredTasks.svg"
                         footer={`${atRiskCount} заявок требуют внимания`}
+                        loading={isStatsLoading}
+                    />
+                </div>
+
+                <div className={styles.kpiCol}>
+                    <SmallStatsCard
+                        header="Ср. км / техник"
+                        num={`${avgKmPerWorker}`}
+                        trend="км/день"
+                        trendType="neutral"
+                        svg="/icons/person.svg"
+                        footer="Среднее расстояние за 14 дней"
                         loading={isStatsLoading}
                     />
                 </div>

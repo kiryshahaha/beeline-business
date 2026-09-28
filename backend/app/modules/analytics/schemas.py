@@ -52,6 +52,7 @@ class FastStats(BaseModel):
     at_risk_tickets_ids: list[int]
     idle_workers_ids: list[int]
     active_brigades_count: int
+    avg_km_per_worker_per_day: float
 
 
 class BrigadeWorkloadItem(BaseModel):

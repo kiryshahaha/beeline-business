@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import styles from "./EventsJournalModal.module.css";
 import { useRecentActivity } from "@/hooks/useRecentActivity";
 
@@ -57,6 +57,19 @@ export default function EventsJournalModal({ isOpen, onClose }) {
 
   // Получаем расширенную ленту до 50 событий
   const { events, isLoading } = useRecentActivity({ limit: 50 });
+
+  useEffect(() => {
+    if (isOpen) {
+      const originalBodyOverflow = document.body.style.overflow;
+      const originalHtmlOverflow = document.documentElement.style.overflow;
+      document.body.style.overflow = "hidden";
+      document.documentElement.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = originalBodyOverflow;
+        document.documentElement.style.overflow = originalHtmlOverflow;
+      };
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

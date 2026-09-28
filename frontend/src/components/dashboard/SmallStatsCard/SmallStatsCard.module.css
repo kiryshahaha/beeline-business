@@ -87,6 +87,13 @@
     pointer-events: none;
 }
 
+.personBgIcon {
+    width: 195px;
+    height: 195px;
+    right: -40px;
+    bottom: -65px;
+}
+
 .skeleton {
     display: inline-block;
     background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.12) 50%, rgba(255, 255, 255, 0.05) 75%);
