@@ -6,6 +6,7 @@ Revises: 0030
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "0031"
 down_revision = "0030"
@@ -36,7 +37,7 @@ def upgrade() -> None:
     )
     op.add_column(
         "workers",
-        sa.Column("workdays_mask", sa.JSON(), nullable=True),
+        sa.Column("workdays_mask", postgresql.JSONB(), nullable=True),
     )
 
     # 2. Worker shift exceptions

@@ -1,3 +1,4 @@
+import json
 from datetime import date
 
 from sqlalchemy import RowMapping, text
@@ -47,6 +48,21 @@ def add_user(session: Session, values: dict[str, object]) -> int:
 
 
 def add_worker(session: Session, values: dict[str, object]) -> None:
+    workdays_mask = values.get("workdays_mask")
+    if workdays_mask is not None and not isinstance(workdays_mask, str):
+        workdays_mask = json.dumps(workdays_mask)
+
+    params = {
+        "transport_type": "walking",
+        "service_area_id": None,
+        "start_location_id": None,
+        "stock_office_id": None,
+        "end_location_id": None,
+        "schedule_type": "5/2",
+        "cycle_start_date": None,
+        **values,
+        "workdays_mask": workdays_mask,
+    }
     session.execute(
         text("""
             INSERT INTO workers (
@@ -57,20 +73,10 @@ def add_worker(session: Session, values: dict[str, object]) -> None:
             VALUES (
                 :user_id, :workshift_start, :workshift_end, :transport_type,
                 :service_area_id, :start_location_id, :stock_office_id, :end_location_id,
-                :schedule_type, :cycle_start_date, :workdays_mask
+                :schedule_type, :cycle_start_date, CAST(:workdays_mask AS JSONB)
             )
         """),
-        {
-            "transport_type": "walking",
-            "service_area_id": None,
-            "start_location_id": None,
-            "stock_office_id": None,
-            "end_location_id": None,
-            "schedule_type": "5/2",
-            "cycle_start_date": None,
-            "workdays_mask": None,
-            **values,
-        },
+        params,
     )
 
 
@@ -260,6 +266,22 @@ def update_user(session: Session, user_id: int, values: dict[str, object]) -> No
 
 
 def upsert_worker(session: Session, user_id: int, values: dict[str, object]) -> None:
+    workdays_mask = values.get("workdays_mask")
+    if workdays_mask is not None and not isinstance(workdays_mask, str):
+        workdays_mask = json.dumps(workdays_mask)
+
+    params = {
+        "user_id": user_id,
+        "transport_type": "walking",
+        "service_area_id": None,
+        "start_location_id": None,
+        "stock_office_id": None,
+        "end_location_id": None,
+        "schedule_type": "5/2",
+        "cycle_start_date": None,
+        **values,
+        "workdays_mask": workdays_mask,
+    }
     session.execute(
         text("""
             INSERT INTO workers (
@@ -270,7 +292,7 @@ def upsert_worker(session: Session, user_id: int, values: dict[str, object]) -> 
             VALUES (
                 :user_id, :workshift_start, :workshift_end, :transport_type,
                 :service_area_id, :start_location_id, :stock_office_id, :end_location_id,
-                :schedule_type, :cycle_start_date, :workdays_mask
+                :schedule_type, :cycle_start_date, CAST(:workdays_mask AS JSONB)
             )
             ON CONFLICT (user_id) DO UPDATE SET
                 workshift_start = EXCLUDED.workshift_start,
@@ -284,18 +306,7 @@ def upsert_worker(session: Session, user_id: int, values: dict[str, object]) -> 
                 cycle_start_date = EXCLUDED.cycle_start_date,
                 workdays_mask = EXCLUDED.workdays_mask
         """),
-        {
-            "user_id": user_id,
-            "transport_type": "walking",
-            "service_area_id": None,
-            "start_location_id": None,
-            "stock_office_id": None,
-            "end_location_id": None,
-            "schedule_type": "5/2",
-            "cycle_start_date": None,
-            "workdays_mask": None,
-            **values,
-        },
+        params,
     )
 
 

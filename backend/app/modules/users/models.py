@@ -13,6 +13,7 @@ from sqlalchemy import (
     Time,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IntegerIdMixin
@@ -108,7 +109,9 @@ class Worker(Base):
         server_default=ScheduleType.FIVE_TWO.value,
     )
     cycle_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    workdays_mask: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
+    workdays_mask: Mapped[list[int] | None] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=True
+    )
 
     __table_args__ = (
         CheckConstraint("workshift_start <> workshift_end", name="workshift_duration_not_zero"),

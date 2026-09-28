@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, date, datetime, time
 from hashlib import sha256
 
@@ -95,7 +96,11 @@ def _build_user_read(row: RowMapping) -> UserRead:
             if "schedule_type" in row and row["schedule_type"]
             else ScheduleType.FIVE_TWO,
             cycle_start_date=row["cycle_start_date"] if "cycle_start_date" in row else None,
-            workdays_mask=row["workdays_mask"] if "workdays_mask" in row else None,
+            workdays_mask=(
+                json.loads(row["workdays_mask"])
+                if isinstance(row.get("workdays_mask"), str)
+                else row.get("workdays_mask")
+            ),
         )
     return UserRead(
         id=row["id"],
