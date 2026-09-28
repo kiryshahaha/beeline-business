@@ -44,10 +44,18 @@ class ClassificationRulesTests(unittest.TestCase):
         self.assertFalse(is_emerg2)
         self.assertEqual(cat2, "repair")
 
-    def test_unknown_hd_type_raises_error(self):
+    def test_unknown_hd_type_behavior(self):
+        # With raise_on_unknown=True, it raises diagnostic ClassificationError
         with self.assertRaises(ClassificationError) as ctx:
-            classify_demand("неизвестный_тип_abc", work_type_category="repair")
+            classify_demand(
+                "неизвестный_тип_abc", work_type_category="repair", raise_on_unknown=True
+            )
         self.assertEqual(ctx.exception.code, "unknown_hd_type")
+
+        # By default, unknown HD types are safely treated as non-emergency
+        cat, is_emerg = classify_demand("неизвестный_тип_abc", work_type_category="repair")
+        self.assertFalse(is_emerg)
+        self.assertEqual(cat, "repair")
 
     def test_conflicting_classification_raises_error(self):
         # HD says emergency, caller says repair
@@ -60,10 +68,15 @@ class ClassificationRulesTests(unittest.TestCase):
             classify_demand("подключение", explicit_category="emergency")
         self.assertEqual(ctx.exception.code, "category_classification_conflict")
 
-    def test_emergency_without_hd_type_rejected(self):
+        # Unknown HD type cannot be declared emergency
         with self.assertRaises(ClassificationError) as ctx:
-            classify_demand(None, explicit_category="emergency")
-        self.assertEqual(ctx.exception.code, "emergency_hd_type_required")
+            classify_demand("неизвестный_тип_abc", explicit_category="emergency")
+        self.assertEqual(ctx.exception.code, "category_classification_conflict")
+
+    def test_explicit_emergency_without_hd_type_accepted(self):
+        cat, is_emerg = classify_demand(None, explicit_category="emergency")
+        self.assertTrue(is_emerg)
+        self.assertEqual(cat, "emergency")
 
 
 class TicketCreateValidationTests(unittest.TestCase):
@@ -89,23 +102,34 @@ class TicketCreateValidationTests(unittest.TestCase):
         self.assertEqual(ticket.request_type_hd, "авария")
         self.assertEqual(ticket.category, TicketCategory.EMERGENCY)
 
-    def test_ticket_create_rejects_unknown_hd(self):
-        with self.assertRaises(ValidationError) as ctx:
-            TicketCreate(
-                **self.base_payload(
-                    request_type_hd="неизвестная_категория",
-                )
+    def test_ticket_create_accepts_unknown_hd_as_regular(self):
+        ticket = TicketCreate(
+            **self.base_payload(
+                request_type_hd="неизвестная_категория_X",
+                category="repair",
             )
-        self.assertIn("unknown_hd_type", str(ctx.exception))
+        )
+        self.assertEqual(ticket.request_type_hd, "неизвестная_категория_X")
+        self.assertEqual(ticket.category, TicketCategory.REPAIR)
 
-    def test_ticket_create_rejects_emergency_without_hd(self):
+    def test_ticket_create_accepts_emergency_without_hd(self):
+        ticket = TicketCreate(
+            **self.base_payload(
+                category="emergency",
+            )
+        )
+        self.assertEqual(ticket.category, TicketCategory.EMERGENCY)
+        self.assertIsNone(ticket.request_type_hd)
+
+    def test_ticket_create_rejects_unknown_hd_with_emergency_category(self):
         with self.assertRaises(ValidationError) as ctx:
             TicketCreate(
                 **self.base_payload(
+                    request_type_hd="неизвестная_категория_X",
                     category="emergency",
                 )
             )
-        self.assertIn("emergency_hd_type_required", str(ctx.exception))
+        self.assertIn("category_classification_conflict", str(ctx.exception))
 
     def test_ticket_create_rejects_classification_conflict(self):
         with self.assertRaises(ValidationError) as ctx:
