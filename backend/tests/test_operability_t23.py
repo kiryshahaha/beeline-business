@@ -23,6 +23,7 @@ from app.db.session import get_session
 from app.main import app
 from app.modules.maintenance import retention
 from app.modules.notifications.connections import ConnectionManager
+from app.modules.notifications.schedule_updates import publish_schedule_updated
 from app.modules.notifications.topology import DeliveryLease, delivery_state
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserCreate
@@ -337,6 +338,17 @@ class DeliveryLeaseTests(DatabaseTestCase):
         self.assertTrue(first.alive())
         first.release()
         self.assertTrue(second.acquire(), "the role moves once the holder lets it go")
+
+    def test_schedule_update_notification_reaches_the_delivery_process(self):
+        lease = DeliveryLease(self.engine)
+        self.addCleanup(lease.release)
+        self.assertTrue(lease.acquire())
+
+        with Session(self.engine) as publisher:
+            with publisher.begin():
+                publish_schedule_updated(publisher)
+
+        self.assertTrue(lease.wait_for_schedule_update(timeout=1.0))
 
 
 class RetentionTests(AddressFixture):

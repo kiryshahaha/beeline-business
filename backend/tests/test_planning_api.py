@@ -134,6 +134,30 @@ class PlanningApiTests(CommittedDatabaseTestCase):
             for route in session.scalars(select(Route)):
                 self.assertEqual(route.geojson["features"][-1]["properties"]["source"], "geoapify")
 
+    def test_apply_publishes_schedule_update_once_and_replay_does_not(self):
+        plan = self.preview(allow_partial=False)
+        with patch("app.modules.planning.service.publish_schedule_updated") as publish:
+            applied = self.apply(plan)
+            self.assertEqual(applied.status_code, 200, applied.text)
+            self.assertEqual(publish.call_count, 1)
+
+            replay = self.apply(plan)
+            self.assertTrue(replay.json()["already_applied"])
+            self.assertEqual(publish.call_count, 1)
+
+    def test_rejected_stale_apply_does_not_publish_schedule_update(self):
+        current_plan = self.preview(allow_partial=False)
+        stale_plan = self.preview(allow_partial=False)
+        with patch("app.modules.planning.service.publish_schedule_updated") as publish:
+            applied = self.apply(current_plan)
+            self.assertEqual(applied.status_code, 200, applied.text)
+            self.assertEqual(publish.call_count, 1)
+
+            rejected = self.apply(stale_plan)
+            self.assertEqual(rejected.status_code, 409, rejected.text)
+            self.assertEqual(rejected.json()["detail"]["code"], "plan_stale")
+            self.assertEqual(publish.call_count, 1)
+
     def test_manual_assignment_recalculates_route_revision_when_planner_enabled(self):
         plan = self.preview(allow_partial=False)
         self.assertEqual(self.apply(plan).status_code, 200)
