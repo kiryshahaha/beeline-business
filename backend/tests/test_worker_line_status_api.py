@@ -36,11 +36,12 @@ class WorkerLineStatusApiTests(DatabaseTestCase):
         super().setUp()
         city = self.save(City(name="Москва"))
         district = self.save(District(city_id=city.id, name="Тестовый район"))
+        self.service_area_id = self.service_area_for_district(district.id)
         street = self.save(Street(city_id=city.id, name="Тестовая улица"))
         building = self.save(
             Building(
                 city_id=city.id,
-                service_area_id=self.service_area_for_district(district.id),
+                service_area_id=self.service_area_id,
                 street_id=street.id,
                 number="1",
             )
@@ -96,6 +97,7 @@ class WorkerLineStatusApiTests(DatabaseTestCase):
                     workshift_start="09:00:00",
                     workshift_end="18:00:00",
                     skills=["Монтаж"],
+                    service_area_id=self.service_area_id,
                 )
                 if role == UserRole.WORKER
                 else None,

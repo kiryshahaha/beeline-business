@@ -1,0 +1,31 @@
+meta {
+  name: Отчёт о согласованности участков
+  type: http
+  seq: 28
+}
+
+get {
+  url: {{base_url}}/api/v1/service-areas/consistency
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Отчёт перечисляет противоречия с источниками и ничего не исправляет сам", () => {
+    const body = res.getBody();
+    expect(body.consistent).to.be.a("boolean");
+    ["workers", "brigades", "tickets"].forEach((key) => expect(body[key]).to.be.an("array"));
+    body.workers.forEach((issue) => {
+      expect(["service_area_missing", "service_area_configuration_mismatch"]).to.include(issue.code);
+      expect(issue.subject).to.equal("worker");
+      expect(issue.sources).to.be.an("object");
+    });
+  });
+}

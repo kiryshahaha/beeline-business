@@ -220,6 +220,21 @@ class MetricChange(FieldChange):
     delta: float | None = None
 
 
+class RosterChange(BaseModel):
+    added: list[int]
+    removed: list[int]
+
+
+class RosterEntry(BaseModel):
+    """An engineer admitted to the area-day, with the area and shift at admission."""
+
+    worker_id: int
+    service_area_id: int
+    workshift_start: str | None
+    workshift_end: str | None
+    source: str
+
+
 class DayPlanDiff(BaseModel):
     """What changed between two published revisions of the same area-day."""
 
@@ -234,6 +249,7 @@ class DayPlanDiff(BaseModel):
     changed: list[VisitChange]
     unchanged_ticket_ids: list[int]
     metrics: dict[str, MetricChange]
+    roster: RosterChange | None = None
 
 
 class ReplanDiff(BaseModel):
@@ -292,6 +308,8 @@ class DayPlanRevisionRead(BaseModel):
     metrics: dict[str, Any]
     planning_policy: RecordedPolicy | None = None
     objective_components: dict[str, int] | None = None
+    # NULL for revisions published before the roster was recorded.
+    roster: list[RosterEntry] | None = None
 
 
 class DayPlanRevisionDetail(DayPlanRevisionRead):

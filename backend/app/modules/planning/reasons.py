@@ -436,6 +436,56 @@ def service_area_mismatch(worker_area, ticket_area):
     )
 
 
+def service_area_unknown(worker_area, ticket_area):
+    return explain(
+        "service_area_missing",
+        "area",
+        "Участок инженера или заявки не определён; участок запроса не подставляется",
+        constraint="territory=explicit_service_area",
+        observed={"worker_service_area_id": worker_area, "ticket_service_area_id": ticket_area},
+        required={"service_area_id": "known_for_both"},
+    )
+
+
+SOURCE_NAMES = {
+    "worker": "профиль инженера",
+    "brigade": "подразделение бригады",
+    "brigade_office": "офис бригады",
+    "stock_office": "склад инженера",
+}
+
+
+def worker_service_area_unresolved(issue):
+    sources = issue.get("sources") or {}
+    if issue.get("code") == "service_area_configuration_mismatch":
+        stated = ", ".join(
+            f"{SOURCE_NAMES.get(name, name)} — {area}" for name, area in sorted(sources.items())
+        )
+        message = f"Участок инженера указан противоречиво ({stated}); исправьте справочник"
+    else:
+        message = "Участок инженера не указан ни в профиле, ни через бригаду или склад"
+    return explain(
+        issue.get("code") or "service_area_missing",
+        "area",
+        message,
+        constraint="territory=single_consistent_service_area",
+        observed={"sources": sources},
+        required={"service_area_id": "one_consistent_value"},
+    )
+
+
+def worker_outside_service_area(worker_area, plan_area):
+    return explain(
+        "service_area_mismatch",
+        "area",
+        f"Инженер относится к участку {worker_area}, а план — к участку {plan_area}",
+        constraint="territory=isolated_service_area",
+        ids={"service_area_ids": [plan_area]},
+        observed={"service_area_id": worker_area},
+        required={"service_area_id": plan_area},
+    )
+
+
 def brigade_resolution_required(service_area_id):
     return explain(
         "brigade_unresolved",

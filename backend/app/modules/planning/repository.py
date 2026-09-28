@@ -28,11 +28,14 @@ from app.db.models import (
     WorkTypeRequiredAppliance,
     WorkTypeRequiredSkill,
 )
+from app.modules.planning.day_plans import day_roster
 from app.modules.planning.errors import PlanningError
 from app.modules.planning.policy import execution_policy
 from app.modules.planning.policy import policy_snapshot as current_policy_snapshot
 from app.modules.planning.schemas import PreviewRequest
 from app.modules.planning.snapshot import normalize
+from app.modules.service_areas.resolve import MISMATCH, MISSING
+from app.modules.service_areas.territory import resolve_tickets, resolve_workers
 
 
 def rows(session: Session, model, *conditions):
@@ -117,22 +120,11 @@ def load_area_scope(session: Session, service_area_id: int | None, route_date) -
 def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=None) -> dict:
     ticket_ids, worker_ids = request.ticket_ids, request.worker_ids
     tickets = rows(session, Ticket, Ticket.id.in_(ticket_ids))
-    ticket_building_areas = {
-        row["id"]: row["service_area_id"]
-        for row in session.execute(
-            select(Ticket.id, Building.service_area_id)
-            .join(Location, Location.id == Ticket.location_id)
-            .join(Building, Building.id == Location.building_id)
-            .where(Ticket.id.in_(ticket_ids))
-        ).mappings()
-    }
     all_service_areas = rows(session, ServiceArea)
-    ticket_service_areas = {
-        t["id"]: t["service_area_id"] for t in tickets if t.get("service_area_id") is not None
-    }
-    for t in tickets:
-        if t["id"] not in ticket_service_areas and t["id"] in ticket_building_areas:
-            ticket_service_areas[t["id"]] = ticket_building_areas[t["id"]]
+    ticket_service_areas, ticket_area_errors = resolve_tickets(session, ticket_ids)
+    if ticket_area_errors:
+        # An unknown area is never taken to be the area of this request.
+        raise PlanningError(MISSING, subject="ticket", ticket_ids=sorted(ticket_area_errors))
     service_area_ids = set(ticket_service_areas.values())
     if request.service_area_id is not None and service_area_ids - {request.service_area_id}:
         raise PlanningError("ticket_service_area_mismatch", ticket_areas=sorted(service_area_ids))
@@ -195,32 +187,28 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
     ]
     members = rows(session, BrigadeMember, BrigadeMember.worker_id.in_(worker_ids))
     brigades = rows(session, Brigade, Brigade.id.in_({m["brigade_id"] for m in members}))
-    brigade_by_id = {brigade["id"]: brigade for brigade in brigades}
-    member_by_worker = {m["worker_id"]: m for m in members}
-    divisions = {
-        row["id"]: row["service_area_id"]
-        for row in rows(session, Division, Division.id.in_({b["division_id"] for b in brigades}))
+
+    worker_service_areas, worker_area_errors = resolve_workers(session, worker_ids)
+    worker_area_issues = {
+        worker_id: error.details() for worker_id, error in sorted(worker_area_errors.items())
     }
-
-    worker_service_areas = {}
-    for w in workers:
-        wid = w["user_id"]
-        if w.get("service_area_id") is not None:
-            worker_service_areas[wid] = w["service_area_id"]
-        else:
-            mb = member_by_worker.get(wid)
-            br = brigade_by_id.get(mb["brigade_id"]) if mb else None
-            worker_service_areas[wid] = divisions.get(br["division_id"]) if br else None
-
-    target_area = service_area_id
-    if target_area is not None:
-        invalid_area_workers = sorted(
-            wid
-            for wid, s_area in worker_service_areas.items()
-            if s_area is not None and s_area != target_area
-        )
-        if invalid_area_workers:
-            raise PlanningError("worker_service_area_mismatch", worker_ids=invalid_area_workers)
+    other_area_workers = sorted(
+        worker_id
+        for worker_id, area in worker_service_areas.items()
+        if service_area_id is not None and area != service_area_id
+    )
+    # A dispatcher's own selection fails loudly; the replan roster keeps such an
+    # engineer out of the calculation with a reason instead of stopping the whole day.
+    if not request.replan:
+        if worker_area_issues:
+            code = (
+                MISMATCH
+                if any(issue["code"] == MISMATCH for issue in worker_area_issues.values())
+                else MISSING
+            )
+            raise PlanningError(code, subject="worker", workers=list(worker_area_issues.values()))
+        if other_area_workers:
+            raise PlanningError("worker_service_area_mismatch", worker_ids=other_area_workers)
 
     worker_office_ids = {
         w["stock_office_id"] for w in workers if w.get("stock_office_id") is not None
@@ -313,6 +301,7 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
     ]
     current_day_revision = None
     current_day_state = {}
+    current_roster = None
     if service_area_id is not None:
         current_revision = session.execute(
             select(DayPlanRevision.revision, DayPlanRevision.plan_state).where(
@@ -323,6 +312,16 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
         ).one_or_none()
         if current_revision is not None:
             current_day_revision, current_day_state = current_revision
+            if request.replan:
+                current_roster = day_roster(session, service_area_id, request.route_date)
+    if request.replan and current_roster:
+        # The remainder keeps the shift each engineer had when the day was published.
+        shifts = {entry["worker_id"]: entry for entry in current_roster}
+        for worker in workers:
+            entry = shifts.get(worker["user_id"])
+            if entry and entry.get("workshift_start") and entry.get("workshift_end"):
+                worker["workshift_start"] = entry["workshift_start"]
+                worker["workshift_end"] = entry["workshift_end"]
     area_scope = load_area_scope(session, service_area_id, request.route_date)
     return normalize(
         {
@@ -355,9 +354,11 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
             "service_areas": all_service_areas,
             "ticket_service_areas": ticket_service_areas,
             "worker_service_areas": worker_service_areas,
+            **({"worker_area_issues": worker_area_issues} if worker_area_issues else {}),
             "worker_day_states": worker_day_states,
             "current_day_revision": current_day_revision,
             "current_day_state": current_day_state or {},
+            **({"current_day_roster": current_roster} if request.replan else {}),
             # The whole area-day, not only the chosen IDs: a ticket that appeared or
             # changed after the preview must make this plan stale (T09).
             "area_scope": area_scope,

@@ -103,6 +103,10 @@ def handle_route(
         saved = service.save_routes(session, [route_create])[0]
         response.status_code = status.HTTP_201_CREATED
         return saved
+    except service.RouteValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=error.detail()
+        ) from error
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
@@ -137,6 +141,10 @@ def create_routes(data: RouteBatchCreate, session: DatabaseSession, _viewer: Obs
 
     try:
         return service.save_routes(session, data.routes)
+    except service.RouteValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=error.detail()
+        ) from error
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)

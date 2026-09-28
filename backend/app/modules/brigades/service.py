@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.core.planning_guard import lock_planning_mutation
 from app.modules.brigades import repository
 from app.modules.brigades.schemas import BrigadeCreate, BrigadeMembersUpdate, BrigadeRead
+from app.modules.service_areas.resolve import MISMATCH, ServiceAreaResolutionError
+from app.modules.service_areas.territory import resolve_brigade, resolve_workers
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
 
@@ -37,6 +39,22 @@ class WorkerAlreadyAssignedError(Exception):
 
 class BrigadeConflictError(Exception):
     pass
+
+
+class BrigadeServiceAreaError(Exception):
+    """Members whose own, stock-office or brigade area disagree with the brigade's."""
+
+    def __init__(self, issues: list[dict]):
+        self.issues = issues
+        super().__init__("brigade_service_area_conflict")
+
+    def detail(self) -> dict:
+        return {
+            "code": MISMATCH,
+            "message": "Участок исполнителя не совпадает с участком бригады; "
+            "перенос между участками выполняется сменой участка в профиле",
+            "workers": self.issues,
+        }
 
 
 def _build_read(row: RowMapping) -> BrigadeRead:
@@ -70,6 +88,17 @@ def _validate_workers(
         raise WorkerAlreadyAssignedError
 
 
+def _validate_territory(session: Session, brigade_id: int, worker_ids: list[int]) -> None:
+    """Members must resolve to the brigade's area: no member silently changes area."""
+    try:
+        resolve_brigade(session, brigade_id)
+    except ServiceAreaResolutionError as error:
+        raise BrigadeServiceAreaError([error.details()]) from error
+    _, errors = resolve_workers(session, worker_ids)
+    if errors:
+        raise BrigadeServiceAreaError([errors[worker_id].details() for worker_id in sorted(errors)])
+
+
 def create_brigade(session: Session, data: BrigadeCreate) -> BrigadeRead:
     try:
         with session.begin():
@@ -80,6 +109,7 @@ def create_brigade(session: Session, data: BrigadeCreate) -> BrigadeRead:
             _validate_workers(session, data.worker_ids)
             brigade_id = repository.add_brigade(session, data.name, data.foreman_id, data.office_id)
             repository.add_brigade_members(session, brigade_id, data.worker_ids)
+            _validate_territory(session, brigade_id, data.worker_ids)
             row = repository.find_brigade_by_id(session, brigade_id)
             if row is None:
                 raise RuntimeError("Created brigade was not found")
@@ -105,6 +135,7 @@ def replace_brigade_members(
                 )
             repository.delete_brigade_members(session, brigade_id)
             repository.add_brigade_members(session, brigade_id, data.worker_ids)
+            _validate_territory(session, brigade_id, data.worker_ids)
             row = repository.find_brigade_by_id(session, brigade_id)
             if row is None:
                 raise RuntimeError("Updated brigade was not found")
