@@ -30,7 +30,7 @@ from app.modules.planning.errors import PlanningError
 from app.modules.planning.geometry import apply_estimate_corrections, build_routes
 from app.modules.planning.matrices import build_problem
 from app.modules.planning.models import PlanningPlan, PlanningPlanRoute
-from app.modules.planning.policy import execution_policy, snapshot_policy
+from app.modules.planning.policy import execution_policy, policy_snapshot, snapshot_policy
 from app.modules.planning.reasons import legacy_public
 from app.modules.planning.repository import TICKET_LOCAL_DAY, load_snapshot
 from app.modules.planning.schemas import PreviewRequest
@@ -54,14 +54,7 @@ def utc_now():
 def read_snapshot(engine, request, policy):
     with Session(engine) as session, session.begin():
         session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
-        return load_snapshot(
-            session,
-            request,
-            policy_snapshot={
-                "policy_version": policy.policy_version,
-                "planning_policy": policy.model_dump(mode="json"),
-            },
-        )
+        return load_snapshot(session, request, policy_snapshot=policy_snapshot(policy))
 
 
 def validate_replan_limits(ticket_count, worker_count, *, max_tickets, max_workers):
@@ -150,14 +143,7 @@ def read_replan_snapshot(
             allow_partial=command.allow_partial,
             replan=True,
         )
-        snapshot = load_snapshot(
-            session,
-            request,
-            policy_snapshot={
-                "policy_version": policy.policy_version,
-                "planning_policy": policy.model_dump(mode="json"),
-            },
-        )
+        snapshot = load_snapshot(session, request, policy_snapshot=policy_snapshot(policy))
         return request, snapshot
 
 

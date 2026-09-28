@@ -75,6 +75,8 @@ def solve_baseline(data: SolveRequest) -> SolveResponse:
                 continue
 
             service_start = arrival_time + wait_time
+            if service_start > window_end:
+                continue
 
             # Check return to depot
             return_node = data.ends[v]
@@ -90,7 +92,8 @@ def solve_baseline(data: SolveRequest) -> SolveResponse:
             # Valid assignment, apply it
             meters = matrix.distance_meters[state["current_node"]][node]
 
-            state["steps"].append(Step(node=node, arrival_time=arrival_time))
+            # Like the solver, a step records the service start after waiting.
+            state["steps"].append(Step(node=node, arrival_time=service_start))
             state["distance"] += meters
             state["travel_minutes"] += travel
             state["waiting_minutes"] += wait_time
@@ -106,11 +109,7 @@ def solve_baseline(data: SolveRequest) -> SolveResponse:
 
     # Close routes
     routes = []
-    dropped_emergencies = 0
-    emergency_delays = 0
-    dropped_connections = 0
-    active_vehicles = 0
-    changed_assignments = 0
+    response_minutes = active_workers = reassigned = 0
 
     for v in range(data.num_vehicles):
         state = vehicle_states[v]
@@ -129,7 +128,7 @@ def solve_baseline(data: SolveRequest) -> SolveResponse:
         state["service_minutes"] += data.service_times[state["current_node"]]
 
         if len(state["steps"]) > 2:
-            active_vehicles += 1
+            active_workers += 1
 
         routes.append(
             Route(
@@ -142,59 +141,33 @@ def solve_baseline(data: SolveRequest) -> SolveResponse:
             )
         )
 
-        # Calculate route-specific metrics (changed assignments, emergency delays)
         for step in state["steps"][1:-1]:
-            node = step.node
-            policy = data.ticket_policies[task_index_to_position[node]]
-            if policy.previous_vehicle_id is not None and policy.previous_vehicle_id != v:
-                changed_assignments += 1
+            policy = data.ticket_policies[task_index_to_position[step.node]]
+            if policy.previous_vehicle_id not in (None, v):
+                reassigned += 1
             if policy.category == "emergency":
-                delay = max(0, step.arrival_time - policy.received_at)
-                emergency_delays += delay
+                response_minutes += step.arrival_time - policy.received_at
 
-    # Calculate dropped metrics
-    for node in dropped:
-        policy = data.ticket_policies[task_index_to_position[node]]
-        if policy.category == "emergency":
-            dropped_emergencies += 1
-        elif policy.category == "connection":
-            dropped_connections += 1
-
+    dropped_categories = [data.ticket_policies[task_index_to_position[n]].category for n in dropped]
     components = ObjectiveComponents(
-        dropped_emergencies=dropped_emergencies,
-        emergency_delays=emergency_delays,
-        dropped_connections=dropped_connections,
-        dropped_total=len(dropped),
-        active_vehicles=active_vehicles,
-        travel_time=sum(r.travel_minutes for r in routes),
-        changed_assignments=changed_assignments,
+        unassigned_emergencies=dropped_categories.count("emergency"),
+        emergency_response_minutes=response_minutes,
+        unassigned_connections=dropped_categories.count("connection"),
+        unassigned_total=len(dropped),
+        active_workers=active_workers,
+        travel_minutes=sum(r.travel_minutes for r in routes),
+        reassigned_visits=reassigned,
     )
-
-    W_CHANGE = 1
-    W_TRAVEL = 1
-    W_VEHICLE = 100_000
-    W_DROP_TOTAL = 10_000_000
-    W_DROP_CONN = 1_000_000_000
-    W_DELAY_EMERG = 100_000_000_000
-    W_DROP_EMERG = 30_000_000_000_000_000
-
-    total_cost = (
-        components.changed_assignments * W_CHANGE
-        + components.travel_time * W_TRAVEL
-        + components.active_vehicles * W_VEHICLE
-        + components.dropped_total * W_DROP_TOTAL
-        + components.dropped_connections * W_DROP_CONN
-        + components.emergency_delays * W_DELAY_EMERG
-        + components.dropped_emergencies * W_DROP_EMERG
-    )
+    weights = data.objective_weights()
 
     return SolveResponse(
         contract_version=2,
         status="FEASIBLE",
         solver_status_code=1,  # Equivalent to ROUTING_SUCCESS
         routes=routes,
-        dropped_nodes=dropped,
-        total_cost=total_cost,
+        dropped_nodes=sorted(dropped),
+        total_cost=weights.cost(components),
         total_distance=sum(r.distance for r in routes),
         objective_components=components,
+        objective_weights=weights,
     )

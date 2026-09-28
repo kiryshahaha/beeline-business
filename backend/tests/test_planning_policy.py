@@ -16,9 +16,16 @@ from app.modules.planning.case_policy import (
     policy_scenarios,
 )
 from app.modules.planning.errors import PlanningError
-from app.modules.planning.policy import ExecutionPolicy, execution_policy, snapshot_policy
+from app.modules.planning.policy import (
+    ExecutionPolicy,
+    ExecutionPolicyV1,
+    execution_policy,
+    policy_snapshot,
+    snapshot_policy,
+)
+from app.modules.planning.schemas import PlanRead
 from app.modules.planning.snapshot import fingerprint
-from app.modules.planning.solver_contract import SolveRequest
+from app.modules.planning.solver_contract import OBJECTIVE_ORDER, SolveRequest
 from planning_scenarios import generate_planning_dataset
 
 
@@ -89,7 +96,8 @@ class PlanningPolicyTests(unittest.TestCase):
                 planning_solve_time_limit_seconds=2,
             )
         )
-        snapshot = {"policy_version": 1, "planning_policy": policy.model_dump(mode="json")}
+        snapshot = policy_snapshot(policy)
+        self.assertEqual(snapshot["policy_version"], 2)
         self.assertEqual(snapshot_policy(snapshot).search_time_limit_seconds, 2)
         with self.assertRaises(ValidationError):
             policy.search_time_limit_seconds = 3
@@ -99,26 +107,87 @@ class PlanningPolicyTests(unittest.TestCase):
 
     def test_unsupported_rules_fail_closed_without_accepting_future_features(self):
         for mutation in (
-            {"policy_version": 2},
+            {"policy_version": 3},
             {"route_end": "open"},  # not a supported literal
             {"visit_window": "service_start"},  # partial literal not accepted
             {"vehicle_fixed_cost": 1},
+            {"drop_penalty": "vehicle_count_times_horizon_plus_one"},
+            {"objective_order": list(reversed(OBJECTIVE_ORDER))},
+            {"objective_order": list(OBJECTIVE_ORDER[:-1])},
+            {"priority": "category_and_numeric_priority_penalties"},
             {"search_time_limit_seconds": 11},
             {"search_time_limit_seconds": True},
         ):
             snapshot = {
-                "policy_version": 1,
+                "policy_version": 2,
                 "planning_policy": ExecutionPolicy().model_dump() | mutation,
             }
             with self.subTest(mutation=mutation), self.assertRaises(PlanningError) as error:
                 snapshot_policy(snapshot)
             self.assertEqual(error.exception.code, "planning_policy_unsupported")
-        for value in (None, True, "1", 2):
+        for value in (None, True, "1", 3):
             with self.subTest(version=value), self.assertRaises(PlanningError):
                 snapshot_policy({"policy_version": value})
-        for value in (None, {}, {"policy_version": 1}):
-            with self.subTest(parameters=value), self.assertRaises(PlanningError):
-                snapshot_policy({"policy_version": 1, "planning_policy": value})
+        for version in (1, 2):
+            for value in (None, {}, {"policy_version": version}):
+                with self.subTest(version=version, parameters=value):
+                    with self.assertRaises(PlanningError):
+                        snapshot_policy({"policy_version": version, "planning_policy": value})
+        # Only snapshots recorded before T01 may lack parameters, and only as version 1.
+        with self.assertRaises(PlanningError):
+            snapshot_policy({"policy_version": 2})
+        # A version 2 parameter set cannot pose as version 1 history, or vice versa.
+        with self.assertRaises(PlanningError):
+            snapshot_policy(
+                {"policy_version": 1, "planning_policy": ExecutionPolicy().model_dump()}
+            )
+        with self.assertRaises(PlanningError):
+            snapshot_policy(
+                {"policy_version": 2, "planning_policy": ExecutionPolicyV1().model_dump()}
+            )
+
+    def test_version_one_history_keeps_its_recorded_rules(self):
+        recorded = {
+            "policy_version": 1,
+            "planning_policy": ExecutionPolicyV1(search_time_limit_seconds=3).model_dump(
+                mode="json"
+            ),
+        }
+        policy = snapshot_policy(recorded)
+        self.assertIsInstance(policy, ExecutionPolicyV1)
+        self.assertEqual(policy.objective_order, ("unassigned_total", "travel_minutes"))
+        self.assertEqual(policy.search_time_limit_seconds, 3)
+        self.assertEqual(snapshot_policy({"policy_version": 1}), ExecutionPolicyV1())
+        for raw in (recorded["planning_policy"], execution_policy().model_dump(mode="json")):
+            plan = PlanRead.model_validate(
+                {
+                    "planning_policy": raw,
+                    "plan_id": "00000000-0000-0000-0000-000000000001",
+                    "state": "ready",
+                    "outcome": "empty",
+                    "route_date": "2030-01-15",
+                    "timezone": "Europe/Moscow",
+                    "expires_at": "2030-01-15T10:00:00+03:00",
+                    "solver_status": None,
+                    "routes": [],
+                    "unassigned": [],
+                    "excluded_workers": [],
+                    "warnings": [],
+                }
+            )
+            self.assertEqual(plan.planning_policy.model_dump(mode="json"), raw)
+
+    def test_current_policy_executes_the_case_objective_order(self):
+        policy = execution_policy()
+        self.assertEqual(policy.policy_version, 2)
+        self.assertEqual(policy.objective_order, OBJECTIVE_ORDER)
+        # The solver keeps the case order; its last level counts only a changed worker.
+        self.assertEqual(policy.objective_order[:-1], case_policy().objective_order[:-1])
+        self.assertEqual(case_policy().objective_order[-1], "changed_future_visits")
+        self.assertEqual(policy.objective_order[-1], "reassigned_visits")
+        self.assertEqual(policy.objective_method, "lexicographic_bounded_weights")
+        self.assertEqual(policy.reassigned_visit, "other_worker_than_current_assignment")
+        self.assertNotIn("vehicle_fixed_cost", ExecutionPolicy.model_fields)
 
     def test_legacy_snapshot_is_not_backfilled_with_today_settings(self):
         legacy = {"policy_version": 1}
@@ -128,7 +197,7 @@ class PlanningPolicyTests(unittest.TestCase):
     def test_single_solver_contract_rejects_an_unknown_policy(self):
         # Minimal invalid body: both policy_version and required inputs are reported.
         with self.assertRaises(ValidationError) as error:
-            SolveRequest.model_validate({"policy_version": 2})
+            SolveRequest.model_validate({"policy_version": 1})
         self.assertIn(("policy_version",), {e["loc"] for e in error.exception.errors()})
 
     def test_service_start_in_window_does_not_subtract_duration_from_upper(self):

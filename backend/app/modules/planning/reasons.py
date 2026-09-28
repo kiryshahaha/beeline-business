@@ -30,8 +30,13 @@ STATUS = {
     "wont_fix": "отменена",
 }
 OBJECTIVE = {
+    "unassigned_emergencies": "больше назначенных аварий",
+    "emergency_response_minutes": "раньше начало аварий",
+    "unassigned_connections": "больше назначенных подключений",
     "unassigned_total": "больше назначенных заявок",
+    "active_workers": "меньше занятых инженеров",
     "travel_minutes": "меньше минут в пути",
+    "reassigned_visits": "меньше переназначений",
 }
 # Short phrases used when several engineers are rejected for different reasons.
 LABELS = {
@@ -673,7 +678,7 @@ def priority_factor(category, priority):
     return explain(
         "priority_applied",
         "policy",
-        "Категория и численный приоритет заявки учтены при выборе маршрута",
+        "Категория заявки учтена в порядке целей плана: авария, подключение, остальные",
         constraint="priority=emergency_then_connection_then_repair_or_additional",
         observed={"category": category, "priority": priority},
         required={"category_order": ["emergency", "connection", "repair", "additional"]},

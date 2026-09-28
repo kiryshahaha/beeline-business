@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.planning.case_policy import CasePolicy
-from app.modules.planning.policy import ExecutionPolicy
+from app.modules.planning.policy import ExecutionPolicy, RecordedPolicy
 from app.modules.routing.schemas import MultiLineString, RouteLeg
 from app.modules.users.schemas import PositiveInt32
 
@@ -248,7 +248,7 @@ class ReplanDiff(BaseModel):
 
 
 class PlanRead(BaseModel):
-    planning_policy: ExecutionPolicy | None = None
+    planning_policy: RecordedPolicy | None = None
     case_policy_version: int | None = None
     plan_id: UUID
     state: Literal["ready", "applied", "expired", "stale"]
@@ -290,6 +290,8 @@ class DayPlanRevisionRead(BaseModel):
     effective_at: datetime
     created_at: datetime
     metrics: dict[str, Any]
+    planning_policy: RecordedPolicy | None = None
+    objective_components: dict[str, int] | None = None
 
 
 class DayPlanRevisionDetail(DayPlanRevisionRead):

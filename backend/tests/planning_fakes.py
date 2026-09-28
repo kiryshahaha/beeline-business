@@ -2,7 +2,7 @@
 
 import httpx
 
-from app.modules.planning.solver_contract import SolveResponse
+from app.modules.planning.solver_contract import ObjectiveComponents, SolveResponse
 from app.modules.routing.client import AsyncGeoapifyRoutingClient
 
 
@@ -61,6 +61,7 @@ class FeasiblePlanner:
         )
         policy_by_node = dict(zip(task_nodes, problem.ticket_policies, strict=True))
         routes = []
+        response = reassigned = 0
         for vehicle, depot in enumerate(problem.starts):
             finish = problem.ends[vehicle]
             matrix = problem.matrices[problem.vehicle_profiles[vehicle]]
@@ -96,6 +97,9 @@ class FeasiblePlanner:
                 arrival, previous = next_time, node
                 steps.append({"node": node, "arrival_time": arrival})
                 remaining.remove(node)
+                if policy.category == "emergency":
+                    response += arrival - policy.received_at
+                reassigned += policy.previous_vehicle_id not in (None, vehicle)
             duration = matrix.time_minutes[previous][finish]
             arrival += problem.service_times[previous] + duration
             service += problem.service_times[previous]
@@ -112,11 +116,24 @@ class FeasiblePlanner:
                     "waiting_minutes": waiting,
                 }
             )
+        dropped = [policy_by_node[node].category for node in remaining]
+        components = ObjectiveComponents(
+            unassigned_emergencies=dropped.count("emergency"),
+            emergency_response_minutes=response,
+            unassigned_connections=dropped.count("connection"),
+            unassigned_total=len(dropped),
+            active_workers=sum(len(r["steps"]) > 2 for r in routes),
+            travel_minutes=sum(r["travel_minutes"] for r in routes),
+            reassigned_visits=reassigned,
+        )
+        weights = problem.objective_weights()
         return SolveResponse(
             status="FEASIBLE",
             solver_status_code=1,
             routes=routes,
             dropped_nodes=sorted(remaining),
             total_distance=sum(r["distance"] for r in routes),
-            total_cost=sum(r["travel_minutes"] for r in routes),
+            total_cost=weights.cost(components),
+            objective_components=components,
+            objective_weights=weights,
         )
