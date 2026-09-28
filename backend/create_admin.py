@@ -7,32 +7,67 @@ Usage:
 
 import argparse
 import sys
+
 from sqlalchemy import text
+
 from app.core.security import hash_password
 from app.db.session import get_engine
 
 
 def clear_business_data(engine, target_username: str | None = None):
     """Clean all domain tables in topological order to respect foreign keys."""
-    ORDERED_TABLES = [
+    ordered_tables = [
         # Tickets and history
-        "ticket_assignment_events", "ticket_comments", "ticket_appliances", "ticket_appliance_states",
-        "work_events", "routes", "planning_plan_routes", "planning_plans", "day_plan_revisions",
-        "worker_day_states", "equipment_movements", "worker_equipment", "appliance_movements",
-        "appliance_operations", "worker_appliances", "office_kit_reserves", "appliance_stocks",
+        "ticket_assignment_events",
+        "ticket_comments",
+        "ticket_appliances",
+        "ticket_appliance_states",
+        "work_events",
+        "routes",
+        "planning_plan_routes",
+        "planning_plans",
+        "day_plan_revisions",
+        "worker_day_states",
+        "equipment_movements",
+        "worker_equipment",
+        "appliance_movements",
+        "appliance_operations",
+        "worker_appliances",
+        "office_kit_reserves",
+        "appliance_stocks",
         "tickets",
         # Brigades and workers
-        "brigade_members", "brigades", "worker_skill_assignments", "workers", "worker_skills",
+        "brigade_members",
+        "brigades",
+        "worker_skill_assignments",
+        "workers",
+        "worker_skills",
         # Source imports
-        "data_imports", "source_records", "source_addresses", "source_imports",
+        "data_imports",
+        "source_records",
+        "source_addresses",
+        "source_imports",
         # Geography and infrastructure
-        "locations", "entrances", "buildings", "streets", "districts", "service_areas", "offices", "cities",
+        "locations",
+        "entrances",
+        "buildings",
+        "streets",
+        "districts",
+        "service_areas",
+        "offices",
+        "cities",
         # System
-        "push_subscriptions", "refresh_tokens", "notification_events", "work_types",
-        "work_type_planning_rules", "work_type_required_skills", "work_type_required_appliances", "divisions"
+        "push_subscriptions",
+        "refresh_tokens",
+        "notification_events",
+        "work_types",
+        "work_type_planning_rules",
+        "work_type_required_skills",
+        "work_type_required_appliances",
+        "divisions",
     ]
     with engine.connect() as conn:
-        for t in ORDERED_TABLES:
+        for t in ordered_tables:
             try:
                 with conn.begin():
                     conn.execute(text(f'DELETE FROM "{t}"'))
@@ -89,7 +124,10 @@ def create_or_update_admin(
                 ),
                 {"pwd_hash": pwd_hash, "role": role, "user_id": user_id},
             )
-            print(f"[OK] Пользователь '{username}' (ID: {user_id}) найден. Пароль и роль '{role}' обновлены.")
+            print(
+                f"[OK] Пользователь '{username}' (ID: {user_id}) найден. "
+                f"Пароль и роль '{role}' обновлены."
+            )
             return user_id
         else:
             new_id = conn.execute(
@@ -109,7 +147,10 @@ def create_or_update_admin(
                     "role": role,
                 },
             ).scalar()
-            print(f"[OK] Успешно создан новый пользователь '{username}' (ID: {new_id}, роль: '{role}').")
+            print(
+                f"[OK] Успешно создан новый пользователь '{username}' "
+                f"(ID: {new_id}, роль: '{role}')."
+            )
             return new_id
 
 
@@ -146,7 +187,7 @@ def main():
     parser.add_argument(
         "--clear-data",
         action="store_true",
-        help="Очистить все бизнес-данные (заявки, бригады, адреса), оставив чистую базу с пользователем",
+        help="Очистить все бизнес-данные, оставив чистую базу с пользователем",
     )
 
     args = parser.parse_args()
