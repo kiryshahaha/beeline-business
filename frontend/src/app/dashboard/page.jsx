@@ -6,12 +6,25 @@ import styles from "./page.module.css";
 import SmallStatsCard from "@/components/dashboard/SmallStatsCard/SmallStatsCard";
 import { useFastStats } from "@/hooks/useFastStats";
 import { useTicketsSummary } from "@/hooks/useTicketsSummary";
-import { useState, useEffect } from "react";
+
+const MONTH_NAMES = [
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря"
+];
+
+function formatUpdateDate(timestamp) {
+    if (!timestamp) return "";
+    const date = new Date(timestamp);
+    const day = date.getDate();
+    const month = MONTH_NAMES[date.getMonth()];
+    const hours = date.getHours().toString().padStart(2, "0");
+    const minutes = date.getMinutes().toString().padStart(2, "0");
+    return `${day} ${month}, ${hours}:${minutes}`;
+}
 
 const Dashboard = () => {
     const { stats, dataUpdatedAt: statsUpdatedAt, refetch: refetchStats } = useFastStats();
     const { summary, summaryData } = useTicketsSummary();
-    const [formattedDate, setFormattedDate] = useState("");
 
     // Общий обработчик обновления
     const handleRefetch = () => {
@@ -20,20 +33,8 @@ const Dashboard = () => {
     };
 
     // Выбираем самое свежее время обновления
-    const latestUpdate = Math.max(statsUpdatedAt || 0, summaryData.dataUpdatedAt || 0) || Date.now();
-
-    useEffect(() => {
-        const date = new Date(latestUpdate);
-        const day = date.getDate();
-        const monthNames = [
-            "января", "февраля", "марта", "апреля", "мая", "июня",
-            "июля", "августа", "сентября", "октября", "ноября", "декабря"
-        ];
-        const month = monthNames[date.getMonth()];
-        const hours = date.getHours().toString().padStart(2, "0");
-        const minutes = date.getMinutes().toString().padStart(2, "0");
-        setFormattedDate(`${day} ${month}, ${hours}:${minutes}`);
-    }, [latestUpdate]);
+    const latestUpdate = Math.max(statsUpdatedAt || 0, summaryData?.dataUpdatedAt || 0);
+    const formattedDate = formatUpdateDate(latestUpdate);
 
     const avgDelay = stats?.average_delay_minutes || 0;
     const isWarn = avgDelay > 0 || (stats?.at_risk_tickets_count || 0) > 0;
