@@ -1,14 +1,10 @@
 "use client"
 
-import { useState, useRef, useMemo } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useState, useRef } from "react"
 import styles from "./TicketsStatuses.module.css"
 import Status from "./Status"
 import { useClickOutside } from "@/hooks/useClickOutside"
 import { useTickets } from "@/hooks/useTickets"
-import { useBrigades } from "@/hooks/useBrigades"
-import { useAuth } from "@/providers/AuthProvider"
-import { apiFetch } from "@/lib/apiFetch"
 
 const STATUS_LABELS = {
     planned: "Ожидание", // По макету
@@ -44,61 +40,29 @@ const formatAddress = (loc) => {
     return parts.join(', ') || loc.address;
 };
 
-const tokenRole = (token) => {
-    try {
-        const encoded = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-        const payload = JSON.parse(atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, "=")));
-        return payload.role;
-    } catch {
-        return null;
-    }
-};
-
-const TicketsStatuses = () => {
+const TicketsStatuses = ({ onFilterChange, onSelectTicket, filter }) => {
     const { tickets, ticketsData } = useTickets({ limit: 100 });
-    const { brigades = [] } = useBrigades();
-    const { token } = useAuth();
-    const queryClient = useQueryClient();
     const [isOpen, setIsOpen] = useState(false);
-    const [activeFilter, setActiveFilter] = useState("all");
-    const [savingTicketId, setSavingTicketId] = useState(null);
-    const [brigadeErrors, setBrigadeErrors] = useState({});
+    const [localFilter, setLocalFilter] = useState("all");
+    const activeFilter = filter ?? localFilter;
     const containerRef = useRef(null);
-    const isObserver = useMemo(() => tokenRole(token || "") === "observer", [token]);
 
     useClickOutside(containerRef, () => setIsOpen(false));
+    const changeFilter = (nextFilter) => {
+        setLocalFilter(nextFilter);
+        onFilterChange?.(nextFilter);
+    };
 
     // Считаем статусы напрямую из списка загруженных тикетов, чтобы цифры сходились
     const allCount = tickets.length;
-    const urgentCount = tickets.filter(t => t.status === "planned" && (!t.assignee_ids || t.assignee_ids.length === 0)).length;
+    const urgentCount = tickets.filter(t => t.status === "planned" && !t.assigned_worker_id).length;
     const completedCount = tickets.filter(t => t.status === "completed").length;
 
     const displayedTickets = tickets.filter(t => {
-        if (activeFilter === "urgent") return t.status === "planned" && (!t.assignee_ids || t.assignee_ids.length === 0);
+        if (activeFilter === "urgent") return t.status === "planned" && !t.assigned_worker_id;
         if (activeFilter === "completed") return t.status === "completed";
         return true;
     });
-
-    const updateBrigade = async (ticket, value) => {
-        const brigadeId = value === "clear" ? null : Number(value);
-        setSavingTicketId(ticket.id);
-        setBrigadeErrors((errors) => ({ ...errors, [ticket.id]: null }));
-        try {
-            const response = await apiFetch(`/tickets/${ticket.id}/brigade`, {
-                method: "PUT",
-                body: JSON.stringify({ brigade_id: brigadeId }),
-            });
-            if (!response.ok) {
-                const body = await response.json().catch(() => null);
-                throw new Error(typeof body?.detail === "string" ? body.detail : "Не удалось выбрать бригаду");
-            }
-            await queryClient.invalidateQueries({ queryKey: ["ticketsList"] });
-        } catch (error) {
-            setBrigadeErrors((errors) => ({ ...errors, [ticket.id]: error.message }));
-        } finally {
-            setSavingTicketId(null);
-        }
-    };
 
     return (
         <div 
@@ -113,7 +77,7 @@ const TicketsStatuses = () => {
                     variant="all" 
                     isInteractive={isOpen}
                     isInactive={isOpen && activeFilter !== "all"}
-                    onClick={() => setActiveFilter("all")}
+                    onClick={() => changeFilter("all")}
                 />
                 <Status 
                     label="Срочные" 
@@ -121,7 +85,7 @@ const TicketsStatuses = () => {
                     variant="urgent" 
                     isInteractive={isOpen}
                     isInactive={isOpen && activeFilter !== "urgent"}
-                    onClick={() => setActiveFilter("urgent")}
+                    onClick={() => changeFilter("urgent")}
                 />
                 <Status 
                     label="Выполнено" 
@@ -129,7 +93,7 @@ const TicketsStatuses = () => {
                     variant="completed" 
                     isInteractive={isOpen}
                     isInactive={isOpen && activeFilter !== "completed"}
-                    onClick={() => setActiveFilter("completed")}
+                    onClick={() => changeFilter("completed")}
                 />
             </div>
             
@@ -138,11 +102,22 @@ const TicketsStatuses = () => {
                     <div style={{ padding: '20px', textAlign: 'center', opacity: 0.6 }}>Загрузка заявок...</div>
                 ) : displayedTickets.length > 0 ? (
                     <ul key={activeFilter} className={styles.ticketsList}>
-                        {displayedTickets.map((t, index) => (
+                        {displayedTickets.map((t, index) => {
+                            const hasCoordinates = t.location?.latitude != null && t.location?.longitude != null;
+                            return (
                             <li 
                                 key={t.id} 
                                 className={styles.ticketCard}
                                 style={{ animationDelay: `${index * 0.05}s` }}
+                                role={onSelectTicket && hasCoordinates ? "button" : undefined}
+                                tabIndex={onSelectTicket && hasCoordinates ? 0 : undefined}
+                                onClick={() => hasCoordinates && onSelectTicket?.(t)}
+                                onKeyDown={(event) => {
+                                    if (hasCoordinates && (event.key === "Enter" || event.key === " ")) {
+                                        event.preventDefault();
+                                        onSelectTicket?.(t);
+                                    }
+                                }}
                             >
                                 <div className={styles.ticketRow}>
                                     <span className={styles.ticketName}>{t.title}</span>
@@ -155,55 +130,18 @@ const TicketsStatuses = () => {
                                 <div className={styles.ticketAddress}>
                                     {formatAddress(t.location)}
                                 </div>
-                                <div className={styles.ticketArea}>
-                                    Район: {t.district || t.location?.district || "не определён"}
-                                    {t.brigade_id && ` · Бригада: ${brigades.find((item) => item.id === t.brigade_id)?.name || t.brigade_id}`}
-                                </div>
-                                {isObserver && !t.assigned_worker_id && !t.brigade_id && brigades.some((item) => item.service_area_id === t.service_area_id) && (
-                                    <label className={styles.brigadePicker}>
-                                        <span>Выбрать бригаду</span>
-                                        <select
-                                            aria-label={`Бригада заявки ${t.id}`}
-                                            value=""
-                                            disabled={savingTicketId === t.id}
-                                            onChange={(event) => updateBrigade(t, event.target.value)}
-                                        >
-                                            <option value="" disabled>Выберите бригаду</option>
-                                            {brigades
-                                                .filter((item) => item.service_area_id === t.service_area_id)
-                                                .map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                                        </select>
-                                        {brigadeErrors[t.id] && <span className={styles.brigadeError}>{brigadeErrors[t.id]}</span>}
-                                    </label>
-                                )}
-                                {isObserver && !t.assigned_worker_id && t.brigade_id && brigades.some((item) => item.id === t.brigade_id) && (
-                                    <label className={styles.brigadePicker}>
-                                        <span>Бригада</span>
-                                        <select
-                                            aria-label={`Бригада заявки ${t.id}`}
-                                            value={t.brigade_id}
-                                            disabled={savingTicketId === t.id}
-                                            onChange={(event) => updateBrigade(t, event.target.value)}
-                                        >
-                                            <option value="clear">Снять назначение</option>
-                                            {brigades
-                                                .filter((item) => item.service_area_id === t.service_area_id)
-                                                .map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                                        </select>
-                                        {brigadeErrors[t.id] && <span className={styles.brigadeError}>{brigadeErrors[t.id]}</span>}
-                                    </label>
-                                )}
                                 <div className={styles.ticketFooter}>
                                     <div className={styles.ticketTime}>
                                         <ClockIcon />
                                         <span>{formatTimeWindow(t.visit_window_start, t.visit_window_end)}</span>
                                     </div>
                                     <div className={styles.ticketType}>
-                                        {t.work_type}
+                                        {hasCoordinates ? t.work_type : "Нет координат"}
                                     </div>
                                 </div>
                             </li>
-                        ))}
+                            );
+                        })}
                     </ul>
                 ) : (
                     <div style={{ padding: '20px', textAlign: 'center', opacity: 0.6 }}>Нет заявок в этой категории</div>
