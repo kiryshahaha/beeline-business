@@ -42,7 +42,8 @@ def align_demo_brigade_with_ticket_area(engine):
     with engine.begin() as connection:
         target = connection.execute(
             text("""
-                SELECT COALESCE(ticket.service_area_id, building.service_area_id), ticket.location_id
+                SELECT COALESCE(ticket.service_area_id, building.service_area_id),
+                       ticket.location_id
                 FROM tickets AS ticket
                 JOIN locations AS location ON location.id = ticket.location_id
                 JOIN buildings AS building ON building.id = location.building_id
