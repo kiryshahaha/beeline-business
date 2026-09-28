@@ -1,0 +1,28 @@
+meta {
+  name: Найти бригаду исполнителя для заявки
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/brigades
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  const areaId = Number(bru.getVar("execution_service_area_id"));
+  const workerId = Number(bru.getVar("execution_worker_id"));
+  const brigade = res.getBody().find(function (item) {
+    return item.service_area_id === areaId && item.worker_ids.includes(workerId);
+  });
+  if (!brigade) throw new Error("Для исполнителя не найдена бригада района заявки");
+  bru.setVar("execution_brigade_id", brigade.id);
+}

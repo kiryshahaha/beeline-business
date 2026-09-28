@@ -56,10 +56,11 @@ OFFICE_SCOPE_SQL = f"""
 """
 
 # A foreman answers for one brigade: its assigned work plus the queue waiting in the
-# area of the brigade's office. Other brigades' work stays invisible.
+# area of that brigade. Tickets in an ambiguous area stay with the dispatcher.
 FOREMAN_SCOPE_SQL = f"""
     (
-        EXISTS (
+        t.brigade_id = :brigade_id
+        OR EXISTS (
             SELECT 1
             FROM brigade_members AS scope_member
             WHERE scope_member.worker_id = t.assigned_worker_id
@@ -67,11 +68,16 @@ FOREMAN_SCOPE_SQL = f"""
         )
         OR (
             t.assigned_worker_id IS NULL
-            AND {TICKET_AREA_SQL} IN (
-                {OFFICE_AREAS_SQL}
-                JOIN brigades AS scope_brigade ON scope_brigade.office_id = office.id
-                WHERE scope_brigade.id = :brigade_id
+            AND t.brigade_id IS NULL
+            AND (
+                SELECT MIN(area_brigade.id)
+                FROM brigades AS area_brigade
+                JOIN divisions AS area_division
+                  ON area_division.id = area_brigade.division_id
+                WHERE area_division.service_area_id = {TICKET_AREA_SQL}
+                HAVING COUNT(*) = 1
             )
+            = :brigade_id
         )
     )
 """

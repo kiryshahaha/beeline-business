@@ -36,6 +36,8 @@ OBJECTIVE = {
 # Short phrases used when several engineers are rejected for different reasons.
 LABELS = {
     "missing_skill": "нет навыка",
+    "brigade_unresolved": "бригада не выбрана",
+    "brigade_mismatch": "другая бригада",
     "office_mismatch": "оборудование в другом офисе",
     "window_outside_shift": "окно вне смены",
     "service_after_shift_end": "работа не успевает до конца смены",
@@ -426,6 +428,28 @@ def service_area_mismatch(worker_area, ticket_area):
         ids={"service_area_ids": [ticket_area]},
         observed={"service_area_id": worker_area},
         required={"service_area_id": ticket_area},
+    )
+
+
+def brigade_resolution_required(service_area_id):
+    return explain(
+        "brigade_unresolved",
+        "area",
+        "Диспетчер должен выбрать одну из бригад участка",
+        constraint="ticket_brigade_required_for_ambiguous_area",
+        observed={"service_area_id": service_area_id, "brigade_id": None},
+        required={"brigade_id": "selected"},
+    )
+
+
+def brigade_mismatch(ticket_brigade_id, worker_brigade_id):
+    return explain(
+        "brigade_mismatch",
+        "area",
+        "Исполнитель не входит в выбранную бригаду заявки",
+        constraint="ticket_brigade=worker_brigade",
+        observed={"brigade_id": worker_brigade_id},
+        required={"brigade_id": ticket_brigade_id},
     )
 
 

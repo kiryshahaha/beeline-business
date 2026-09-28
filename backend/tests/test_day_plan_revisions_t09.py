@@ -145,7 +145,7 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
-    def create_ticket(self, title):
+    def create_ticket(self, title, *, brigade_id=None):
         response = self.client.post(
             "/api/v1/tickets",
             json={
@@ -166,6 +166,13 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         )
         self.assertEqual(response.status_code, 201, response.text)
         ticket = response.json()
+        if brigade_id is not None:
+            brigade_response = self.client.put(
+                f"/api/v1/tickets/{ticket['id']}/brigade",
+                json={"brigade_id": brigade_id},
+                headers=self.headers,
+            )
+            self.assertEqual(brigade_response.status_code, 200, brigade_response.text)
         with Session(self.engine) as session, session.begin():
             session.add(
                 TicketAppliance(
@@ -315,7 +322,9 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
 
     def test_replan_preview_includes_new_emergency_and_apply_publishes_one_revision(self):
         initial = self.apply(self.preview())
-        emergency = self.create_ticket("Авария в течение смены")
+        emergency = self.create_ticket(
+            "Авария в течение смены", brigade_id=self.receipt["id_map"]["brigades"]["1"]
+        )
         preview_response = self.client.post(
             self.day_url("/replan/preview"),
             json={"base_day_revision": initial["day_revision"]},
@@ -549,7 +558,10 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         )
 
         self.now = self.now.replace(day=15, hour=7, minute=15)
-        emergency = self.create_ticket("Авария после завершённого выезда")
+        emergency = self.create_ticket(
+            "Авария после завершённого выезда",
+            brigade_id=self.receipt["id_map"]["brigades"]["1"],
+        )
         preview_response = self.client.post(
             self.day_url("/replan/preview"),
             json={"base_day_revision": initial["day_revision"]},
@@ -636,7 +648,9 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         self.assertEqual(delayed.json()["state"], "in_progress")
 
         self.now = self.now.replace(day=15, hour=7, minute=15)
-        emergency = self.create_ticket("Авария после задержки")
+        emergency = self.create_ticket(
+            "Авария после задержки", brigade_id=self.receipt["id_map"]["brigades"]["1"]
+        )
         response = self.client.post(
             self.day_url("/replan/preview"),
             json={"base_day_revision": initial["day_revision"]},
@@ -718,7 +732,10 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
             headers=self.headers | {"Idempotency-Key": "t06-worker-return-eta"},
         )
         self.assertEqual(unavailable.status_code, 200, unavailable.text)
-        emergency = self.create_ticket("Авария к возвращению инженера")
+        emergency = self.create_ticket(
+            "Авария к возвращению инженера",
+            brigade_id=self.receipt["id_map"]["brigades"]["1"],
+        )
         preview_response = self.client.post(
             self.day_url("/replan/preview"),
             json={"base_day_revision": initial["day_revision"]},

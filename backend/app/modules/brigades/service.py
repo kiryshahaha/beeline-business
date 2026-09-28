@@ -46,6 +46,7 @@ def _build_read(row: RowMapping) -> BrigadeRead:
         foreman_id=row["foreman_id"],
         office_id=row["office_id"],
         division_id=row["division_id"],
+        service_area_id=row["service_area_id"],
         worker_ids=list(row["worker_ids"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],

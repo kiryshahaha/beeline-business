@@ -250,6 +250,14 @@ class ScheduleApiTests(DatabaseTestCase):
         north = self.schedule(self.observer, date="2026-09-17", office_id=self.north)
         self.assertEqual([row["id"] for row in north["unassigned_tickets"]], [own])
         self.assertEqual(north["unassigned_tickets"][0]["service_area_id"], self.area_id)
+        unresolved = self.schedule(self.north_foreman, date="2026-09-17")
+        self.assertEqual(unresolved["unassigned_tickets"], [])
+        selected = self.client.put(
+            f"/api/v1/tickets/{own}/brigade",
+            json={"brigade_id": self.north_brigade},
+            headers=self.auth(self.observer),
+        )
+        self.assertEqual(selected.status_code, 200, selected.text)
         foreman = self.schedule(self.north_foreman, date="2026-09-17")
         self.assertEqual([row["id"] for row in foreman["unassigned_tickets"]], [own])
         self.assertEqual(

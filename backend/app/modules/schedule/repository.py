@@ -207,7 +207,11 @@ def find_office_areas(session: Session, office_ids: list[int]) -> dict[int, int]
 
 
 def find_unassigned_tickets(
-    session: Session, day_start: datetime, day_end: datetime, area_ids: list[int] | None
+    session: Session,
+    day_start: datetime,
+    day_end: datetime,
+    area_ids: list[int] | None,
+    brigade_ids: list[int] | None = None,
 ) -> list[RowMapping]:
     """Open tickets without an engineer whose visit window touches the day.
 
@@ -216,10 +220,37 @@ def find_unassigned_tickets(
     if area_ids is not None and not area_ids:
         return []
     scope = f"AND {TICKET_AREA_SQL} = ANY(:area_ids)" if area_ids is not None else ""
+    brigade_scope = ""
+    if brigade_ids is not None:
+        if not brigade_ids:
+            return []
+        brigade_scope = f"""
+            AND (
+                t.brigade_id = ANY(:brigade_ids)
+                OR (
+                    t.brigade_id IS NULL
+                    AND (
+                        SELECT COUNT(*)
+                        FROM brigades AS area_brigade
+                        JOIN divisions AS area_division
+                          ON area_division.id = area_brigade.division_id
+                        WHERE area_division.service_area_id = {TICKET_AREA_SQL}
+                    ) = 1
+                    AND EXISTS (
+                        SELECT 1
+                        FROM brigades AS selected_brigade
+                        JOIN divisions AS selected_division
+                          ON selected_division.id = selected_brigade.division_id
+                        WHERE selected_brigade.id = ANY(:brigade_ids)
+                          AND selected_division.service_area_id = {TICKET_AREA_SQL}
+                    )
+                )
+            )
+        """
     return list(
         session.execute(
             text(f"""
-                SELECT t.id, t.title, COALESCE(wt.name, t.work_type) AS work_type,
+                SELECT t.id, t.title, t.brigade_id, COALESCE(wt.name, t.work_type) AS work_type,
                        t.category, t.priority, t.visit_window_start, t.visit_window_end,
                        t.sla_deadline_at, {TICKET_AREA_SQL} AS service_area_id
                 FROM tickets AS t
@@ -232,9 +263,15 @@ def find_unassigned_tickets(
                   AND t.visit_window_start < :day_end
                   AND t.visit_window_end > :day_start
                   {scope}
+                  {brigade_scope}
                 ORDER BY t.priority, t.visit_window_start, t.id
             """),
-            {"day_start": day_start, "day_end": day_end, "area_ids": area_ids or []},
+            {
+                "day_start": day_start,
+                "day_end": day_end,
+                "area_ids": area_ids or [],
+                "brigade_ids": brigade_ids or [],
+            },
         )
         .mappings()
         .all()

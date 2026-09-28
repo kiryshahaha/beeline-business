@@ -47,6 +47,7 @@ class RecentActivityApiTests(DatabaseTestCase):
         self.foreman_without_brigade = self.create_user("foreman_free", UserRole.FOREMAN)
         self.worker_one = self.create_user("worker_one", UserRole.WORKER)
         self.worker_two = self.create_user("worker_two", UserRole.WORKER)
+        self.worker_three = self.create_user("worker_three", UserRole.WORKER)
 
         self.location_id = self.connection.execute(
             text("INSERT INTO locations (building_id) VALUES (:building_id) RETURNING id"),
@@ -59,11 +60,23 @@ class RecentActivityApiTests(DatabaseTestCase):
             ),
             {"location_id": self.location_id},
         ).scalar_one()
-        self.create_brigade("Альфа", self.foreman_one.id, office_id, self.worker_one.id)
-        self.create_brigade("Бета", self.foreman_two.id, office_id, self.worker_two.id)
+        self.brigade_one = self.create_brigade(
+            "Альфа", self.foreman_one.id, office_id, self.worker_one.id
+        )
+        self.brigade_two = self.create_brigade(
+            "Бета", self.foreman_two.id, office_id, self.worker_two.id
+        )
+        self.connection.execute(
+            text("INSERT INTO brigade_members (brigade_id, worker_id) VALUES (:brigade, :worker)"),
+            {"brigade": self.brigade_two, "worker": self.worker_three.id},
+        )
 
-        self.ticket_one = self.add_ticket("Монтаж оборудования", minutes(0), self.worker_one.id)
-        self.ticket_two = self.add_ticket("Ремонт у клиента", minutes(1), self.worker_two.id)
+        self.ticket_one = self.add_ticket(
+            "Монтаж оборудования", minutes(0), self.worker_one.id, brigade_id=self.brigade_one
+        )
+        self.ticket_two = self.add_ticket(
+            "Ремонт у клиента", minutes(1), self.worker_two.id, brigade_id=self.brigade_two
+        )
         self.add_assignment(self.ticket_one, None, self.worker_one.id, minutes(2))
         self.add_work_event(
             self.ticket_one,
@@ -159,17 +172,24 @@ class RecentActivityApiTests(DatabaseTestCase):
         )
         return brigade_id
 
-    def add_ticket(self, title: str, created_at: datetime, worker_id: int | None = None) -> int:
+    def add_ticket(
+        self,
+        title: str,
+        created_at: datetime,
+        worker_id: int | None = None,
+        *,
+        brigade_id: int | None = None,
+    ) -> int:
         # Inserted with its assignee: the assignment history below is written explicitly.
         return self.connection.execute(
             text(
                 "INSERT INTO tickets ("
                 "location_id, title, work_type, status, lifecycle_state, visit_window_start, "
                 "visit_window_end, estimated_duration_minutes, assigned_worker_id, "
-                "created_at, updated_at"
+                "brigade_id, created_at, updated_at"
                 ") VALUES ("
                 ":location_id, :title, 'Настройка сети', 'planned', 'assigned', :visit_start, "
-                ":visit_end, 60, :worker_id, :created_at, :created_at"
+                ":visit_end, 60, :worker_id, :brigade_id, :created_at, :created_at"
                 ") RETURNING id"
             ),
             {
@@ -178,6 +198,7 @@ class RecentActivityApiTests(DatabaseTestCase):
                 "visit_start": created_at,
                 "visit_end": created_at + timedelta(hours=4),
                 "worker_id": worker_id,
+                "brigade_id": brigade_id,
                 "created_at": created_at,
             },
         ).scalar_one()
@@ -349,7 +370,7 @@ class RecentActivityApiTests(DatabaseTestCase):
     def test_reassignment_and_release_record_author_path_and_previous_worker(self):
         url = f"/api/v1/tickets/{self.ticket_two}/assignees"
         self.assertEqual(
-            self.client.put(url, json={"worker_id": self.worker_one.id}).status_code, 200
+            self.client.put(url, json={"worker_id": self.worker_three.id}).status_code, 200
         )
         self.assertEqual(self.client.put(url, json={"worker_id": None}).status_code, 200)
 
@@ -358,10 +379,10 @@ class RecentActivityApiTests(DatabaseTestCase):
         self.assertEqual(reassigned["kind"], "ticket_reassigned")
         self.assertEqual(reassigned["actor"]["id"], self.observer.id)
         self.assertEqual(reassigned["details"]["previous_worker"]["id"], self.worker_two.id)
-        self.assertEqual(reassigned["details"]["worker"]["id"], self.worker_one.id)
+        self.assertEqual(reassigned["details"]["worker"]["id"], self.worker_three.id)
         self.assertEqual(reassigned["details"]["assignment_source"], "manual")
         self.assertEqual(released["kind"], "ticket_unassigned")
-        self.assertEqual(released["details"]["previous_worker"]["id"], self.worker_one.id)
+        self.assertEqual(released["details"]["previous_worker"]["id"], self.worker_three.id)
         self.assertIsNone(released["details"]["worker"])
 
     def test_direct_database_change_is_still_recorded(self):
@@ -378,13 +399,21 @@ class RecentActivityApiTests(DatabaseTestCase):
 
     def test_foreman_keeps_seeing_a_ticket_moved_out_of_the_brigade(self):
         url = f"/api/v1/tickets/{self.ticket_one}/assignees"
+        self.assertEqual(self.client.put(url, json={"worker_id": None}).status_code, 200)
+        self.assertEqual(
+            self.client.put(
+                f"/api/v1/tickets/{self.ticket_one}/brigade",
+                json={"brigade_id": self.brigade_two},
+            ).status_code,
+            200,
+        )
         self.assertEqual(
             self.client.put(url, json={"worker_id": self.worker_two.id}).status_code, 200
         )
         self.current_user = self.foreman_one
 
         kinds = {item["kind"] for item in self.feed() if item["ticket"]["id"] == self.ticket_one}
-        self.assertIn("ticket_reassigned", kinds)
+        self.assertIn("ticket_unassigned", kinds)
 
     def test_created_ticket_has_no_actor_because_it_is_not_recorded(self):
         items = [item for item in self.feed() if item["kind"] == "ticket_created"]
@@ -466,6 +495,13 @@ class RecentActivityApiTests(DatabaseTestCase):
         )
         self.assertEqual(created.status_code, 201, created.text)
         ticket_id = created.json()["id"]
+        self.assertEqual(
+            self.client.put(
+                f"/api/v1/tickets/{ticket_id}/brigade",
+                json={"brigade_id": self.brigade_one},
+            ).status_code,
+            200,
+        )
         self.assertEqual(
             self.client.put(
                 f"/api/v1/tickets/{ticket_id}/assignees",

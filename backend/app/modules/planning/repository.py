@@ -78,6 +78,7 @@ def load_area_scope(session: Session, service_area_id: int | None, route_date) -
             "lifecycle_state": row.lifecycle_state,
             "revision": row.revision,
             "assigned_worker_id": row.assigned_worker_id,
+            "brigade_id": row.brigade_id,
         }
         for row in session.execute(
             select(
@@ -86,6 +87,7 @@ def load_area_scope(session: Session, service_area_id: int | None, route_date) -
                 Ticket.lifecycle_state,
                 Ticket.revision,
                 Ticket.assigned_worker_id,
+                Ticket.brigade_id,
             )
             .where(Ticket.id.in_(area_tickets))
             .order_by(Ticket.id)
@@ -136,6 +138,17 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
     if len(service_area_ids) > 1:
         raise PlanningError("multiple_service_areas", service_areas=sorted(service_area_ids))
     service_area_id = request.service_area_id or next(iter(service_area_ids), None)
+
+    service_area_brigades = {}
+    if service_area_ids:
+        area_brigade_rows = session.execute(
+            select(Brigade.id, Division.service_area_id)
+            .join(Division, Division.id == Brigade.division_id)
+            .where(Division.service_area_id.in_(service_area_ids))
+            .order_by(Brigade.id)
+        ).all()
+        for brigade_row in area_brigade_rows:
+            service_area_brigades.setdefault(brigade_row.service_area_id, []).append(brigade_row.id)
 
     workers = rows(session, Worker, Worker.user_id.in_(worker_ids))
     roles = [
@@ -340,6 +353,7 @@ def load_snapshot(session: Session, request: PreviewRequest, *, policy_snapshot=
             "stocks": stocks,
             "reservations": reservations,
             "service_area_id": service_area_id,
+            "service_area_brigades": service_area_brigades,
             "service_areas": all_service_areas,
             "ticket_service_areas": ticket_service_areas,
             "worker_service_areas": worker_service_areas,

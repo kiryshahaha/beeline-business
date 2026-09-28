@@ -4,15 +4,17 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token
-from app.db.models import Building, City, District, Entrance, Location, Street, Ticket
+from app.db.models import Building, City, District, Entrance, Location, Office, Street, Ticket
 from app.db.session import get_session
 from app.main import app
+from app.modules.locations.reverse_geocoding import ReverseGeocodeResult
 from app.modules.tickets import repository
 from app.modules.tickets.enums import TicketStatus
+from app.modules.tickets.router import get_reverse_geocoder
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserCreate
 from app.modules.users.service import create_user
@@ -73,6 +75,8 @@ class TicketsApiTests(DatabaseTestCase):
 
         app.dependency_overrides[get_session] = override_session
         self.addCleanup(app.dependency_overrides.pop, get_session)
+        app.dependency_overrides[get_reverse_geocoder] = lambda: None
+        self.addCleanup(app.dependency_overrides.pop, get_reverse_geocoder, None)
         self.client = self.enterContext(TestClient(app, headers=auth_headers))
 
     def save(self, instance):
@@ -92,6 +96,154 @@ class TicketsApiTests(DatabaseTestCase):
 
     def create(self, **overrides):
         return self.client.post("/api/v1/tickets", json=self.payload(**overrides))
+
+    def add_brigade(self, name, *, office_id=None):
+        foreman = create_user(
+            self.session,
+            UserCreate(
+                name="Бригадир",
+                surname=name,
+                username=f"foreman_{name.lower()}",
+                password="Password123!",
+                role=UserRole.FOREMAN,
+            ),
+        )
+        self.session.commit()
+        if office_id is None:
+            office = self.save(
+                Office(
+                    name=f"Офис {name}",
+                    location_id=self.location_id,
+                    service_area_id=self.service_area_id,
+                )
+            )
+            office_id = office.id
+            self.session.commit()
+        return self.connection.execute(
+            text("""
+                INSERT INTO brigades (name, foreman_id, office_id)
+                VALUES (:name, :foreman_id, :office_id)
+                RETURNING id
+            """),
+            {"name": f"Бригада {name}", "foreman_id": foreman.id, "office_id": office_id},
+        ).scalar_one()
+
+    def use_reverse_geocoder(self, result):
+        class StubReverseGeocoder:
+            def __init__(self):
+                self.coordinates = None
+
+            def reverse_geocode(self, *, latitude, longitude):
+                self.coordinates = (latitude, longitude)
+                return result
+
+        stub = StubReverseGeocoder()
+        app.dependency_overrides[get_reverse_geocoder] = lambda: stub
+        self.addCleanup(app.dependency_overrides.pop, get_reverse_geocoder, None)
+        return stub
+
+    def test_creation_assigns_the_unique_brigade_for_reverse_geocoded_district(self):
+        brigade_id = self.add_brigade("Unique")
+        geocoder = self.use_reverse_geocoder(
+            ReverseGeocodeResult(city="Санкт-Петербург", district="Невский район")
+        )
+
+        response = self.create()
+
+        self.assertEqual(response.status_code, 201, response.text)
+        ticket = response.json()
+        self.assertEqual(ticket["service_area_id"], self.service_area_id)
+        self.assertEqual(ticket["brigade_id"], brigade_id)
+        self.assertEqual(ticket["district"], "Невский район")
+        self.assertEqual(tuple(map(float, geocoder.coordinates)), (59.94, 30.32))
+
+    def test_creation_keeps_brigade_empty_when_area_has_multiple_brigades(self):
+        first_brigade_id = self.add_brigade("First")
+        office_id = self.session.scalar(
+            select(Office.id).where(Office.service_area_id == self.service_area_id)
+        )
+        second_brigade_id = self.add_brigade("Second", office_id=office_id)
+        self.use_reverse_geocoder(
+            ReverseGeocodeResult(city="Санкт-Петербург", district="Невский район")
+        )
+
+        response = self.create()
+
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertIsNone(response.json()["brigade_id"])
+        self.assertEqual(
+            self.client.put(
+                f"/api/v1/tickets/{response.json()['id']}/brigade",
+                json={"brigade_id": second_brigade_id},
+            ).json()["brigade_id"],
+            second_brigade_id,
+        )
+        self.assertNotEqual(first_brigade_id, second_brigade_id)
+
+    def test_reverse_lookup_without_a_district_keeps_brigade_unresolved(self):
+        self.add_brigade("NoDistrict")
+        self.use_reverse_geocoder(ReverseGeocodeResult(city="Санкт-Петербург", district=None))
+
+        response = self.create()
+
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["service_area_id"], self.service_area_id)
+        self.assertIsNone(response.json()["brigade_id"])
+
+    def test_manual_brigade_selection_rejects_a_brigade_from_another_area(self):
+        brigade_id = self.add_brigade("Local")
+        ticket = self.create()
+        self.assertEqual(ticket.status_code, 201, ticket.text)
+        other_district = self.save(District(city_id=self.city_id, name="Другой район"))
+        other_area_id = self.service_area_for_district(other_district.id)
+        other_street = self.save(Street(city_id=self.city_id, name="Другая улица"))
+        other_building = self.save(
+            Building(
+                city_id=self.city_id,
+                street_id=other_street.id,
+                service_area_id=other_area_id,
+                number="77",
+            )
+        )
+        other_location = self.save(Location(building_id=other_building.id))
+        self.session.commit()
+        other_office = self.save(
+            Office(
+                name="Офис другого района",
+                location_id=other_location.id,
+                service_area_id=other_area_id,
+            )
+        )
+        self.session.commit()
+        foreman = create_user(
+            self.session,
+            UserCreate(
+                name="Бригадир",
+                surname="Другой",
+                username="foreman_other_area",
+                password="Password123!",
+                role=UserRole.FOREMAN,
+            ),
+        )
+        self.session.commit()
+        other_brigade_id = self.connection.execute(
+            text("""
+                INSERT INTO brigades (name, foreman_id, office_id)
+                VALUES ('Бригада другого района', :foreman_id, :office_id)
+                RETURNING id
+            """),
+            {"foreman_id": foreman.id, "office_id": other_office.id},
+        ).scalar_one()
+
+        response = self.client.put(
+            f"/api/v1/tickets/{ticket.json()['id']}/brigade",
+            json={"brigade_id": other_brigade_id},
+        )
+
+        self.assertEqual(response.status_code, 422, response.text)
+        current = self.client.get(f"/api/v1/tickets/{ticket.json()['id']}").json()
+        self.assertNotEqual(current["brigade_id"], other_brigade_id)
+        self.assertNotEqual(brigade_id, other_brigade_id)
 
     def count_tickets(self):
         with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
@@ -534,6 +686,7 @@ class TicketsApiTests(DatabaseTestCase):
                 "/api/v1/tickets/{id}/appliances",
                 "/api/v1/tickets/{id}/appliances/{appliance_id}",
                 "/api/v1/tickets/{id}/assignees",
+                "/api/v1/tickets/{id}/brigade",
                 "/api/v1/tickets/{id}/assign/preview",
                 "/api/v1/tickets/{id}/comments",
                 "/api/v1/tickets/{id}/comments/{comment_id}",
@@ -553,6 +706,7 @@ class TicketsApiTests(DatabaseTestCase):
         self.assertEqual(set(paths["/api/v1/tickets"]), {"post", "get"})
         self.assertEqual(set(paths["/api/v1/tickets/{id}"]), {"get"})
         self.assertEqual(set(paths["/api/v1/tickets/{id}/assignees"]), {"put"})
+        self.assertEqual(set(paths["/api/v1/tickets/{id}/brigade"]), {"put"})
         self.assertEqual(set(paths["/api/v1/tickets/{id}/comments"]), {"get", "post"})
         comment_update = paths["/api/v1/tickets/{id}/comments/{comment_id}"]
         self.assertEqual(set(comment_update), {"patch"})

@@ -10,6 +10,8 @@ BRIGADE_COLUMNS = """
     b.foreman_id,
     b.office_id,
     b.division_id,
+    (SELECT division.service_area_id FROM divisions AS division
+     WHERE division.id = b.division_id) AS service_area_id,
     b.created_at,
     b.updated_at,
     COALESCE(
