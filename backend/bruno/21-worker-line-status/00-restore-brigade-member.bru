@@ -1,0 +1,33 @@
+meta {
+  name: Вернуть исполнителя в бригаду перед проверкой линии
+  type: http
+  seq: 0
+}
+
+put {
+  url: {{base_url}}/api/v1/brigades/{{workflow_brigade_id}}/members
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "foreman_id": {{workflow_foreman_id}},
+    "office_id": {{workflow_office_id}},
+    "worker_ids": [{{worker_id}}]
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("Исполнитель добавлен в бригаду", function () {
+    expect(res.getBody().worker_ids).to.include(Number(bru.getVar("worker_id")));
+  });
+}

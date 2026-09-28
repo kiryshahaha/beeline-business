@@ -86,6 +86,26 @@ def align_demo_brigade_with_ticket_area(engine):
             text("UPDATE brigades SET office_id = :office_id WHERE id = :brigade_id"),
             {"office_id": office_id, "brigade_id": brigade.id},
         )
+        connection.execute(
+            text("""
+                UPDATE ticket_appliances
+                SET office_id = :office_id
+                WHERE ticket_id = 1
+            """),
+            {"office_id": office_id},
+        )
+        connection.execute(
+            text("""
+                INSERT INTO appliance_stocks (office_id, appliance_id, stock)
+                SELECT :office_id, appliance_id, SUM(quantity)
+                FROM ticket_appliances
+                WHERE ticket_id = 1
+                GROUP BY appliance_id
+                ON CONFLICT (office_id, appliance_id) DO UPDATE
+                SET stock = GREATEST(appliance_stocks.stock, EXCLUDED.stock)
+            """),
+            {"office_id": office_id},
+        )
 
 
 def main():

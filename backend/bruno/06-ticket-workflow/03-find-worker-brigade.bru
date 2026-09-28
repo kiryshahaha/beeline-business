@@ -25,4 +25,6 @@ script:post-response {
   });
   if (!brigade) throw new Error("Для исполнителя не найдена бригада района заявки");
   bru.setVar("workflow_brigade_id", brigade.id);
+  bru.setVar("workflow_foreman_id", brigade.foreman_id);
+  bru.setVar("workflow_office_id", brigade.office_id);
 }
