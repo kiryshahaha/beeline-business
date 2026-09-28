@@ -56,6 +56,9 @@ class DayPlanRevision(IntegerIdMixin, Base):
     plan_state: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )
+    # Engineers admitted to the area-day, including those without a visit, with the
+    # area and shift they had when admitted. NULL only for revisions before 0031.
+    roster: Mapped[list[dict] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     is_current: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
@@ -68,6 +71,10 @@ class DayPlanRevision(IntegerIdMixin, Base):
         CheckConstraint(
             "reason IN ('plan_applied', 'worker_redirected', 'manual_edit', 'event_replan')",
             name="day_plan_revision_reason_known",
+        ),
+        CheckConstraint(
+            "roster IS NULL OR jsonb_typeof(roster) = 'array'",
+            name="day_plan_revision_roster_is_list",
         ),
         CheckConstraint(
             "(superseded_at IS NULL) = (superseded_by_revision IS NULL) "

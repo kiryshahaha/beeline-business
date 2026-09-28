@@ -4,9 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session
-from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.dependencies import get_current_user, require_roles
 from app.modules.service_areas import service
-from app.modules.service_areas.schemas import ServiceAreaRead
+from app.modules.service_areas.schemas import ServiceAreaRead, TerritoryConsistencyReport
+from app.modules.service_areas.territory import consistency_report
+from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
 
 router = APIRouter(prefix="/api/v1/service-areas", tags=["service-areas"])
@@ -18,6 +20,19 @@ def list_service_areas(
     _: UserRead = Depends(get_current_user),
 ) -> list[ServiceAreaRead]:
     return service.get_all_service_areas(session)
+
+
+@router.get("/consistency", response_model=TerritoryConsistencyReport)
+def read_consistency(
+    session: Session = Depends(get_session),
+    _: UserRead = Depends(require_roles(UserRole.OBSERVER)),
+) -> dict:
+    """Engineers, brigades and open tickets whose service area is missing or contradictory.
+
+    Such records are not assigned until the directories are fixed; nothing is moved
+    between areas automatically.
+    """
+    return consistency_report(session)
 
 
 @router.get("/{service_area_id}", response_model=ServiceAreaRead)

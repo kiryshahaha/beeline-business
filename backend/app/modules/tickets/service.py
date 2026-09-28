@@ -19,6 +19,8 @@ from app.modules.locations.reverse_geocoding import GeoapifyReverseGeocoder
 from app.modules.locations.schemas import LocationRead
 from app.modules.notifications.enums import NotificationKind
 from app.modules.routing.service import save_routes_in_transaction
+from app.modules.service_areas.resolve import MISSING, ServiceAreaResolutionError
+from app.modules.service_areas.territory import resolve_brigade, resolve_ticket, resolve_worker
 from app.modules.tickets import repository
 from app.modules.tickets.enums import TicketCategory, TicketStatus
 from app.modules.tickets.models import Ticket
@@ -72,6 +74,25 @@ class PermissionDeniedError(Exception):
 
 class ServiceAreaMismatchError(Exception):
     pass
+
+
+class ServiceAreaUnresolvedError(Exception):
+    """An engineer, brigade or ticket has no area or contradictory ones."""
+
+    def __init__(self, error: ServiceAreaResolutionError):
+        self.error = error
+        super().__init__(error.code)
+
+    def detail(self) -> dict:
+        subject = {"worker": "исполнителя", "brigade": "бригады", "ticket": "заявки"}.get(
+            self.error.subject, self.error.subject
+        )
+        message = (
+            f"Участок {subject} указан противоречиво; исправьте справочник"
+            if self.error.code == "service_area_configuration_mismatch"
+            else f"Участок {subject} не определён"
+        )
+        return {**self.error.details(), "message": message}
 
 
 class BrigadeNotFoundError(Exception):
@@ -302,11 +323,16 @@ def create_ticket(
         values = data.model_dump()
         values["status"] = data.status.value
 
+        # The dataset's or dispatcher's area wins; geocoding only fills an unstated one.
         service_area_id = (
-            reverse_geocoded_area_id or data.service_area_id or geocode_source["service_area_id"]
+            data.service_area_id or reverse_geocoded_area_id or geocode_source["service_area_id"]
         )
         brigade_id = None
-        if not geocoding_attempted or reverse_geocoded_area_id is not None:
+        if (
+            data.service_area_id is not None
+            or not geocoding_attempted
+            or reverse_geocoded_area_id is not None
+        ):
             area_brigades = repository.find_brigade_ids_for_service_area(session, service_area_id)
             if len(area_brigades) == 1:
                 brigade_id = area_brigades[0]
@@ -394,9 +420,16 @@ def update_ticket_brigade(session: Session, ticket_id: int, brigade_id: int | No
             raise TicketNotFoundError
 
         if brigade_id is not None:
-            brigade_area_id = repository.find_brigade_service_area(session, brigade_id)
+            try:
+                brigade_area_id = resolve_brigade(session, brigade_id)
+            except ServiceAreaResolutionError as error:
+                raise ServiceAreaUnresolvedError(error) from error
             if brigade_area_id is None:
                 raise BrigadeNotFoundError
+            if ticket["service_area_id"] is None:
+                raise ServiceAreaUnresolvedError(
+                    ServiceAreaResolutionError(MISSING, "ticket", ticket_id)
+                )
             if brigade_area_id != ticket["service_area_id"]:
                 raise BrigadeServiceAreaMismatchError
 
@@ -444,6 +477,9 @@ async def update_assignment(
 
     new_preview = None
     if worker_id is not None:
+        if repository.find_worker_line_statuses(session, [worker_id]).get(worker_id) is None:
+            raise WorkerNotFoundError
+        _check_territory(session, ticket_id, worker_id)
         _resolve_assignment_brigade(session, ticket_info, worker_id)
         new_preview = await preview_assignment(
             session,
@@ -522,6 +558,7 @@ async def update_assignment(
             saved_routes=saved_routes,
             ticket_id=ticket_id,
             at=clock(),
+            assigned_worker_id=worker_id,
         )
         return result
 
@@ -570,6 +607,32 @@ def _manual_assignment_ticket_info(session: Session, ticket_id: int) -> dict | N
         .one_or_none()
     )
     return dict(row) if row is not None else None
+
+
+def _territory_violation(session: Session, ticket_id: int, worker_id: int) -> dict | None:
+    """The planner's reason when the engineer cannot serve the ticket's area."""
+    from app.modules.planning import reasons
+
+    try:
+        ticket_area_id = resolve_ticket(session, ticket_id)
+        worker_area_id = resolve_worker(session, worker_id)
+    except ServiceAreaResolutionError as error:
+        if error.subject == "worker":
+            return reasons.worker_service_area_unresolved(error.details())
+        return reasons.service_area_unknown(None, None)
+    if ticket_area_id != worker_area_id:
+        return reasons.service_area_mismatch(worker_area_id, ticket_area_id)
+    return None
+
+
+def _check_territory(session: Session, ticket_id: int, worker_id: int) -> None:
+    try:
+        ticket_area_id = resolve_ticket(session, ticket_id)
+        worker_area_id = resolve_worker(session, worker_id)
+    except ServiceAreaResolutionError as error:
+        raise ServiceAreaUnresolvedError(error) from error
+    if ticket_area_id != worker_area_id:
+        raise ServiceAreaMismatchError
 
 
 def _resolve_assignment_brigade(
@@ -788,12 +851,17 @@ def _publish_manual_assignment_revision(
     saved_routes,
     ticket_id: int,
     at: datetime,
+    assigned_worker_id: int | None = None,
 ) -> None:
     if service_area_id is None:
         return
 
     from app.modules.planning.day_models import DayPlanRevision
-    from app.modules.planning.day_plans import build_plan_state, publish_revision
+    from app.modules.planning.day_plans import (
+        build_plan_state,
+        publish_revision,
+        roster_for_workers,
+    )
 
     saved_by_worker = {route.worker_id: route.id for route in saved_routes}
     new_public = {
@@ -855,6 +923,14 @@ def _publish_manual_assignment_revision(
         result=result,
         at=at,
         plan_id=None,
+        # A dispatcher's manual assignment is the explicit way to admit an engineer;
+        # the revision's roster diff records it.
+        roster_additions=roster_for_workers(
+            session,
+            [assigned_worker_id] if assigned_worker_id is not None else [],
+            service_area_id,
+            "manual_assignment",
+        ),
     )
 
 
@@ -920,52 +996,15 @@ def update_assignment_in_transaction(
             if not can_return_before_visit:
                 raise WorkerOffLineError
 
-        t_area = ticket.get("service_area_id")
-        if t_area is None and ticket.get("location_id"):
-            t_area = session.execute(
-                text(
-                    """
-                    SELECT b.service_area_id
-                    FROM locations AS loc
-                    JOIN buildings AS b ON b.id = loc.building_id
-                    WHERE loc.id = :location_id
-                    LIMIT 1
-                    """
-                ),
-                {"location_id": ticket["location_id"]},
-            ).scalar_one_or_none()
-
-        worker_row = (
-            session.execute(
-                text("SELECT service_area_id FROM workers WHERE user_id = :user_id"),
-                {"user_id": worker_id},
-            )
-            .mappings()
-            .first()
-        )
-        w_area = worker_row["service_area_id"] if worker_row else None
-        if w_area is None:
-            w_area = session.execute(
-                text(
-                    """
-                    SELECT bld.service_area_id
-                    FROM brigade_members AS bm
-                    JOIN brigades AS b ON b.id = bm.brigade_id
-                    JOIN offices AS off ON off.id = b.office_id
-                    JOIN locations AS loc ON loc.id = off.location_id
-                    JOIN buildings AS bld ON bld.id = loc.building_id
-                    WHERE bm.worker_id = :wid
-                    LIMIT 1
-                    """
-                ),
-                {"wid": worker_id},
-            ).scalar_one_or_none()
-
-        if t_area is not None and w_area is not None and t_area != w_area:
-            raise ServiceAreaMismatchError
+        # The same resolution as planning: no fallback to the ticket's area, no office
+        # address standing in for the engineer's area.
+        _check_territory(session, ticket_id, worker_id)
         selected_brigade_id = _resolve_assignment_brigade(
             session,
-            {"service_area_id": t_area, "brigade_id": ticket.get("brigade_id")},
+            {
+                "service_area_id": resolve_ticket(session, ticket_id),
+                "brigade_id": ticket.get("brigade_id"),
+            },
             worker_id,
         )
         if selected_brigade_id != ticket.get("brigade_id"):
@@ -1078,6 +1117,14 @@ async def preview_assignment(
     worker_line_statuses = repository.find_worker_line_statuses(session, [worker_id])
     if worker_id not in worker_line_statuses:
         raise WorkerNotFoundError
+    violation = _territory_violation(session, ticket_id, worker_id)
+    if violation is not None:
+        return AssignmentPreviewResponse(
+            is_eligible=False,
+            violations=[violation],
+            route_shift_minutes=0,
+            sla_violations_added=0,
+        )
 
     route_date = ticket_info["route_date"]
     service_area_id = ticket_info["service_area_id"]

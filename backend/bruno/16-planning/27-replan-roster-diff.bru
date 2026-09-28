@@ -1,0 +1,25 @@
+meta {
+  name: Diff перепланирования без изменения состава
+  type: http
+  seq: 27
+}
+
+get {
+  url: {{base_url}}/api/v1/planning/areas/{{planning_service_area_id}}/2030-01-15/diff
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.reason: eq "event_replan"
+}
+
+tests {
+  test("Новая ревизия не меняет состав дня", () => {
+    expect(res.getBody().roster).to.equal(null);
+  });
+}

@@ -509,10 +509,8 @@ class ServiceAreasIntegrationTests(DatabaseTestCase):
             headers=headers,
         )
         self.assertEqual(response.status_code, 422)
-        self.assertTrue(
-            "Service area mismatch" in response.json()["detail"]
-            or "участку обслуживания" in response.json()["detail"]
-        )
+        self.assertEqual(response.json()["detail"]["code"], "service_area_mismatch")
+        self.assertIn("участку обслуживания", response.json()["detail"]["message"])
 
     def test_a05_manual_assignment_same_area_succeeds_200(self):
         # Create ticket in South area

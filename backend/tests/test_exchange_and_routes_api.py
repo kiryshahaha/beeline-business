@@ -214,6 +214,22 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
             json=self.route(worker_id=self.ids["workers"]["10"]),
             headers=self.observer,
         )
+        # Engineer 10 serves another area: a direct save cannot bypass the territory rule.
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()["detail"]["code"], "service_area_mismatch")
+        response = self.client.post(
+            "/api/v1/routes",
+            json=self.route(
+                worker_id=self.ids["workers"]["10"],
+                stops=[
+                    {
+                        "location_id": self.ids["locations"]["2"],
+                        "arrival_at": "2026-09-23T10:00:00+03:00",
+                    }
+                ],
+            ),
+            headers=self.observer,
+        )
         self.assertEqual(response.json()["route_number"], 1)
         downloaded = self.client.get(f"/api/v1/routes/{route['id']}/geojson", headers=self.worker)
         self.assertEqual(downloaded.status_code, 200)

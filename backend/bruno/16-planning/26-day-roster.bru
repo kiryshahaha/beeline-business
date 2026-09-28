@@ -1,0 +1,38 @@
+meta {
+  name: Состав дня после перепланирования
+  type: http
+  seq: 26
+}
+
+get {
+  url: {{base_url}}/api/v1/planning/areas/{{planning_service_area_id}}/2030-01-15/current
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.reason: eq "event_replan"
+}
+
+tests {
+  test("Replan сохраняет исходный roster и не добавляет других инженеров участка", () => {
+    const selected = JSON.parse(bru.getVar("planning_worker_ids")).map(Number).sort((a, b) => a - b);
+    const roster = res.getBody().roster;
+    expect(roster).to.be.an("array");
+    expect(roster.map((entry) => entry.worker_id)).to.deep.equal(selected);
+    roster.forEach((entry) => {
+      expect(entry.service_area_id).to.equal(Number(bru.getVar("planning_service_area_id")));
+      expect(entry.workshift_start).to.be.a("string");
+      expect(entry.workshift_end).to.be.a("string");
+    });
+  });
+}
+
+docs {
+  Первая публикация фиксирует всех выбранных инженеров, в том числе без визитов;
+  перепланирование берёт кандидатов только из этого состава.
+}
