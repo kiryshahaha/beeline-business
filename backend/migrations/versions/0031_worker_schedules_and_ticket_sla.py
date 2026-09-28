@@ -17,12 +17,18 @@ def upgrade() -> None:
     # 1. Worker schedules
     op.add_column(
         "workers",
-        sa.Column("schedule_type", sa.String(20), nullable=False, server_default="5/2"),
-    )
-    op.create_check_constraint(
-        "worker_schedule_type",
-        "workers",
-        "schedule_type IN ('2/2', '5/2')",
+        sa.Column(
+            "schedule_type",
+            sa.Enum(
+                "2/2",
+                "5/2",
+                name="worker_schedule_type",
+                native_enum=False,
+                create_constraint=True,
+            ),
+            nullable=False,
+            server_default="5/2",
+        ),
     )
     op.add_column(
         "workers",
@@ -106,5 +112,4 @@ def downgrade() -> None:
     # 1. Worker schedules
     op.drop_column("workers", "workdays_mask")
     op.drop_column("workers", "cycle_start_date")
-    op.drop_constraint("worker_schedule_type", "workers", type_="check")
     op.drop_column("workers", "schedule_type")
