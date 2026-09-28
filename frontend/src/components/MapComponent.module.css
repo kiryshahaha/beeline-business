@@ -1,0 +1,253 @@
+.map {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+}
+
+/* Crisp Circular Markers matching project design system */
+.markerContainer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clusterMarker,
+.geoMarker {
+  display: grid;
+  place-items: center;
+  border: 2px solid #ffffff;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.36);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+  user-select: none;
+  touch-action: manipulation;
+  outline: none;
+}
+
+.clusterMarker:hover,
+.geoMarker:hover,
+.selectedMarker {
+  transform: scale(1.16);
+  box-shadow: 0 0 0 3px rgba(255, 200, 0, 0.55), 0 3px 10px rgba(0, 0, 0, 0.38);
+  z-index: 30 !important;
+}
+
+.clusterMarker {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #ffc800;
+  color: #1c1c1e;
+  font-size: 13px;
+}
+
+.clusterMarker[data-urgent="true"] {
+  border-color: #e11d48;
+  box-shadow: 0 0 0 2px #e11d48, 0 3px 10px rgba(0, 0, 0, 0.4);
+}
+
+.geoMarker {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: #ffffff;
+  font-size: 11px;
+}
+
+.geoMarker_ticket {
+  background: #e89c16;
+}
+
+.geoMarker_ticket[data-status="in_progress"] {
+  background: #2563eb;
+}
+
+.geoMarker_ticket[data-status="completed"] {
+  background: #16a34a;
+}
+
+.geoMarker_ticket[data-status="wont_fix"] {
+  background: #64748b;
+}
+
+.geoMarker_ticket[data-urgent="true"] {
+  background: #e11d48;
+}
+
+.geoMarker_worker {
+  background: #6366f1;
+}
+
+.geoMarker_office {
+  background: #0284c7;
+}
+
+/* Clean, Modern MapLibre Popups matching Beeline design system */
+:global(.maplibregl-popup) {
+  z-index: 1000 !important;
+}
+
+:global(.maplibregl-popup-content) {
+  background: rgba(28, 28, 30, 0.95) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  padding: 14px 16px !important;
+  color: #ffffff !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+/* Beautiful connected triangle tip */
+:global(.maplibregl-popup-anchor-top .maplibregl-popup-tip) {
+  border-bottom-color: rgba(28, 28, 30, 0.95) !important;
+}
+:global(.maplibregl-popup-anchor-bottom .maplibregl-popup-tip) {
+  border-top-color: rgba(28, 28, 30, 0.95) !important;
+}
+:global(.maplibregl-popup-anchor-left .maplibregl-popup-tip) {
+  border-right-color: rgba(28, 28, 30, 0.95) !important;
+}
+:global(.maplibregl-popup-anchor-right .maplibregl-popup-tip) {
+  border-left-color: rgba(28, 28, 30, 0.95) !important;
+}
+
+:global(.maplibregl-popup-close-button) {
+  top: 10px !important;
+  right: 10px !important;
+  width: 22px !important;
+  height: 22px !important;
+  border-radius: 50% !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  outline: none !important;
+}
+
+:global(.maplibregl-popup-close-button:hover) {
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #ffffff !important;
+}
+
+.geoPopup {
+  min-width: 230px;
+  max-width: 300px;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.popupHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-right: 26px; /* Guarantees close button never overlaps */
+}
+
+.popupEyebrow {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--beeline);
+}
+
+.popupTitle {
+  margin: 0 0 6px 0;
+  font-size: 14px;
+  font-weight: 650;
+  color: #ffffff;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.popupAddress {
+  margin: 4px 0 6px 0;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  line-height: 1.4;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.popupCoordinates {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  margin: 2px 0 8px 0;
+}
+
+.popupMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11.5px;
+}
+
+.popupTag {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.popupTime {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status {
+  padding: 2.5px 8px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.status_planned {
+  background: rgba(255, 146, 48, 0.18);
+  color: #ff9230;
+  border: 1px solid rgba(255, 146, 48, 0.3);
+}
+
+.status_in_progress {
+  background: rgba(255, 200, 0, 0.18);
+  color: var(--beeline);
+  border: 1px solid rgba(255, 200, 0, 0.3);
+}
+
+.status_completed {
+  background: rgba(48, 209, 88, 0.18);
+  color: #30d158;
+  border: 1px solid rgba(48, 209, 88, 0.3);
+}
+
+.status_wont_fix {
+  background: rgba(255, 66, 69, 0.18);
+  color: #ff4245;
+  border: 1px solid rgba(255, 66, 69, 0.3);
+}

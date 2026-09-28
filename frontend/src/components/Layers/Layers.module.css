@@ -36,7 +36,8 @@
 
 .quickActions,
 .zoom,
-.styles {
+.styles,
+.objectLayers {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -98,3 +99,122 @@
   color: var(--beeline);
   font-weight: 700;
 }
+
+.sectionLabel {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.objectLayers {
+  gap: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.layerToggle {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.layerToggle:hover,
+.layerToggle.layerEnabled {
+  background: rgba(255, 200, 0, 0.12);
+  color: var(--foreground);
+}
+
+.layerToggle:focus-visible {
+  outline: 2px solid var(--beeline);
+  outline-offset: 1px;
+}
+
+.layerCount {
+  margin-left: auto;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ticketDot,
+.workerDot,
+.officeDot,
+.progressDot,
+.completedDot,
+.cancelledDot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: #e89c16;
+}
+
+.workerDot {
+  background: #a17de2;
+}
+
+.officeDot {
+  background: #4d9cff;
+}
+
+.progressDot {
+  background: #4191e6;
+}
+
+.completedDot {
+  background: #3c9b54;
+}
+
+.cancelledDot {
+  background: #85858d;
+}
+
+.routeDot {
+  background: #00d2be;
+}
+
+.routeLineLegend {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  background: #00d2be;
+  display: inline-block;
+}
+
+.statusKey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 2px 4px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 10px;
+}
+
+.statusKey span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.heatmapDot {
+  background: linear-gradient(135deg, #e11d48, #f59e0b);
+}
+
+.mapError {
+  color: #ff8888;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
