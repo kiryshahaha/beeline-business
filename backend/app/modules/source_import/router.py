@@ -18,7 +18,7 @@ from app.modules.source_import.schemas import (
     SourceAddressRead,
     SourceImportSummary,
 )
-from app.modules.users.enums import TransportType, UserRole
+from app.modules.users.enums import ScheduleType, TransportType, UserRole
 from app.modules.users.schemas import UserRead
 
 router = APIRouter(prefix="/api/v1/data/sources", tags=["source-import"])
@@ -69,11 +69,12 @@ def import_source(
     workshift_start: time = time(9),
     workshift_end: time = time(22),
     transport_type: TransportType = TransportType.CAR,
+    schedule_type: ScheduleType = ScheduleType.TWO_TWO,
 ) -> dict[str, Any]:
     """Загрузить исходный CSV/XLSX организатора и получить отчёт по каждой строке.
 
     По умолчанию dry_run=true: весь импорт проверяется в транзакции и откатывается.
-    Смена, транспорт — параметры исполнителей, создаваемых из бригад контрольного файла.
+    Смена, транспорт, график — параметры исполнителей, создаваемых из бригад контрольного файла.
     """
     if workshift_start == workshift_end:
         raise HTTPException(422, detail="Начало и конец смены не могут совпадать")
@@ -87,6 +88,7 @@ def import_source(
         workshift_start=workshift_start,
         workshift_end=workshift_end,
         transport_type=transport_type,
+        schedule_type=schedule_type,
     )
     try:
         return service.import_source(session, content, file.filename or "", options, geocoder)

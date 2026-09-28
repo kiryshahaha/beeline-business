@@ -14,3 +14,8 @@ class TransportType(StrEnum):
     WALKING = "walking"
     BICYCLE = "bicycle"
     PUBLIC_TRANSPORT = "public_transport"
+
+
+class ScheduleType(StrEnum):
+    TWO_TWO = "2/2"
+    FIVE_TWO = "5/2"

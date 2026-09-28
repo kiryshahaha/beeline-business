@@ -58,6 +58,10 @@ class Ticket(IntegerIdMixin, Base):
         DateTime(timezone=True), server_default=func.now()
     )
     sla_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    response_deadline_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    intake_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
     required_transport_type: Mapped[TransportType | None] = mapped_column(
         Enum(
             TransportType,
@@ -126,6 +130,10 @@ class Ticket(IntegerIdMixin, Base):
         CheckConstraint(
             "sla_deadline_at IS NULL OR sla_deadline_at > received_at",
             name="sla_deadline_after_received",
+        ),
+        CheckConstraint(
+            "response_deadline_at IS NULL OR response_deadline_at > received_at",
+            name="response_deadline_after_received",
         ),
         CheckConstraint(
             "service_duration_source IS NULL OR "

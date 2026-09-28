@@ -1,6 +1,5 @@
-"""User management, skill catalog, and worker profile service."""
-
-from datetime import UTC, datetime, time
+import json
+from datetime import UTC, date, datetime, time
 from hashlib import sha256
 
 from sqlalchemy import RowMapping, text
@@ -11,17 +10,21 @@ from app.core.security import hash_password
 from app.modules.auth import repository as auth_repository
 from app.modules.execution.day_state import mark_worker_unavailable
 from app.modules.execution.schemas import WorkerUnavailableCommand
+from app.modules.schedule.schemas import ShiftInterval
 from app.modules.users import repository
-from app.modules.users.enums import TransportType, UserRole
+from app.modules.users.enums import ScheduleType, TransportType, UserRole
 from app.modules.users.schemas import (
     UserCreate,
     UserRead,
     UserUpdate,
     WorkerLineStatusRead,
     WorkerProfileRead,
+    WorkerShiftExceptionCreate,
+    WorkerShiftExceptionRead,
     WorkerSkillCreate,
     WorkerSkillRead,
 )
+from app.modules.users.shifts import get_worker_shift
 
 
 class UserNotFoundError(Exception):
@@ -89,6 +92,15 @@ def _build_user_read(row: RowMapping) -> UserRead:
             start_location_id=row["start_location_id"] if "start_location_id" in row else None,
             stock_office_id=row["stock_office_id"] if "stock_office_id" in row else None,
             end_location_id=row["end_location_id"] if "end_location_id" in row else None,
+            schedule_type=ScheduleType(row["schedule_type"])
+            if "schedule_type" in row and row["schedule_type"]
+            else ScheduleType.FIVE_TWO,
+            cycle_start_date=row["cycle_start_date"] if "cycle_start_date" in row else None,
+            workdays_mask=(
+                json.loads(row["workdays_mask"])
+                if isinstance(row.get("workdays_mask"), str)
+                else row.get("workdays_mask")
+            ),
         )
     return UserRead(
         id=row["id"],
@@ -168,6 +180,9 @@ def create_user(session: Session, data: UserCreate) -> UserRead:
                     "start_location_id": profile.start_location_id,
                     "stock_office_id": profile.stock_office_id,
                     "end_location_id": profile.end_location_id,
+                    "schedule_type": profile.schedule_type.value,
+                    "cycle_start_date": profile.cycle_start_date,
+                    "workdays_mask": profile.workdays_mask,
                 },
             )
             for skill_name in profile.skills:
@@ -360,6 +375,21 @@ def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:
                             if "end_location_id" in worker_dump
                             else existing_user["end_location_id"]
                         ),
+                        "schedule_type": (
+                            worker_dump["schedule_type"].value
+                            if worker_dump.get("schedule_type") is not None
+                            else (existing_user["schedule_type"] or "5/2")
+                        ),
+                        "cycle_start_date": (
+                            worker_dump["cycle_start_date"]
+                            if "cycle_start_date" in worker_dump
+                            else existing_user["cycle_start_date"]
+                        ),
+                        "workdays_mask": (
+                            worker_dump["workdays_mask"]
+                            if "workdays_mask" in worker_dump
+                            else existing_user["workdays_mask"]
+                        ),
                     },
                 )
 
@@ -434,3 +464,90 @@ def delete_user(session: Session, user_id: int, current_user_id: int | None = No
         if links:
             raise UserHasHistoryError(links)
         repository.delete_user(session, user_id)
+
+
+def create_worker_shift_exception(
+    session: Session, worker_id: int, data: WorkerShiftExceptionCreate
+) -> WorkerShiftExceptionRead:
+    with session.begin():
+        lock_planning_mutation(session)
+        worker = repository.find_user_by_id(session, worker_id)
+        if worker is None or worker["role"] != UserRole.WORKER.value:
+            raise WorkerNotFoundError
+
+        exception_id = repository.add_shift_exception(
+            session,
+            {
+                "worker_id": worker_id,
+                "exception_date": data.exception_date,
+                "is_working": data.is_working,
+                "workshift_start": data.workshift_start,
+                "workshift_end": data.workshift_end,
+            },
+        )
+        return WorkerShiftExceptionRead(
+            id=exception_id,
+            worker_id=worker_id,
+            exception_date=data.exception_date,
+            is_working=data.is_working,
+            workshift_start=data.workshift_start,
+            workshift_end=data.workshift_end,
+        )
+
+
+def list_worker_shift_exceptions(
+    session: Session,
+    worker_id: int,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> list[WorkerShiftExceptionRead]:
+    worker = repository.find_user_by_id(session, worker_id)
+    if worker is None or worker["role"] != UserRole.WORKER.value:
+        raise WorkerNotFoundError
+
+    rows = repository.list_shift_exceptions(session, worker_id, start_date, end_date)
+    return [
+        WorkerShiftExceptionRead(
+            id=row["id"],
+            worker_id=row["worker_id"],
+            exception_date=row["exception_date"],
+            is_working=row["is_working"],
+            workshift_start=row["workshift_start"],
+            workshift_end=row["workshift_end"],
+        )
+        for row in rows
+    ]
+
+
+def delete_worker_shift_exception(session: Session, worker_id: int, exception_id: int) -> None:
+    with session.begin():
+        lock_planning_mutation(session)
+        worker = repository.find_user_by_id(session, worker_id)
+        if worker is None or worker["role"] != UserRole.WORKER.value:
+            raise WorkerNotFoundError
+
+        if not repository.delete_shift_exception(session, exception_id):
+            raise WorkerNotFoundError
+
+
+def get_worker_day_shift(
+    session: Session, worker_id: int, target_date: date
+) -> ShiftInterval | None:
+    worker = repository.find_user_by_id(session, worker_id)
+    if worker is None or worker["role"] != UserRole.WORKER.value:
+        raise WorkerNotFoundError
+
+    exceptions = repository.find_shift_exceptions_for_workers(session, [worker_id], target_date)
+    exc = exceptions[0] if exceptions else None
+
+    return get_worker_shift(
+        target_date=target_date,
+        workshift_start=worker["workshift_start"],
+        workshift_end=worker["workshift_end"],
+        schedule_type=worker.get("schedule_type") or ScheduleType.FIVE_TWO,
+        cycle_start_date=worker.get("cycle_start_date"),
+        workdays_mask=worker.get("workdays_mask"),
+        exception_is_working=exc["is_working"] if exc else None,
+        exception_start=exc["workshift_start"] if exc else None,
+        exception_end=exc["workshift_end"] if exc else None,
+    )

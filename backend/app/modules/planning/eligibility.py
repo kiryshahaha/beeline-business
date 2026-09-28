@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from app.modules.planning import reasons
 from app.modules.planning.errors import PlanningError
 from app.modules.planning.policy import snapshot_policy
+from app.modules.users.shifts import get_worker_shift
 
 MOSCOW = ZoneInfo("Europe/Moscow")
 PROFILES = {
@@ -148,12 +149,20 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         worker = dict(worker)
         wid = worker["user_id"]
         day_state = day_states.get(wid)
-        start = datetime.combine(
-            epoch.date(), time.fromisoformat(worker["workshift_start"]), MOSCOW
-        )
-        end = datetime.combine(epoch.date(), time.fromisoformat(worker["workshift_end"]), MOSCOW)
-        if end <= start:
-            end += timedelta(days=1)
+        exceptions = [e for e in snapshot.get("shift_exceptions", []) if e.get("worker_id") == wid]
+        shift = get_worker_shift(worker, day, exceptions=exceptions)
+        if shift is None:
+            # Worker is off-duty (day off by schedule or exception)
+            start = datetime.combine(
+                epoch.date(), time.fromisoformat(worker["workshift_start"]), MOSCOW
+            )
+            end = datetime.combine(
+                epoch.date(), time.fromisoformat(worker["workshift_end"]), MOSCOW
+            )
+            if end <= start:
+                end += timedelta(days=1)
+        else:
+            start, end = shift
         brigade = brigades.get(members.get(wid))
         office_id = worker.get("stock_office_id") or (brigade["office_id"] if brigade else None)
         office = offices.get(office_id) if office_id else None
@@ -210,6 +219,8 @@ def prepare(snapshot: dict, now: datetime) -> dict:
             )
         elif area_id is not None and worker_area_id != area_id:
             reason = reasons.worker_outside_service_area(worker_area_id, area_id)
+        elif shift is None:
+            reason = reasons.worker_day_off(day)
         elif replan and anchor and anchor["reason"] == "active_work_eta_unknown":
             reason = reasons.explain(
                 "active_work_eta_unknown",
@@ -238,6 +249,8 @@ def prepare(snapshot: dict, now: datetime) -> dict:
             reason = reasons.office_without_coordinates(
                 office["id"], start_location_id or office["location_id"]
             )
+        elif replan and end <= now:
+            reason = reasons.worker_shift_ended(end, now, day)
         elif start <= now and not (day_state and day_state.get("last_location_id")) and not replan:
             reason = reasons.shift_already_started(start, now, day)
         elif day_state and day_state.get("current_ticket_id") and not replan:
@@ -291,6 +304,8 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                 "end_location_id": end_location_id,
                 "profile": PROFILES[worker["transport_type"]],
                 "transport_type": worker["transport_type"],
+                "shift_start": start,
+                "shift_end": end,
                 "window": [
                     math.ceil((available_at - epoch).total_seconds() / 60),
                     math.floor((end - epoch).total_seconds() / 60),
@@ -445,6 +460,12 @@ def prepare(snapshot: dict, now: datetime) -> dict:
                         priority=ticket.get("priority") or work_type.get("default_priority") or 3,
                         received_at=received_at.isoformat() if received_at else None,
                         sla_deadline_at=(sla_deadline_at.isoformat() if sla_deadline_at else None),
+                        response_deadline_at=(
+                            dt(ticket["response_deadline_at"]).isoformat()
+                            if ticket.get("response_deadline_at")
+                            else None
+                        ),
+                        intake_source=ticket.get("intake_source"),
                         work_type_id=work_type["id"],
                         rejected=candidates,
                         required_skill_ids=sorted(skills),

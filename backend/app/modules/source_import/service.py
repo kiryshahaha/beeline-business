@@ -13,7 +13,7 @@ import re
 import secrets
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -38,7 +38,7 @@ from app.modules.source_import.profile import (
 from app.modules.tickets.schemas import TicketCreate
 from app.modules.tickets.service import create_ticket
 from app.modules.users import repository as users_repository
-from app.modules.users.enums import TransportType
+from app.modules.users.enums import ScheduleType, TransportType
 
 OFFICE_DISTRICT = "Не указан"
 TRANSLIT = str.maketrans(
@@ -97,6 +97,9 @@ class ImportOptions:
     workshift_start: time = time(9)
     workshift_end: time = time(22)
     transport_type: TransportType = TransportType.CAR
+    schedule_type: ScheduleType = ScheduleType.TWO_TWO
+    cycle_start_date: date | None = None
+    workdays_mask: int = 31
 
 
 @dataclass
@@ -194,6 +197,18 @@ def _prepare(source: SourceFile, kind: str, catalog: dict, warnings: list) -> li
                     titles["bk_status"],
                     f"Статус BK «{item.value.get('bk_status', '')}» не сопоставлен",
                 )
+        hd_val = item.value.get("hd_type")
+        if hd_val and not classify.is_known_hd(hd_val):
+            warnings.append(
+                {
+                    "sheet": row.sheet,
+                    "row": row.number,
+                    "external_id": item.external_id,
+                    "code": "unknown_hd_type",
+                    "message": f"Неизвестный тип HD «{hd_val}»: строка требует проверки диспетчера",
+                    "hd_type": hd_val,
+                }
+            )
         prepared.append(item)
     return prepared
 
@@ -310,17 +325,36 @@ class _Addresses:
 
 def _ticket_values(item: Prepared, work_type, area_id: int, location_id: int) -> dict:
     extra = [f"{title}: {item.row.raw[title]}" for title in item.row.raw if item.row.raw[title]]
+    hd_type_raw = item.value.get("hd_type")
+    is_emergency = classify.is_emergency_hd(hd_type_raw)
+    category = (
+        "emergency"
+        if is_emergency
+        else (work_type["category"] if work_type["category"] != "emergency" else "repair")
+    )
+    priority = 1 if is_emergency else work_type["default_priority"]
+    # If the window start is early/midnight (e.g. 00:01 from 00:01-23:59),
+    # the morning assumption places receipt at morning planning start (08:00 MSK).
+    if item.start and item.start.time() < time(8, 0):
+        received_at = item.start.replace(hour=8, minute=0, second=0, microsecond=0)
+    else:
+        received_at = item.start
+    response_deadline_at = (
+        (received_at + timedelta(minutes=120)) if is_emergency and received_at else None
+    )
     return {
         "location_id": location_id,
         "service_area_id": area_id,
-        "title": f"{item.value['bk_type']}: {item.value.get('hd_type') or 'без типа HD'}"[:200],
+        "title": f"{item.value['bk_type']}: {hd_type_raw or 'без типа HD'}"[:200],
         "description": "Строка исходной выгрузки. " + "; ".join(extra),
         "work_type_id": work_type["id"],
         "work_type": work_type["name"],
-        "category": work_type["category"],
-        "priority": work_type["default_priority"],
-        # The file has no receipt time: the window start is the earliest known moment.
-        "received_at": item.start,
+        "category": category,
+        "priority": priority,
+        # The file has no receipt time: window start is the morning assumption.
+        "received_at": received_at,
+        "response_deadline_at": response_deadline_at,
+        "intake_source": "morning_assumption",
         "visit_window_start": item.start,
         "visit_window_end": item.end,
         "estimated_duration_minutes": work_type["work_minutes"] + work_type["documents_minutes"],
@@ -355,9 +389,18 @@ def _apply_demand(session, source, prepared, options, area, context, import_id) 
     existing = repository.find_records(session, area["id"], "demand")
     counts = Counter()
     categories, coordinates = Counter(), Counter()
+    emergency_count = 0
+    unknown_hd_types: set[str] = set()
+    review_required_rows: list[int] = []
     for item in prepared:
         counts["read"] += 1
         record = existing.get(item.external_id)
+        hd_val = item.value.get("hd_type")
+        if classify.is_emergency_hd(hd_val):
+            emergency_count += 1
+        if hd_val and not classify.is_known_hd(hd_val):
+            unknown_hd_types.add(hd_val)
+            review_required_rows.append(item.row.number)
         if item.errors:
             counts["rejected"] += 1
             report["rejected"] += [_rejection(item, error) for error in item.errors]
@@ -410,7 +453,7 @@ def _apply_demand(session, source, prepared, options, area, context, import_id) 
             )
             ticket_id, outcome = ticket.id, "created"
         counts[outcome] += 1
-        categories[work_type["category"]] += 1
+        categories[values["category"]] += 1
         repository.save_record(
             session,
             _record(
@@ -445,6 +488,9 @@ def _apply_demand(session, source, prepared, options, area, context, import_id) 
         counts={k: counts[k] for k in ("read", "created", "updated", "unchanged", "rejected")},
         by_category=dict(sorted(categories.items())),
         coordinates=dict(sorted(coordinates.items())),
+        emergency_count=emergency_count,
+        unknown_hd_types=sorted(unknown_hd_types),
+        review_required_rows=sorted(set(review_required_rows)),
         office={
             "office_id": office_id,
             "location_id": office_location,
@@ -503,6 +549,13 @@ def _worker(session, label: str, area, office, options) -> int:
             "transport_type": options.transport_type.value,
             "service_area_id": area["id"],
             "stock_office_id": office["office_id"],
+            "schedule_type": (
+                options.schedule_type.value
+                if hasattr(options.schedule_type, "value")
+                else str(options.schedule_type)
+            ),
+            "cycle_start_date": options.cycle_start_date,
+            "workdays_mask": options.workdays_mask,
         },
     )
     return user_id
@@ -529,7 +582,16 @@ def _apply_control(session, source, prepared, options, area, context, import_id)
         by_key.setdefault(_key(_fields(record["raw"])), []).append(record)
     catalog = context["catalog"]
     tickets_category = {
-        r["ticket_id"]: catalog[classify.work_type_code(_fields(r["raw"])["bk_type"])]["category"]
+        r["ticket_id"]: (
+            "emergency"
+            if classify.is_emergency_hd(_fields(r["raw"]).get("hd_type"))
+            else (
+                catalog[classify.work_type_code(_fields(r["raw"])["bk_type"])]["category"]
+                if catalog[classify.work_type_code(_fields(r["raw"])["bk_type"])]["category"]
+                != "emergency"
+                else "repair"
+            )
+        )
         for r in demand
     }
     existing = repository.find_records(session, area["id"], "control")
@@ -537,8 +599,17 @@ def _apply_control(session, source, prepared, options, area, context, import_id)
     workers: dict[str, int] = {label: r["worker_id"] for label, r in brigades.items()}
     counts, statuses, by_worker, used = Counter(), Counter(), Counter(), set()
     skills: dict[int, set[str]] = {}
+    emergency_count = 0
+    unknown_hd_types: set[str] = set()
+    review_required_rows: list[int] = []
     for item in prepared:
         counts["read"] += 1
+        hd_val = item.value.get("hd_type")
+        if classify.is_emergency_hd(hd_val):
+            emergency_count += 1
+        if hd_val and not classify.is_known_hd(hd_val):
+            unknown_hd_types.add(hd_val)
+            review_required_rows.append(item.row.number)
         match = None
         if not item.errors:
             key = _key(item.value)
@@ -627,6 +698,9 @@ def _apply_control(session, source, prepared, options, area, context, import_id)
             "statuses": dict(sorted(statuses.items())),
             "final": sum(n for s, n in statuses.items() if s in classify.FINAL_STATUSES),
         },
+        emergency_count=emergency_count,
+        unknown_hd_types=sorted(unknown_hd_types),
+        review_required_rows=sorted(set(review_required_rows)),
     )
     return report
 

@@ -10,6 +10,7 @@ from app.db.session import get_session
 from app.modules.auth.dependencies import get_current_user, require_roles
 from app.modules.execution import day_state
 from app.modules.execution.schemas import WorkerDayStateRead, WorkerUnavailableCommand
+from app.modules.schedule.schemas import ShiftInterval
 from app.modules.users import service
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import (
@@ -18,6 +19,8 @@ from app.modules.users.schemas import (
     UserUpdate,
     WorkerLineStatusRead,
     WorkerLineStatusUpdate,
+    WorkerShiftExceptionCreate,
+    WorkerShiftExceptionRead,
     WorkerSkillCreate,
     WorkerSkillRead,
 )
@@ -155,6 +158,90 @@ def get_worker_day_state(
         return day_state.day_state_at(session, worker_id, service_area_id, route_date, moment)
     except day_state.WorkerNotFound as error:
         raise HTTPException(status_code=404, detail="Исполнитель не найден") from error
+
+
+@workers_router.get(
+    "/{worker_id}/shift",
+    response_model=ShiftInterval | None,
+    responses={404: {"description": "Исполнитель не найден"}},
+)
+def get_worker_shift_for_date(
+    worker_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    route_date: Annotated[date, Query(description="Дата маршрута для расчёта смены")],
+    session: DatabaseSession,
+    current_user: CurrentUser,
+) -> ShiftInterval | None:
+    try:
+        return service.get_worker_day_shift(session, worker_id, route_date)
+    except service.WorkerNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Исполнитель не найден",
+        ) from error
+
+
+@workers_router.get(
+    "/{worker_id}/exceptions",
+    response_model=list[WorkerShiftExceptionRead],
+    responses={404: {"description": "Исполнитель не найден"}},
+)
+def list_worker_shift_exceptions(
+    worker_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    session: DatabaseSession,
+    current_user: CurrentUser,
+    start_date: Annotated[date | None, Query(description="Начальная дата выборки")] = None,
+    end_date: Annotated[date | None, Query(description="Конечная дата выборки")] = None,
+) -> list[WorkerShiftExceptionRead]:
+    try:
+        return service.list_worker_shift_exceptions(session, worker_id, start_date, end_date)
+    except service.WorkerNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Исполнитель не найден",
+        ) from error
+
+
+@workers_router.post(
+    "/{worker_id}/exceptions",
+    response_model=WorkerShiftExceptionRead,
+    status_code=status.HTTP_201_CREATED,
+    responses={404: {"description": "Исполнитель не найден"}},
+)
+def create_worker_shift_exception(
+    worker_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    data: WorkerShiftExceptionCreate,
+    session: DatabaseSession,
+    current_user: RequireObserver,
+) -> WorkerShiftExceptionRead:
+    try:
+        return service.create_worker_shift_exception(session, worker_id, data)
+    except service.WorkerNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Исполнитель не найден",
+        ) from error
+
+
+@workers_router.delete(
+    "/{worker_id}/exceptions/{exception_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={404: {"description": "Исключение или исполнитель не найдены"}},
+)
+def delete_worker_shift_exception(
+    worker_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    exception_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    session: DatabaseSession,
+    current_user: RequireObserver,
+) -> Response:
+    try:
+        service.delete_worker_shift_exception(session, worker_id, exception_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except service.WorkerNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Исключение или исполнитель не найдены",
+        ) from error
+
     except day_state.ServiceAreaNotFound as error:
         raise HTTPException(status_code=404, detail="Зона обслуживания не найдена") from error
 
