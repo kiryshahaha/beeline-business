@@ -181,6 +181,18 @@
   background: #85858d;
 }
 
+.routeDot {
+  background: #00d2be;
+}
+
+.routeLineLegend {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  background: #00d2be;
+  display: inline-block;
+}
+
 .statusKey {
   display: flex;
   flex-wrap: wrap;
@@ -196,8 +208,13 @@
   gap: 5px;
 }
 
+.heatmapDot {
+  background: linear-gradient(135deg, #e11d48, #f59e0b);
+}
+
 .mapError {
   color: #ff8888;
   font-size: 11px;
   line-height: 1.4;
 }
+

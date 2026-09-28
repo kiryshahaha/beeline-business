@@ -11,19 +11,88 @@ export const ClusterComponent = ({ data, selectedObject, onSelectObject }) => {
   const features = useMemo(
     () => data
       .filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude))
-      .map((item) => ({
-        type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: [item.longitude, item.latitude],
-        },
-        properties: {
-          id: item.id,
-          type: item.type,
-          label: item.label,
-          status: item.data?.status,
-        },
-      })),
+      .map((item) => {
+        const isUrgent =
+          item.type === "ticket" &&
+          Boolean(
+            item.data?.priority === 1 ||
+            item.data?.category === "emergency" ||
+            (item.data?.status === "planned" && !item.data?.assigned_worker_id),
+          );
+
+        let title = item.label;
+        let address = "";
+        let extra = null;
+        let transportType = "car";
+        let isOnLine = true;
+
+        if (item.type === "ticket") {
+          title = item.data?.title || item.label;
+          address = item.data?.location?.address || "";
+          if (item.data?.visit_window_start) {
+            try {
+              const start = new Date(item.data.visit_window_start).toLocaleTimeString("ru-RU", {
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+              const end = item.data.visit_window_end
+                ? new Date(item.data.visit_window_end).toLocaleTimeString("ru-RU", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : null;
+              extra = end ? `Окно: ${start} - ${end}` : `Визит: ${start}`;
+            } catch {
+              // ignore invalid date
+            }
+          }
+        } else if (item.type === "worker") {
+          const names = [item.data?.name, item.data?.surname, item.data?.lastname].filter(Boolean);
+          title = names.length > 0 ? names.join(" ") : item.label;
+          address = item.data?.location?.address || "";
+          transportType = item.data?.worker_profile?.transport_type || "car";
+          isOnLine = item.data?.worker_profile?.is_on_line ?? true;
+
+          const transportLabels = {
+            car: "Авто",
+            bicycle: "Вело/СИМ",
+            walking: "Пешком",
+            public_transport: "Транспорт",
+          };
+          const parts = [];
+          if (item.data?.brigade_name) parts.push(item.data.brigade_name);
+          parts.push(transportLabels[transportType] || "Транспорт");
+          extra = parts.join(" • ");
+        } else if (item.type === "office") {
+          title = item.data?.office_name || item.label;
+          address = item.data?.address || "";
+          if (item.data?.city) {
+            extra = [item.data.city, item.data.district].filter(Boolean).join(", ");
+          }
+        }
+
+        return {
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [item.longitude, item.latitude],
+          },
+          properties: {
+            id: item.id,
+            type: item.type,
+            label: item.label,
+            status: item.data?.status,
+            priority: item.data?.priority,
+            category: item.data?.category,
+            isUrgent,
+            title,
+            address,
+            extra,
+            transportType,
+            isOnLine,
+          },
+        };
+      }),
     [data],
   );
   const itemByKey = useMemo(
@@ -31,7 +100,23 @@ export const ClusterComponent = ({ data, selectedObject, onSelectObject }) => {
     [data],
   );
   const index = useMemo(() => {
-    const cluster = new Supercluster({ radius: 40, maxZoom: 16, minPoints: 2 });
+    const cluster = new Supercluster({
+      radius: 45,
+      maxZoom: 16,
+      minPoints: 2,
+      map: (props) => ({
+        urgentCount: props.isUrgent ? 1 : 0,
+        ticketCount: props.type === "ticket" ? 1 : 0,
+        workerCount: props.type === "worker" ? 1 : 0,
+        officeCount: props.type === "office" ? 1 : 0,
+      }),
+      reduce: (acc, props) => {
+        acc.urgentCount += props.urgentCount;
+        acc.ticketCount += props.ticketCount;
+        acc.workerCount += props.workerCount;
+        acc.officeCount += props.officeCount;
+      },
+    });
     cluster.load(features);
     return cluster;
   }, [features]);
@@ -91,16 +176,30 @@ export const ClusterComponent = ({ data, selectedObject, onSelectObject }) => {
         key={isCluster ? `cluster-${feature.properties.cluster_id}` : `${type}-${feature.properties.id}`}
         longitude={longitude}
         latitude={latitude}
+        anchor="center"
         offset={isCluster ? undefined : overlapOffsets.get(`${type}:${feature.properties.id}`)}
         onClick={(event) => handleClick(event, feature)}
       >
         <ClusterPoint
           isCluster={isCluster}
           count={feature.properties.point_count}
+          urgentCount={feature.properties.urgentCount}
+          ticketCount={feature.properties.ticketCount}
+          workerCount={feature.properties.workerCount}
+          officeCount={feature.properties.officeCount}
           type={type}
+          id={feature.properties.id}
           status={feature.properties.status}
+          isUrgent={feature.properties.isUrgent}
+          priority={feature.properties.priority}
+          transportType={feature.properties.transportType}
+          isOnLine={feature.properties.isOnLine}
           label={feature.properties.label}
+          title={feature.properties.title}
+          address={feature.properties.address}
+          extra={feature.properties.extra}
           selected={isSelected}
+          hasActiveSelection={Boolean(selectedObject)}
         />
       </Marker>
     );

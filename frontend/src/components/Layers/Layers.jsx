@@ -27,7 +27,14 @@ const MAP_STYLES = {
   },
 };
 
-export default function Layers({ mapRef, layers, counts, onToggleLayer, error, points = [] }) {
+export default function Layers({
+  mapRef,
+  layers,
+  counts,
+  onToggleLayer,
+  error,
+  points = [],
+}) {
   const [activeStyle, setActiveStyle] = useState("standard");
   const [isGlobe, setIsGlobe] = useState(false);
 
@@ -117,7 +124,11 @@ export default function Layers({ mapRef, layers, counts, onToggleLayer, error, p
               key={id}
             >
               {style.label}
-              {activeStyle === id && <span>✓</span>}
+              {activeStyle === id && (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              )}
             </button>
           ))}
         </div>
@@ -125,13 +136,15 @@ export default function Layers({ mapRef, layers, counts, onToggleLayer, error, p
           <p className={styles.sectionLabel}>Объекты на карте</p>
           {[
             ["tickets", "Заявки", counts.tickets, styles.ticketDot],
-            ["workers", "Точки старта", counts.workers, styles.workerDot],
+            ["workers", "Исполнители", counts.workers, styles.workerDot],
             ["offices", "Офисы", counts.offices, styles.officeDot],
+            ["routes", "Маршруты", counts.routes, styles.routeDot],
+            ["heatmap", "Тепловая карта", layers.heatmap ? "Вкл" : "Выкл", styles.heatmapDot],
           ].map(([id, label, count, dotClass]) => (
             <button
+              key={id}
               type="button"
               className={`${styles.layerToggle} ${layers[id] ? styles.layerEnabled : ""}`}
-              key={id}
               aria-pressed={layers[id]}
               onClick={() => onToggleLayer(id)}
             >
@@ -146,6 +159,7 @@ export default function Layers({ mapRef, layers, counts, onToggleLayer, error, p
             <span><i className={styles.progressDot} /> В работе</span>
             <span><i className={styles.completedDot} /> Выполнена</span>
             <span><i className={styles.cancelledDot} /> Отменена</span>
+            <span><i className={styles.routeLineLegend} /> Маршрут</span>
           </div>
           {error && <p className={styles.mapError}>{error}</p>}
         </div>
