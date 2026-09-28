@@ -5,21 +5,25 @@ import { apiFetch } from "@/lib/apiFetch";
 export function useTickets({
   status,
   city_id,
+  service_area_id,
   district_id,
+  brigade_id,
   limit = 20,
   offset = 0,
 } = {}) {
   const { token } = useAuth();
+  const effectiveAreaId = service_area_id ?? district_id;
 
   const { data: tickets = [], ...ticketsData } = useQuery({
-    queryKey: ["ticketsList", status, city_id, district_id, limit, offset],
+    queryKey: ["ticketsList", status, city_id, effectiveAreaId, brigade_id, limit, offset],
     enabled: !!token,
 
     queryFn: async () => {
       const urlParams = new URLSearchParams({
         ...(status && { status }),
-        ...(city_id && { city_id }),
-        ...(district_id && { district_id }),
+        ...(city_id && { city_id: String(city_id) }),
+        ...(effectiveAreaId && { service_area_id: String(effectiveAreaId) }),
+        ...(brigade_id && { brigade_id: String(brigade_id) }),
         limit: String(limit),
         offset: String(offset),
       });

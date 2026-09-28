@@ -1,7 +1,7 @@
 import Image from "next/image";
 import styles from "./SmallStatsCard.module.css";
 
-const SmallStatsCard = ({ header, num, trend, trendType = "neutral", svg, footer }) => {
+const SmallStatsCard = ({ header, num, trend, trendType = "neutral", svg, footer, loading = false }) => {
     const pillClass = 
         trendType === 'positive' ? styles.pillPositive : 
         trendType === 'negative' ? styles.pillNegative : 
@@ -16,8 +16,12 @@ const SmallStatsCard = ({ header, num, trend, trendType = "neutral", svg, footer
             <Image src={svg} alt="" width={110} height={110} className={styles.cardBgIcon} />
             <div className={styles.cardTitle}>{header}</div>
             <div className={styles.cardMiddle}>
-                <span className={styles.cardValue}>{num}</span>
-                {trend && (
+                {loading ? (
+                    <div className={`${styles.skeleton} ${styles.skeletonValue}`} />
+                ) : (
+                    <span className={styles.cardValue}>{num}</span>
+                )}
+                {!loading && trend && (
                     <div className={`${styles.cardPill} ${pillClass}`}>
                         <div 
                             className={styles.trendIcon} 
@@ -30,7 +34,9 @@ const SmallStatsCard = ({ header, num, trend, trendType = "neutral", svg, footer
                     </div>
                 )}
             </div>
-            <div className={styles.cardSubtext}>{footer}</div>
+            <div className={styles.cardSubtext}>
+                {loading ? <div className={`${styles.skeleton} ${styles.skeletonText}`} /> : footer}
+            </div>
         </div>
     );
 };

@@ -1,0 +1,254 @@
+.card {
+    background-color: var(--tertiary, #1C1C1E);
+    border: 1px solid var(--stroke, #2C2C2E);
+    border-radius: 16px;
+    padding: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    position: relative;
+    overflow: hidden;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.titleBlock {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--foreground, #FFFFFF);
+    line-height: 1.2;
+}
+
+.subtitle {
+    font-size: 12px;
+    color: #8E8E93;
+}
+
+.badgeTasks {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background-color: #FFC800;
+    color: #171717;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 18px;
+    white-space: nowrap;
+}
+
+.legend {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 12px;
+    color: #8E8E93;
+    padding-bottom: 4px;
+}
+
+.legendItem {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+}
+
+.dotFree {
+    background-color: #34C759;
+}
+
+.dotOptimal {
+    background-color: #007AFF;
+}
+
+.dotOverloaded {
+    background-color: #FF3B30;
+}
+
+/* Шкала и список бригад */
+.workloadList {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.scaleRow {
+    display: grid;
+    grid-template-columns: 140px 1fr 48px;
+    align-items: center;
+    gap: 16px;
+    font-size: 11px;
+    color: #636366;
+}
+
+.scaleAxis {
+    position: relative;
+    width: 100%;
+    height: 14px;
+}
+
+.scaleMark {
+    position: absolute;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+
+.scaleMarkStart {
+    left: 0;
+    transform: none;
+}
+
+.scaleMarkEnd {
+    right: 0;
+    transform: none;
+}
+
+.brigadeRow {
+    display: grid;
+    grid-template-columns: 140px 1fr 48px;
+    align-items: center;
+    gap: 16px;
+}
+
+.brigadeInfo {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.brigadeName {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--foreground, #FFFFFF);
+    line-height: 1.2;
+}
+
+.brigadeTasks {
+    font-size: 11px;
+    color: #8E8E93;
+}
+
+.progressTrack {
+    position: relative;
+    width: 100%;
+    height: 12px;
+    background-color: rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.progressBar {
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.4s ease;
+}
+
+.percentText {
+    font-size: 13px;
+    font-weight: 700;
+    text-align: right;
+}
+
+/* Футер с кнопкой перехода */
+.footer {
+    display: flex;
+    justify-content: center;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.linkBtn {
+    background: none;
+    border: none;
+    color: #8E8E93;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 8px;
+    transition: color 0.2s, background-color 0.2s;
+}
+
+.linkBtn:hover {
+    color: #FFFFFF;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.skeleton {
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.12) 50%, rgba(255, 255, 255, 0.05) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+}
+
+.skeletonName {
+    width: 90px;
+    height: 14px;
+}
+
+.skeletonSub {
+    width: 65px;
+    height: 10px;
+}
+
+.skeletonBar {
+    width: 100%;
+    height: 12px;
+    border-radius: 6px;
+}
+
+.skeletonBadge {
+    width: 120px;
+    height: 28px;
+    border-radius: 18px;
+}
+
+.emptyState {
+    font-size: 13px;
+    color: #8E8E93;
+    text-align: center;
+    padding: 30px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.emptyActionBtn {
+    background-color: rgba(255, 200, 0, 0.15);
+    border: 1px solid rgba(255, 200, 0, 0.3);
+    color: #FFC800;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.emptyActionBtn:hover {
+    background-color: rgba(255, 200, 0, 0.25);
+}
+
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}

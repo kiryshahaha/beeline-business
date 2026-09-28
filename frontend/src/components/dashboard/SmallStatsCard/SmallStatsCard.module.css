@@ -86,3 +86,26 @@
     z-index: 0;
     pointer-events: none;
 }
+
+.skeleton {
+    display: inline-block;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.12) 50%, rgba(255, 255, 255, 0.05) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+}
+
+.skeletonValue {
+    width: 60px;
+    height: 32px;
+}
+
+.skeletonText {
+    width: 140px;
+    height: 14px;
+}
+
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
