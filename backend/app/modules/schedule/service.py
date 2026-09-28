@@ -112,12 +112,8 @@ def load_worker_days(session: Session, day: date, workers: list[RowMapping]) -> 
         route = routes.get(row["id"])
         shift = worker_shifts[row["id"]]
         is_working = shift is not None
-        shift_start = (
-            shift.start.time() if shift is not None else row["workshift_start"]
-        )
-        shift_end = (
-            shift.end.time() if shift is not None else row["workshift_end"]
-        )
+        shift_start = shift.start.time() if shift is not None else row["workshift_start"]
+        shift_end = shift.end.time() if shift is not None else row["workshift_end"]
         result[row["id"]] = LoadedDay(
             timeline=build_worker_day(
                 day,
