@@ -3,6 +3,7 @@ import json
 import sys
 import time
 from datetime import UTC, date, datetime
+from pathlib import Path
 from unittest.mock import patch
 
 from app.core.config import get_settings
@@ -167,7 +168,9 @@ async def run_all():
         res = await measure(t, w)
         results.append(res)
 
-    with open("../Артефакты_нейронки/T18_BUDGET_A26.md", "w") as f:
+    report = Path(".local/planning-e2e/T18_BUDGET_A26.md")
+    report.parent.mkdir(parents=True, exist_ok=True)
+    with report.open("w") as f:
         f.write("# T18: Measured Budgets A26\n\n")
         f.write(
             "| Tickets | Workers | Snapshot (KB) | Unique Coords | Matrix Cells (4 profs) | HTTP Matrix Blocks | Geom Time (ms) | Total Time (s) |\n"  # noqa: E501
