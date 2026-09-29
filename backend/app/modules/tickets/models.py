@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -204,4 +205,46 @@ class TicketAssignmentEvent(IntegerIdMixin, Base):
         Index("ix_ticket_assignment_events_ticket", "ticket_id", "occurred_at"),
         Index("ix_ticket_assignment_events_previous_worker", "previous_worker_id", "occurred_at"),
         Index("ix_ticket_assignment_events_occurred_at", "occurred_at"),
+    )
+
+
+class TicketCompletionReview(IntegerIdMixin, Base):
+    __tablename__ = "ticket_completion_reviews"
+
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"))
+    execution_cycle: Mapped[int] = mapped_column(Integer)
+    requested_by: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    note: Mapped[str] = mapped_column(Text)
+    actual_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    state: Mapped[str] = mapped_column(String(16), server_default="pending")
+    decided_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decision_idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("ticket_id", "execution_cycle", name="uq_completion_review_cycle"),
+        UniqueConstraint("decision_idempotency_key", name="uq_completion_review_idempotency"),
+        Index("ix_completion_reviews_state_requested", "state", "requested_at"),
+        Index("ix_completion_reviews_worker", "requested_by", "requested_at"),
+        CheckConstraint("char_length(note) BETWEEN 1 AND 2000", name="note_length"),
+        CheckConstraint(
+            "actual_duration_minutes IS NULL OR actual_duration_minutes >= 0",
+            name="actual_duration_nonnegative",
+        ),
+        CheckConstraint("state IN ('pending', 'confirmed', 'rejected')", name="state_valid"),
+        CheckConstraint(
+            "(state = 'pending' AND decided_by IS NULL AND decided_at IS NULL) OR "
+            "(state IN ('confirmed', 'rejected') AND decided_by IS NOT NULL "
+            "AND decided_at IS NOT NULL)",
+            name="decision_consistent",
+        ),
+        CheckConstraint(
+            "state <> 'rejected' OR decision_comment IS NOT NULL", name="reject_reason_required"
+        ),
     )

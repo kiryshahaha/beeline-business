@@ -1043,6 +1043,15 @@ def update_assignment_in_transaction(
         session, ticket_id, worker_id, is_pinned
     )
 
+    if old_worker_id is not None and new_worker_id != old_worker_id:
+        repository.add_notification_events(
+            session,
+            [old_worker_id],
+            kind=NotificationKind.TICKET_UNASSIGNED,
+            ticket_id=ticket_id,
+            data={"title": ticket["title"], "reason_text": "Изменено диспетчером"},
+        )
+
     if new_worker_id is not None and new_worker_id != old_worker_id:
         repository.add_notification_events(
             session,

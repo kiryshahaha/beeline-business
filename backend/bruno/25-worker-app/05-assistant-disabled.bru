@@ -1,0 +1,26 @@
+meta {
+  name: Помощник отключён без ошибок приложения
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/api/v1/assistant/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "message": "Проверка доступности"
+  }
+}
+
+assert {
+  res.status: eq 503
+  res.body.detail: eq "Помощник временно недоступен"
+}

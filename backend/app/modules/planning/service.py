@@ -13,6 +13,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
+from app.modules.notifications.enums import NotificationKind
 from app.modules.execution.enums import WorkEventType
 from app.modules.execution.models import WorkEvent
 from app.modules.notifications.schedule_updates import publish_schedule_updated
@@ -50,6 +51,7 @@ from app.modules.routing.client import GeoapifyRoutingError
 from app.modules.routing.schemas import RouteCreate
 from app.modules.routing.service import RouteValidationError, save_routes_in_transaction
 from app.modules.routing.telemetry import RoutingTelemetry
+from app.modules.tickets import repository as ticket_repository
 from app.modules.tickets.enums import TicketCategory
 from app.modules.tickets.models import Ticket
 from app.modules.tickets.service import update_assignment_in_transaction
@@ -59,7 +61,41 @@ logger = logging.getLogger(__name__)
 MOSCOW = ZoneInfo("Europe/Moscow")
 
 
+def _notify_rescheduled_tickets(session: Session, revision: DayPlanRevision) -> None:
+    """Notify assigned workers when a published service start moves by >= 15 minutes."""
+    changes = (revision.diff or {}).get("changed", [])
+    reason_text = (
+        "Маршрут пересчитан из-за изменения условий"
+        if revision.reason == "event_replan"
+        else "Опубликован новый план маршрута"
+    )
+    for change in changes:
+        fields = change.get("changes", {})
+        start_change = fields.get("service_start_at")
+        if not start_change or not start_change.get("from") or not start_change.get("to"):
+            continue
+        previous = datetime.fromisoformat(start_change["from"])
+        current = datetime.fromisoformat(start_change["to"])
+        if abs((current - previous).total_seconds()) < 15 * 60:
+            continue
+        ticket = session.get(Ticket, change["ticket_id"])
+        if ticket is None or ticket.assigned_worker_id is None:
+            continue
+        ticket_repository.add_notification_events(
+            session,
+            [ticket.assigned_worker_id],
+            kind=NotificationKind.TICKET_RESCHEDULED,
+            ticket_id=ticket.id,
+            data={
+                "from": previous.isoformat(),
+                "to": current.isoformat(),
+                "reason_text": reason_text,
+            },
+        )
+
+
 def ticket_event_policy(category: str) -> str:
+    """Select the planning policy for a persisted ticket category."""
     """Select one event policy from the persisted ticket category."""
     try:
         normalized_category = TicketCategory(category)
@@ -441,7 +477,11 @@ def _ordinary_insert_ticket_ids(snapshot):
         # The area query also sees older demand that was outside the original
         # preview. It is not a new arrival and must not turn this into insertion-only.
         return None
-    if any(ticket.get("category") == "emergency" for ticket in new_tickets):
+    if any(
+        ticket.get("category") is not None
+        and ticket_event_policy(ticket["category"]) == "emergency_replan"
+        for ticket in new_tickets
+    ):
         return None
     return {
         ticket["id"]
@@ -1476,6 +1516,7 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                     },
                 }
                 session.flush()
+                _notify_rescheduled_tickets(session, revision_row)
             applied_fingerprint = fingerprint(
                 load_snapshot(
                     session, request, policy_snapshot=recorded_policy(plan.input_snapshot)

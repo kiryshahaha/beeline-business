@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     planning_max_matrix_cells_total: int = Field(default=100000, ge=1, le=100000)
     planning_provider_concurrency: int = Field(default=4, ge=1, le=8)
     planning_max_snap_meters: float = Field(default=100, gt=0, le=1000)
+    assistant_enabled: bool = False
+    assistant_url: str = "http://assistant:8002"
+    assistant_timeout_seconds: float = Field(default=60, gt=0, le=120)
     cors_origins: str = (
         "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000"
     )
@@ -58,6 +61,16 @@ class Settings(BaseSettings):
         if len(secret.encode("utf-8")) < 32:
             raise ValueError("JWT_SECRET_KEY must contain at least 32 bytes")
         return value
+
+    @field_validator("assistant_url")
+    @classmethod
+    def validate_assistant_url(cls, value: str) -> str:
+        normalized = value.rstrip("/")
+        if normalized != "http://assistant:8002":
+            raise ValueError(
+                "ASSISTANT_URL must be the trusted internal http://assistant:8002 service"
+            )
+        return normalized
 
 
 @lru_cache

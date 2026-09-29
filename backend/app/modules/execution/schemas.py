@@ -17,6 +17,8 @@ class ExecutionCommand(BaseModel):
     location_id: int | None = Field(default=None, ge=1)
     destination_id: int | None = Field(default=None, ge=1)
     payload: dict[str, object] = Field(default_factory=dict)
+    note: str | None = Field(default=None, max_length=2000)
+    actual_duration_minutes: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_reason(self):

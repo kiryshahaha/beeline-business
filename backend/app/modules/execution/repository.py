@@ -26,6 +26,7 @@ def lock_ticket_for_execution(session: Session, ticket_id: int) -> RowMapping | 
                         ELSE ticket.lifecycle_state
                     END AS lifecycle_state,
                     ticket.revision, ticket.execution_cycle, ticket.location_id,
+                    ticket.assigned_worker_id,
                     ticket.visit_window_start, ticket.visit_window_end,
                     ticket.planned_start_at, ticket.planned_end_at,
                     ticket.actual_started_at, ticket.actual_completed_at,

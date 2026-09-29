@@ -107,7 +107,7 @@ class TicketWorkflowApiTests(DatabaseTestCase):
             .all()
         )
 
-    def test_observer_replaces_assignees_and_only_new_workers_receive_events(self):
+    def test_observer_replaces_assignees_and_notifies_old_and_new_workers(self):
         url = f"/api/v1/tickets/{self.ticket_id}/assignees"
         response = self.client.put(
             url,
@@ -137,8 +137,12 @@ class TicketWorkflowApiTests(DatabaseTestCase):
         self.assertEqual(expanded.status_code, 200, expanded.text)
         self.assertEqual(expanded.json()["assigned_worker_id"], self.other_worker.id)
         self.assertEqual(
-            [event["recipient_id"] for event in self.events()],
-            [self.worker.id, self.other_worker.id],
+            [(event["recipient_id"], event["kind"]) for event in self.events()],
+            [
+                (self.worker.id, "ticket_assigned"),
+                (self.worker.id, "ticket_unassigned"),
+                (self.other_worker.id, "ticket_assigned"),
+            ],
         )
 
     def test_assignee_replacement_requires_observer_and_valid_workers(self):

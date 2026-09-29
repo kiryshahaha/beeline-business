@@ -72,7 +72,13 @@ class NotificationEvent(IntegerIdMixin, Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
-        CheckConstraint("kind IN ('ticket_assigned', 'ticket_status_changed')", name="kind_valid"),
+        CheckConstraint(
+            "kind IN ('ticket_assigned', 'ticket_status_changed', 'ticket_unassigned', "
+            "'ticket_rescheduled', 'ticket_window_changed', 'ticket_completion_confirmed', "
+            "'ticket_completion_rejected', 'ticket_completion_requested', "
+            "'ticket_delay_reported', 'ticket_problem_reported')",
+            name="kind_valid",
+        ),
         CheckConstraint("attempt_count >= 0", name="attempt_count_nonnegative"),
         CheckConstraint(
             "websocket_delivered_at IS NULL OR websocket_missed_at IS NULL",

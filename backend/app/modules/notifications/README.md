@@ -5,7 +5,7 @@
 | Файл | Ответственность |
 | --- | --- |
 | `models.py` | Очередь событий и push-подписки |
-| `enums.py` | Виды ticket_assigned и ticket_status_changed |
+| `enums.py` | Виды ticket_assigned, ticket_status_changed и worker-app событий |
 | `schemas.py` | HTTP-контракты истории и регистрации токенов |
 | `repository.py` | Выборка/обновление очереди и токенов |
 | `service.py` | История пользователя, регистрация и удаление подписок |
@@ -30,6 +30,12 @@
 `notification_events` и не попадает в историю уведомлений; экран перечитывает
 `GET /api/v1/schedule`. При повторном запросе уже применённого плана и при отказе
 сигнал не отправляется.
+
+Worker-app события сохраняются в ту же очередь и проходят ту же WebSocket/push доставку:
+`ticket_unassigned`, `ticket_rescheduled`, `ticket_window_changed`, события запроса и
+решения подтверждения завершения, `ticket_delay_reported` и `ticket_problem_reported`.
+Допустимые типы ограничены миграцией; тесты используют отключённый dispatcher и не
+отправляют реальные push-сообщения.
 
 Общий API описан в [backend README](../../../README.md); ограничения существующей
 системы — в [аудите](../../../../docs/AUDIT_2026-09-18.md). Миграции находятся

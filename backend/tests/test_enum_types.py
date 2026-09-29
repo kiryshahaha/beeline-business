@@ -29,7 +29,18 @@ class EnumTypesTests(unittest.TestCase):
         self.assertEqual(schemas["TokenType"]["enum"], ["bearer"])
         self.assertEqual(
             schemas["NotificationKind"]["enum"],
-            ["ticket_assigned", "ticket_status_changed"],
+            [
+                "ticket_assigned",
+                "ticket_status_changed",
+                "ticket_unassigned",
+                "ticket_rescheduled",
+                "ticket_window_changed",
+                "ticket_completion_confirmed",
+                "ticket_completion_rejected",
+                "ticket_completion_requested",
+                "ticket_delay_reported",
+                "ticket_problem_reported",
+            ],
         )
         self.assertIn("ApplianceType", schemas)
         self.assertEqual(

@@ -64,6 +64,7 @@ from app.modules.users.schemas import (
     WORKER_SKILL_EXAMPLE,
 )
 from app.modules.work_types.router import router as work_types_router
+from app.modules.worker_app.router import router as worker_app_router
 
 
 @asynccontextmanager
@@ -168,6 +169,8 @@ app.include_router(office_stock_router)
 app.include_router(appliances_router)
 app.include_router(brigades_router)
 app.include_router(work_types_router)
+# Static worker-app paths such as /tickets/completion-reviews must precede /tickets/{id}.
+app.include_router(worker_app_router)
 app.include_router(tickets_router)
 app.include_router(ticket_appliances_router)
 app.include_router(worker_equipment_router)

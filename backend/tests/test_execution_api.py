@@ -1,6 +1,8 @@
 """Observer execution commands, day state and equipment ledger integration tests."""
 
 from datetime import UTC, date, datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -26,6 +28,7 @@ from app.modules.planning import router as planning_api
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserCreate, WorkerProfileCreate
 from app.modules.users.service import create_user
+from app.modules.worker_app import router as worker_app_api
 from tests.support import DatabaseTestCase
 
 
@@ -166,12 +169,147 @@ class ExecutionApiTests(DatabaseTestCase):
         }
         if worker:
             body["worker_id"] = self.worker.id
+            if path.endswith("/complete"):
+                body.setdefault("note", "Работы выполнены")
         if reason is not None:
             body["reason"] = reason
         return self.client.post(
             path,
             json=body,
             headers=self._auth(self.observer) | {"Idempotency-Key": key},
+        )
+
+    def test_worker_actions_completion_review_and_worker_day(self):
+        ticket_id = self._ticket(title="Заявка мобильного исполнителя")["id"]
+        self._assign(ticket_id)
+        worker_headers = self._auth(self.worker) | {"Idempotency-Key": "worker-route-start"}
+        started_route = self.client.post(
+            f"/api/v1/tickets/{ticket_id}/start-route",
+            json={
+                "expected_revision": 2,
+                "worker_id": self.worker.id,
+                "occurred_at": "2000-01-01T00:00:00+00:00",
+            },
+            headers=worker_headers,
+        )
+        self.assertEqual(started_route.status_code, 200, started_route.text)
+        self.assertEqual(started_route.json()["state"], "en_route")
+        started = self.client.post(
+            f"/api/v1/tickets/{ticket_id}/start",
+            json={"expected_revision": 3, "location_id": self.destination_location_id},
+            headers=self._auth(self.worker) | {"Idempotency-Key": "worker-work-start"},
+        )
+        self.assertEqual(started.status_code, 200, started.text)
+        problem = self.client.post(
+            f"/api/v1/tickets/{ticket_id}/problem",
+            json={"expected_revision": 4, "type": "no_access", "text": "Домофон не отвечает"},
+            headers=self._auth(self.worker) | {"Idempotency-Key": "worker-problem"},
+        )
+        self.assertEqual(problem.status_code, 201, problem.text)
+        self.assertIn("Проблема: no_access", problem.json()["comment"]["text"])
+        self.assertEqual(
+            self.session.execute(
+                text("SELECT lifecycle_state FROM tickets WHERE id=:id"), {"id": ticket_id}
+            ).scalar_one(),
+            "in_progress",
+        )
+        self.assertEqual(
+            self.session.execute(
+                text(
+                    "SELECT count(*) FROM work_events "
+                    "WHERE ticket_id=:id AND event_type='problem_reported'"
+                ),
+                {"id": ticket_id},
+            ).scalar_one(),
+            1,
+        )
+        completed = self.client.post(
+            f"/api/v1/tickets/{ticket_id}/complete",
+            json={
+                "expected_revision": 4,
+                "note": "Заменён терминал",
+                "actual_duration_minutes": 45,
+            },
+            headers=self._auth(self.worker) | {"Idempotency-Key": "worker-work-complete"},
+        )
+        self.assertEqual(completed.status_code, 200, completed.text)
+        state = self.session.execute(
+            text("SELECT state FROM ticket_completion_reviews WHERE ticket_id=:id"),
+            {"id": ticket_id},
+        ).scalar_one()
+        self.assertEqual(state, "pending")
+        self.assertEqual(
+            self.session.execute(
+                text(
+                    "SELECT count(*) FROM notification_events "
+                    "WHERE ticket_id=:id AND kind='ticket_completion_requested'"
+                ),
+                {"id": ticket_id},
+            ).scalar_one(),
+            1,
+        )
+        confirmation = self.client.post(
+            f"/api/v1/tickets/{ticket_id}/completion/confirm",
+            json={"expected_revision": 5, "comment": "Проверено"},
+            headers=self._auth(self.observer) | {"Idempotency-Key": "review-confirm"},
+        )
+        self.assertEqual(confirmation.status_code, 200, confirmation.text)
+        replayed_confirmation = self.client.post(
+            f"/api/v1/tickets/{ticket_id}/completion/confirm",
+            json={"expected_revision": 5, "comment": "Проверено"},
+            headers=self._auth(self.observer) | {"Idempotency-Key": "review-confirm"},
+        )
+        self.assertEqual(replayed_confirmation.status_code, 200, replayed_confirmation.text)
+        self.assertEqual(
+            self.session.execute(
+                text(
+                    "SELECT count(*) FROM notification_events "
+                    "WHERE ticket_id=:id AND kind='ticket_completion_confirmed'"
+                ),
+                {"id": ticket_id},
+            ).scalar_one(),
+            1,
+        )
+        day = self.client.get("/api/v1/me/day", headers=self._auth(self.worker))
+        self.assertEqual(day.status_code, 200, day.text)
+        self.assertEqual(day.json()["worker"]["id"], self.worker.id)
+        self.assertIn(ticket_id, [ticket["id"] for ticket in day.json()["tickets"]])
+
+    def test_assistant_chat_forwards_only_validated_dialog_to_internal_service(self):
+        settings = SimpleNamespace(
+            assistant_enabled=True,
+            assistant_url="http://assistant:8002",
+            assistant_timeout_seconds=4,
+        )
+        response = MagicMock()
+        response.json.return_value = {"answer": "Готово", "source_type": "facts"}
+        client = MagicMock()
+        client.__aenter__.return_value = client
+        client.__aexit__.return_value = None
+        client.post = AsyncMock(return_value=response)
+        body = {
+            "message": "Какой статус заявки?",
+            "history": [{"role": "user", "content": "Здравствуйте"}],
+        }
+        with (
+            patch.object(worker_app_api, "get_settings", return_value=settings),
+            patch.object(worker_app_api.httpx, "AsyncClient", return_value=client),
+        ):
+            result = self.client.post(
+                "/api/v1/assistant/chat",
+                json=body,
+                headers=self._auth(self.observer),
+            )
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json(), {"answer": "Готово", "source_type": "facts"})
+        client.post.assert_awaited_once_with(
+            "http://assistant:8002/api/v1/chat",
+            json={
+                "role": "observer",
+                "message": body["message"],
+                "history": body["history"],
+                "context": {},
+            },
         )
 
     def _progress_to_work(self, ticket_id):

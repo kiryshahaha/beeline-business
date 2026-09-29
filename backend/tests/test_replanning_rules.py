@@ -15,6 +15,7 @@ from app.modules.planning.service import (
     _pin_existing_visits_for_ordinary_insert,
     emergency_response_estimates,
     snapshot_with_experimental_windows,
+    ticket_event_policy,
     validate_replan_limits,
 )
 
@@ -26,6 +27,13 @@ class ReplanningAnchorTests(unittest.TestCase):
             Path(__file__).resolve().parents[2] / "data/planning/dynamic_replanning_scenarios.json"
         )
         cls.synthetic = json.loads(path.read_text(encoding="utf-8"))
+
+    def test_ticket_event_policy_uses_persisted_category(self):
+        self.assertEqual(ticket_event_policy("emergency"), "emergency_replan")
+        self.assertEqual(ticket_event_policy("repair"), "regular_insert")
+        with self.assertRaises(PlanningError) as error:
+            ticket_event_policy("unknown")
+        self.assertEqual(error.exception.code, "ticket_category_invalid")
 
     def test_worker_without_execution_events_starts_from_known_base_at_current_time(self):
         now = datetime(2026, 9, 27, 12, tzinfo=UTC)
