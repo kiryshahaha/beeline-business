@@ -552,14 +552,13 @@ class ExecutionApiTests(DatabaseTestCase):
             reason="Клиент отменил визит",
         )
         self.assertEqual(cancelled.json()["state"], "cancelled")
-        self.assertEqual(
-            self.client.patch(
-                f"/api/v1/tickets/{ticket_id}/status",
-                json={"status": "in_progress"},
-                headers=self._auth(self.observer),
-            ).status_code,
-            422,
+        invalid_legacy_transition = self.client.patch(
+            f"/api/v1/tickets/{ticket_id}/status",
+            json={"status": "in_progress"},
+            headers=self._auth(self.observer),
         )
+        self.assertEqual(invalid_legacy_transition.status_code, 409)
+        self.assertEqual(invalid_legacy_transition.json()["detail"]["code"], "invalid_transition")
         with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
             event_types = (
                 session.execute(

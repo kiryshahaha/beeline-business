@@ -440,10 +440,14 @@ def _worker_command(
         raise HTTPException(status_code=403, detail="Действие доступно только исполнителю")
     if data.worker_id is not None and data.worker_id != user.id:
         raise HTTPException(status_code=403, detail="worker_id не совпадает с текущим исполнителем")
-    assigned = session.execute(
-        text("SELECT assigned_worker_id = :worker_id FROM tickets WHERE id = :ticket_id"),
-        {"worker_id": user.id, "ticket_id": ticket_id},
-    ).scalar_one_or_none()
+    # Finish the authorization read before the execution service opens its write
+    # transaction. Otherwise apply_ticket_event treats this read transaction as
+    # caller-owned and the request session rolls back the event when it closes.
+    with session.begin():
+        assigned = session.execute(
+            text("SELECT assigned_worker_id = :worker_id FROM tickets WHERE id = :ticket_id"),
+            {"worker_id": user.id, "ticket_id": ticket_id},
+        ).scalar_one_or_none()
     if assigned is not True:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     if completion and not (data.note or "").strip():
