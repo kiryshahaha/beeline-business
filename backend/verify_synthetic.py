@@ -31,6 +31,60 @@ def verify_auxiliary_files(directory: Path, manifest: dict) -> int:
     return len(manifest.get("auxiliary_files", {}))
 
 
+def verify_realistic_exchange_package(name: str, tables: dict) -> dict:
+    """Guard the large parser datasets against repetitive or pre-planned fixtures."""
+    buildings = {row["id"]: row for row in tables["buildings"]}
+    streets = {row["id"]: row for row in tables["streets"]}
+    entrances = {row["id"]: row for row in tables["entrances"]}
+    locations = {row["id"]: row for row in tables["locations"]}
+    cities = {row["id"]: row["name"] for row in tables["cities"]}
+    tickets = tables["tickets"]
+
+    addresses = set()
+    statuses_by_day = {}
+    for ticket in tickets:
+        location = locations[ticket["location_id"]]
+        building = buildings[location["building_id"]]
+        entrance = entrances[location["entrance_id"]]
+        if cities[building["city_id"]] != "Москва":
+            raise ValueError(f"{name}: synthetic exchange requests must be in Moscow")
+        addresses.add(
+            (
+                building["city_id"],
+                building.get("service_area_id"),
+                streets[building["street_id"]]["name"],
+                building["number"],
+                building.get("block"),
+                entrance["number"],
+                location.get("floor"),
+                location.get("apartment"),
+            )
+        )
+        day = str(ticket["visit_window_start"])[:10]
+        statuses_by_day.setdefault(day, set()).add(ticket["status"])
+
+    address_coverage = len(addresses) / len(tickets) if tickets else 0
+    if address_coverage < 0.95:
+        raise ValueError(
+            f"{name}: unique full-address coverage is {address_coverage:.1%}; expected at least 95%"
+        )
+    observed_statuses = {status for statuses in statuses_by_day.values() for status in statuses}
+    if not {"completed", "wont_fix", "planned"}.issubset(observed_statuses):
+        raise ValueError(f"{name}: expected historical and future ticket statuses")
+    if len(statuses_by_day) < 2 or len(set(map(frozenset, statuses_by_day.values()))) < 2:
+        raise ValueError(f"{name}: ticket statuses must vary across service dates")
+    for table in ("routes", "day_plan_revisions", "work_events"):
+        if tables[table]:
+            raise ValueError(f"{name}: {table} must be created by the planner, not preloaded")
+    return {
+        "tickets": len(tickets),
+        "unique_full_address_coverage": round(address_coverage, 4),
+        "service_dates": len(statuses_by_day),
+        "statuses": sorted(observed_statuses),
+        "routes": 0,
+    }
+
+
 def verify_packages(root: Path = ROOT) -> dict:
     report = {
         "files": 0,
@@ -39,6 +93,7 @@ def verify_packages(root: Path = ROOT) -> dict:
         "policy_comparisons": 0,
         "dynamic_replanning_cases": 0,
         "auxiliary_files": 0,
+        "realistic_exchange_packages": {},
     }
     required = {
         root / "data/planning/manifest.json",
@@ -74,6 +129,12 @@ def verify_packages(root: Path = ROOT) -> dict:
             report["files"] += 1
         if by_stem:
             raise ValueError(f"Missing CSV/XLSX counterpart: {path}")
+        if path.parent.name in {"standard", "large"} and path.parent.parent.name == "synthetic":
+            content = (path.parent / "dataset.zip").read_bytes()
+            parsed = parse_file(content, "dataset.zip")
+            report["realistic_exchange_packages"][path.parent.name] = (
+                verify_realistic_exchange_package(path.parent.name, parsed)
+            )
     if (root / "backend/bruno/fixtures/planning-mixed.zip").read_bytes() != (
         root / "data/planning/mixed.zip"
     ).read_bytes():
