@@ -30,5 +30,6 @@ body:json {
 }
 
 assert {
-  res.status: eq 422
+  res.status: eq 409
+  res.body.detail.code: eq "invalid_transition"
 }

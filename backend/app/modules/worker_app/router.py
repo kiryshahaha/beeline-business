@@ -254,7 +254,7 @@ def get_my_day(
     end = shift.end if shift else None
     completed = sum(state == "completed" for state in states)
     awaiting = sum(
-        ticket.get("completion_review", {}).get("state") == "pending" for ticket in tickets
+        (ticket.get("completion_review") or {}).get("state") == "pending" for ticket in tickets
     )
     return {
         "date": target_date.isoformat(),

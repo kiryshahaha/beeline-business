@@ -200,6 +200,15 @@ class ExecutionApiTests(DatabaseTestCase):
             headers=self._auth(self.worker) | {"Idempotency-Key": "worker-work-start"},
         )
         self.assertEqual(started.status_code, 200, started.text)
+        day_before_completion = self.client.get("/api/v1/me/day", headers=self._auth(self.worker))
+        self.assertEqual(day_before_completion.status_code, 200, day_before_completion.text)
+        day_ticket = next(
+            ticket
+            for ticket in day_before_completion.json()["tickets"]
+            if ticket["id"] == ticket_id
+        )
+        self.assertIsNone(day_ticket["completion_review"])
+        self.assertEqual(day_before_completion.json()["summary"]["awaiting_confirmation"], 0)
         problem = self.client.post(
             f"/api/v1/tickets/{ticket_id}/problem",
             json={"expected_revision": 4, "type": "no_access", "text": "Домофон не отвечает"},
