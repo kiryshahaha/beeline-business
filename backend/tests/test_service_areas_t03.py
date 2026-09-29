@@ -8,7 +8,6 @@ Tests cover:
 - Service areas CRUD API and database relations
 """
 
-import os
 import unittest
 from datetime import datetime
 from unittest.mock import AsyncMock
