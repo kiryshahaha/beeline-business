@@ -1,10 +1,12 @@
 # Инструкция по запуску в Docker
 
 В репозитории настроена полная оркестрация всех компонентов системы через Docker Compose:
-- **`frontend`** (Next.js 16) — порт `3000`
-- **`backend`** (FastAPI) — порт `8000` (Swagger UI: `http://localhost:8000/docs`)
-- **`planner`** (Микросервис оптимизации маршрутов OR-Tools) — порт `8001` (Swagger UI: `http://localhost:8001/docs`)
+- **`nginx`** (Reverse Proxy / Единая точка входа) — порт `80` (настраивается через `NGINX_PORT`)
+- **`frontend`** (Next.js 16) — порт `3000` (внутри сети `app-network`, также проброшен для локальной отладки)
+- **`backend`** (FastAPI) — порт `8000` (внутри сети `app-network`, также проброшен для локальной отладки)
+- **`planner`** (Микросервис оптимизации маршрутов OR-Tools) — порт `8001`
 - **`db`** (PostgreSQL 17) — порт `5432`
+- **`assistant`** / **`ollama`** (Чат-помощник и локальная LLM) — порты `8002` / `11434`
 
 ---
 
@@ -38,11 +40,19 @@
    ```
 
 3. **Проверьте доступность сервисов:**
-   - Веб-приложение: [http://localhost:3000](http://localhost:3000)
-   - Основной API Swagger: [http://localhost:8000/docs](http://localhost:8000/docs)
+   **Единая точка входа (Nginx, порт 80):**
+   - Веб-приложение (фронтенд): [http://localhost](http://localhost)
+   - Основной API Swagger: [http://localhost/docs](http://localhost/docs)
+   - Схема OpenAPI: [http://localhost/openapi.json](http://localhost/openapi.json)
+   - Liveness API: [http://localhost/health](http://localhost/health)
+   - Готовность БД, миграций и planner: [http://localhost/ready](http://localhost/ready)
+   - Healthcheck Nginx: [http://localhost/nginx-health](http://localhost/nginx-health)
+   - WebSocket уведомления: `ws://localhost/api/v1/notifications/ws`
+
+   **Прямой доступ к сервисам (для локальной разработки/отладки):**
+   - Frontend напрямую: [http://localhost:3000](http://localhost:3000)
+   - Backend API напрямую: [http://localhost:8000](http://localhost:8000) (Swagger: `http://localhost:8000/docs`)
    - Planner API Swagger: [http://localhost:8001/docs](http://localhost:8001/docs)
-   - Liveness API: [http://localhost:8000/health](http://localhost:8000/health)
-   - Готовность БД, миграций и planner: [http://localhost:8000/ready](http://localhost:8000/ready)
 
    `/ready` проверяет зависимости backend, не обращаясь к Geoapify. Для расчёта нужны также
    координаты офисов и заявок, будущие смены, транспорт, навыки, резерв оборудования

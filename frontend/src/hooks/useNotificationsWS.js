@@ -16,17 +16,24 @@ export function useNotificationsWS() {
     let cancelled = false;
 
     const rawBaseUrl =
-      process.env.NEXT_PUBLIC_API_URL ||
-      process.env.NEXT_PUBLIC_ENDPOINT ||
-      "http://localhost:8000/api/v1";
+      process.env.NEXT_PUBLIC_API_URL !== undefined
+        ? process.env.NEXT_PUBLIC_API_URL
+        : (process.env.NEXT_PUBLIC_ENDPOINT || "");
 
-    const normalizedBase = rawBaseUrl.endsWith("/api/v1")
-      ? rawBaseUrl
-      : `${rawBaseUrl.replace(/\/+$/, "")}/api/v1`;
-
-    const wsUrl =
-      normalizedBase.replace(/^http/, "ws").replace("localhost", "127.0.0.1") +
-      "/notifications/ws";
+    let wsUrl;
+    if (rawBaseUrl && rawBaseUrl.startsWith("http")) {
+      const normalizedBase = rawBaseUrl.endsWith("/api/v1")
+        ? rawBaseUrl
+        : `${rawBaseUrl.replace(/\/+$/, "")}/api/v1`;
+      wsUrl =
+        normalizedBase.replace(/^http/, "ws").replace("localhost", "127.0.0.1") +
+        "/notifications/ws";
+    } else if (typeof window !== "undefined") {
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      wsUrl = `${proto}//${window.location.host}/api/v1/notifications/ws`;
+    } else {
+      wsUrl = "ws://127.0.0.1:8000/api/v1/notifications/ws";
+    }
 
     let reconnectTimer;
 

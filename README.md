@@ -23,9 +23,9 @@ Backend читает согласованный снимок заявок и д�
 Нужны Docker Desktop с Compose и локальные секреты окружения. Создайте .env из шаблона, задайте пароль PostgreSQL и секрет JWT, затем запустите основные сервисы:
 
     Copy-Item .env.docker.example .env
-    docker compose up --build -d db planner backend frontend
+    docker compose up --build -d
 
-Для планирования дополнительно задаются PLANNING_ENABLED, общий PLANNER_SERVICE_TOKEN и GEOAPIFY_API_KEY. Секреты среды не должны попадать в Git. После запуска веб-интерфейс доступен на http://localhost:3000, документация backend API — на http://localhost:8000/docs.
+Для планирования дополнительно задаются PLANNING_ENABLED, общий PLANNER_SERVICE_TOKEN и GEOAPIFY_API_KEY. Секреты среды не должны попадать в Git. После запуска веб-интерфейс доступен через единую точку входа на http://localhost (или http://localhost:3000 напрямую), документация backend API — на http://localhost/docs (или http://localhost:8000/docs).
 
 ## Документация и материалы
 

@@ -55,9 +55,11 @@ export function useWorkerWS() {
     let reconnectTimer = null;
     const storageKey = `worker_last_event_id_${user.id}`;
 
-    const wsUrl =
-      API_BASE.replace(/^http/, "ws").replace("localhost", "127.0.0.1") +
-      "/notifications/ws";
+    const wsUrl = API_BASE.startsWith("http")
+      ? API_BASE.replace(/^http/, "ws").replace("localhost", "127.0.0.1") + "/notifications/ws"
+      : typeof window !== "undefined"
+      ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}${API_BASE}/notifications/ws`
+      : "ws://127.0.0.1:8000/api/v1/notifications/ws";
 
     const connect = () => {
       if (cancelled) return;

@@ -59,9 +59,9 @@ services:
       GEOAPIFY_API_KEY: ${GEOAPIFY_API_KEY:-}
       GEOAPIFY_TIMEOUT_SECONDS: ${GEOAPIFY_TIMEOUT_SECONDS:-10}
       AUTO_SEED: ${AUTO_SEED:-false}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://127.0.0.1,http://localhost:80,http://127.0.0.1:80,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000}
       PUBLIC_API_URL: ${PUBLIC_API_URL:-}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
       # POST /api/v1/assistant/chat отвечает 503, пока помощник не включён.
       ASSISTANT_ENABLED: ${ASSISTANT_ENABLED:-false}
     ports:
@@ -85,7 +85,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
         NEXT_PUBLIC_MAPTILER_API_KEY: ${NEXT_PUBLIC_MAPTILER_API_KEY:-}
         NEXT_PUBLIC_GEOAPIFY_API_KEY: ${NEXT_PUBLIC_GEOAPIFY_API_KEY:-}
     container_name: beeline_frontend
@@ -95,6 +95,30 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    networks:
+      - app-network
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: beeline_nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:80/nginx-health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     networks:
       - app-network
 

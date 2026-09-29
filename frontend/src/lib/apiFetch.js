@@ -1,13 +1,17 @@
 import { updateToken, getToken } from "@/lib/tokenBus";
 
 const raw =
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_ENDPOINT ||
-  "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL !== undefined
+    ? process.env.NEXT_PUBLIC_API_URL
+    : (process.env.NEXT_PUBLIC_ENDPOINT ?? (typeof window === "undefined" ? "http://backend:8000" : ""));
 
-export const API_ROOT = raw.replace(/\/api\/v1\/?$/, "").replace(/\/+$/, "");
+export const API_ROOT = raw
+  ? raw.replace(/\/api\/v1\/?$/, "").replace(/\/+$/, "")
+  : "";
 
-export const API_BASE = raw.endsWith("/api/v1")
+export const API_BASE = !raw
+  ? "/api/v1"
+  : raw.endsWith("/api/v1")
   ? raw.replace(/\/+$/, "")
   : `${raw.replace(/\/+$/, "")}/api/v1`;
 
