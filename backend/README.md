@@ -20,14 +20,14 @@
 
 Новые контракты и навигация:
 
-- [Обмен CSV/XLSX](../docs/DATA_EXCHANGE.md): `/api/v1/data/schema`, `/export`, `/import`.
+- [Обмен CSV/XLSX](../Артефакты_нейронки/DATA_EXCHANGE.md): `/api/v1/data/schema`, `/export`, `/import`.
 - [Сохранённые маршруты](app/modules/routing/README.md): `/api/v1/routes`, `/batch`, `/{id}/geojson`.
 - [Расписание смен](app/modules/schedule/README.md): `/api/v1/schedule?date=&office_id=` для таймлайна.
 - [Пользователи и транспорт](app/modules/users/README.md): `worker_profile.transport_type`.
 - [Описание модулей](app/modules/README.md), [схема БД](app/db/README.md), [миграции](migrations/README.md).
 - [Синтетические наборы](../data/synthetic/README.md): 1 500/10 000 заявок;
   `generate_synthetic.py` создаёт файлы без БД, `seed_synthetic.py` работает только в `*_test`.
-- [Проверки](tests/README.md), [Bruno](bruno/README.md), [аудит](../docs/AUDIT_2026-09-18.md).
+- [Проверки](tests/README.md), [Bruno](bruno/README.md), [аудит](../Артефакты_нейронки/AUDIT_2026-09-18.md).
 - [Аналитика](#сводка-заявок): `/api/v1/analytics/tickets-summary`,
   `/api/v1/analytics/brigades-workload`, `/api/v1/analytics/recent-activity`.
 
@@ -1172,7 +1172,7 @@ ORDER BY COALESCE(d.name, sa.name);
 ## Локальный запуск
 
 Текущие версии среды, зависимости и команды чистого запуска Compose описаны в
-[руководстве runtime](../docs/RUNTIME.md). Опорная конфигурация использует
+[руководстве runtime](../Артефакты_нейронки/RUNTIME.md). Опорная конфигурация использует
 CPython 3.12 и PostgreSQL 17.
 
 ## Настройка PostgreSQL
@@ -1583,7 +1583,7 @@ workflow на Ubuntu в GitHub ещё не запускался.
 бинарного wheel. `constraints.txt` согласует pandas и protobuf для общего тестового
 окружения.
 
-Команды локальной установки описаны в [руководстве runtime](../docs/RUNTIME.md).
+Команды локальной установки описаны в [руководстве runtime](../Артефакты_нейронки/RUNTIME.md).
 
 ## Снятие инженера с линии
 
@@ -1778,4 +1778,4 @@ E2E запускает настоящий backend и OR-Tools, отдельну�
 `GET /api/v1/planning/policy` показывает наблюдателю текущую конфигурацию расчёта
 и отдельно контракт кейса T01. Сохранённый preview содержит полную `planning_policy`;
 старые планы без параметров возвращают `null`. Подробности и границы реализации:
-[PLANNING_POLICY.md](../docs/PLANNING_POLICY.md).
+[PLANNING_POLICY.md](../Артефакты_нейронки/PLANNING_POLICY.md).

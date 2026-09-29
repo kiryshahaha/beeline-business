@@ -16,7 +16,8 @@
 | [data/synthetic](data/synthetic/README.md) | Готовые CSV/XLSX: 1 500 и 10 000 заявок |
 | [backend/bruno](backend/bruno/README.md) | Последовательные API-сценарии |
 | [.github/workflows](.github/workflows/README.md) | Автоматические проверки |
-| [docs](docs/README.md) | Контракты, решения, аудит и ограничения |
+| [docs](docs/ИИ-помощник.md) | Описание ИИ-помощника |
+| [Артефакты_нейронки](Артефакты_нейронки/README.md) | Контракты, решения, аудит и ограничения |
 
 Зависимости между компонентами:
 
@@ -35,7 +36,7 @@ Backend вызывает существующий /api/v1/solve через мо�
 ## Запуск
 
 Поддерживаемые версии и чистые команды запуска backend с planner собраны
-в [руководстве runtime](docs/RUNTIME.md). Compose запускает PostgreSQL 17,
+в [руководстве runtime](Артефакты_нейронки/RUNTIME.md). Compose запускает PostgreSQL 17,
 применяет миграции перед backend и проверяет `/ready`; для локальной демонстрации
 не нужны Firebase credentials или ключ Geoapify.
 
@@ -45,7 +46,7 @@ Backend вызывает существующий /api/v1/solve через мо�
    возвращает книгу из 25 предметных листов; `format=csv` — ZIP с CSV для каждой
    таблицы. Импорт: `POST /api/v1/data/import`, файл в multipart-поле `file`.
    По умолчанию выполняется только проверка (`dry_run=true`). Запись включается
-   параметром `dry_run=false`. Подробности — [контракт обмена](docs/DATA_EXCHANGE.md).
+   параметром `dry_run=false`. Подробности — [контракт обмена](Артефакты_нейронки/DATA_EXCHANGE.md).
 2. **История маршрутов.** Снимки GeoJSON с `route_number`, отдельным от ID;
    нумерация в пределах инженера и даты, времена прибытия и порядок каждой точки.
    Подробности — [модуль routing](backend/app/modules/routing/README.md).
@@ -62,7 +63,7 @@ Backend вызывает существующий /api/v1/solve через мо�
 Backend CI использует Python 3.12, PostgreSQL 17 и Node 24 для Bruno. Он запускает
 backend unittest, проверку seed/синтетических данных и Bruno E2E с настоящим planner.
 Поддерживаемые версии и команды установки зависимостей описаны в
-[руководстве runtime](docs/RUNTIME.md); Bruno сценарии — в
+[руководстве runtime](Артефакты_нейронки/RUNTIME.md); Bruno сценарии — в
 [backend/bruno](backend/bruno/README.md).
 
 ## Синтетические данные
@@ -83,4 +84,4 @@ python seed_synthetic.py --seed 42
 на `_test`. Не направляйте приложение на рабочую БД для прогона Bruno.
 
 Оставшиеся ограничения существующей системы перечислены в
-[аудите](docs/AUDIT_2026-09-18.md). Изменения вне трёх порученных задач не вносились.
+[аудите](Артефакты_нейронки/AUDIT_2026-09-18.md). Изменения вне трёх порученных задач не вносились.
