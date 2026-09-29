@@ -2,16 +2,17 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/providers/AuthProvider";
 import { apiFetch } from "@/lib/apiFetch";
 
-export function useTicketsSummary({ period = "today", office_id } = {}) {
+export function useTicketsSummary({ period = "today", office_id, date } = {}) {
   const { token } = useAuth();
 
   const { data: summary = null, ...summaryData } = useQuery({
-    queryKey: ["ticketsSummary", period, office_id],
+    queryKey: ["ticketsSummary", period, office_id, date],
     
     queryFn: async () => {
       const urlParams = new URLSearchParams({
         period,
         ...(office_id && { office_id }),
+        ...(date && { date }),
       });
 
       const res = await apiFetch(`/analytics/tickets-summary?${urlParams}`);

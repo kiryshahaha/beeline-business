@@ -37,5 +37,8 @@ tests {
     expect(body.replan_diff.added).to.be.an("array");
     expect(body.replan_diff.changed).to.be.an("array");
     expect(body.replan_diff.unchanged_ticket_ids).to.be.an("array");
+    expect(body.replan_diff.added).to.have.length(0);
+    expect(body.replan_diff.removed).to.have.length(0);
+    expect(body.replan_diff.changed).to.have.length(0);
   });
 }

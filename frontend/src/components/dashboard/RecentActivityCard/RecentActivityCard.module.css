@@ -5,6 +5,8 @@
     padding: 20px 24px;
     display: flex;
     flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
     gap: 16px;
     position: relative;
     overflow: hidden;
@@ -57,6 +59,7 @@
     flex-direction: column;
     gap: 14px;
     min-height: 280px;
+    flex: 1;
 }
 
 .eventItem {

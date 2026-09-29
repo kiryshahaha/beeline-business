@@ -1,6 +1,5 @@
 """Reconstruct and update a worker's confirmed position and availability."""
 
-import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
@@ -24,28 +23,8 @@ from app.modules.execution.service import (
     IdempotencyConflict,
     apply_ticket_event,
 )
-from app.modules.planning.day_plans import publish_revision
 
 MOSCOW = ZoneInfo("Europe/Moscow")
-
-
-def _current_plan_state(session: Session, service_area_id: int | None, route_date: date) -> dict:
-    """Promised visits of the revision in force, so an event-driven one keeps them."""
-    if service_area_id is None:
-        return {}
-    state = session.execute(
-        text(
-            """
-            SELECT plan_state
-            FROM day_plan_revisions
-            WHERE service_area_id = :service_area_id
-              AND route_date = :route_date
-              AND is_current
-            """
-        ),
-        {"service_area_id": service_area_id, "route_date": route_date},
-    ).scalar_one_or_none()
-    return {key: value for key, value in (state or {}).items() if key != "redirect"}
 
 
 def _event_payload(event: dict) -> dict:
@@ -134,7 +113,9 @@ class DayStateRevisionConflict(ExecutionConflict):
 
 
 class UnsafeRedirect(Exception):
-    pass
+    def __init__(self, code: str = "unsafe_redirect"):
+        super().__init__(code)
+        self.code = code
 
 
 @contextmanager
@@ -716,118 +697,7 @@ def redirect_worker(
                 command.occurred_at,
                 revision=(existing["payload"] or {}).get("worker_day_revision"),
             )
-        service_area_exists = session.execute(
-            text("SELECT 1 FROM service_areas WHERE id = :service_area_id"),
-            {"service_area_id": service_area_id},
-        ).scalar_one_or_none()
-        if service_area_exists is None:
-            raise ServiceAreaNotFound
-        current_plan_revision = session.execute(
-            text(
-                """
-                SELECT revision
-                FROM day_plan_revisions
-                WHERE service_area_id = :service_area_id
-                  AND route_date = :route_date
-                  AND is_current
-                FOR UPDATE
-                """
-            ),
-            {"service_area_id": service_area_id, "route_date": route_date},
-        ).scalar_one_or_none()
-        if current_plan_revision != command.expected_day_revision:
-            raise DayStateRevisionConflict(
-                "stale_day_revision", current_revision=current_plan_revision
-            )
-        state = _state_row(session, command.worker_id, service_area_id, route_date, lock=True)
-        if state is None:
-            raise UnsafeRedirect("Снимок рабочего дня не найден")
-        if state["current_ticket_id"] != command.current_ticket_id:
-            raise UnsafeRedirect("Текущая заявка инженера не совпадает")
-        if state["current_destination_id"] is None:
-            raise UnsafeRedirect("Перенаправить можно только начатый переезд")
-        destination_service_area = session.execute(
-            text(
-                """
-                SELECT building.service_area_id
-                FROM locations AS location
-                JOIN buildings AS building ON building.id = location.building_id
-                WHERE location.id = :location_id
-                """
-            ),
-            {"location_id": command.new_destination_id},
-        ).scalar_one_or_none()
-        if destination_service_area is None:
-            raise UnsafeRedirect("Новое место назначения не найдено")
-        if destination_service_area != service_area_id:
-            raise UnsafeRedirect("Новое место назначения относится к другой зоне обслуживания")
-        payload = {
-            "ticket_id": command.current_ticket_id,
-            "destination_id": command.new_destination_id,
-            "worker_id": command.worker_id,
-            "reason": command.reason,
-            "worker_day_revision": state["revision"] + 1,
-        }
-        event_id = repository.append_worker_event(
-            session,
-            event_type=WorkEventType.REDIRECT.value,
-            ticket_id=command.current_ticket_id,
-            worker_id=command.worker_id,
-            service_area_id=service_area_id,
-            route_date=route_date,
-            occurred_at=command.occurred_at,
-            actor_id=actor_id,
-            reason=command.reason,
-            before_revision=state["revision"],
-            after_revision=state["revision"] + 1,
-            idempotency_key=idempotency_key,
-            payload=payload,
-        )
-        if event_id is None:
-            raise IdempotencyConflict(existing["id"] if existing else 0)
-        session.execute(
-            text(
-                """
-                UPDATE worker_day_states
-                SET revision = revision + 1,
-                    current_destination_id = :destination_id,
-                    expected_available_at = NULL,
-                    reason = :reason,
-                    updated_at = now()
-                WHERE worker_id = :worker_id
-                  AND service_area_id = :service_area_id
-                  AND route_date = :route_date
-                """
-            ),
-            {
-                "destination_id": command.new_destination_id,
-                "reason": command.reason,
-                "worker_id": command.worker_id,
-                "service_area_id": service_area_id,
-                "route_date": route_date,
-            },
-        )
-        fingerprint = sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
-        # A redirect moves one engineer, it does not recompute the day: the promised
-        # visits carry over unchanged so the diff shows only what the event changed.
-        carried = _current_plan_state(session, service_area_id, route_date)
-        publish_revision(
-            session,
-            service_area_id=service_area_id,
-            route_date=route_date,
-            actor_id=actor_id,
-            reason="worker_redirected",
-            fingerprint=fingerprint,
-            plan_state={**carried, "redirect": payload},
-            result={"event_id": event_id},
-            at=command.occurred_at,
-            event_id=event_id,
-        )
-        return _read_state(
-            session,
-            command.worker_id,
-            service_area_id,
-            route_date,
-            command.occurred_at,
-            revision=state["revision"] + 1,
-        )
+        # Keep the endpoint so old clients receive a clear conflict, but never
+        # divert an engineer after the current travel leg has started. Historical
+        # redirect events remain readable through the event reducer above.
+        raise UnsafeRedirect("active_route_redirect_forbidden")

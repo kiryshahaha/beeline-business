@@ -202,6 +202,7 @@ class FastStatsApiTests(DatabaseTestCase):
         self.assertIn("at_risk_tickets_ids", data)
         self.assertIn("idle_workers_ids", data)
         self.assertIn("active_brigades_count", data)
+        self.assertIn("avg_km_per_worker_per_day", data)
 
         self.assertEqual(data["at_risk_tickets_count"], 1)
         self.assertEqual(data["at_risk_tickets_ids"], [self.delayed_ticket_id])
@@ -228,5 +229,6 @@ class FastStatsApiTests(DatabaseTestCase):
                 "at_risk_tickets_ids": [],
                 "idle_workers_ids": [],
                 "active_brigades_count": 0,
+                "avg_km_per_worker_per_day": 0.0,
             },
         )

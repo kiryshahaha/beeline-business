@@ -14,8 +14,6 @@ from datetime import datetime
 from unittest.mock import AsyncMock
 from zoneinfo import ZoneInfo
 
-os.environ.setdefault("DATABASE_URL", "postgresql://unused/isolated_test")
-
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 

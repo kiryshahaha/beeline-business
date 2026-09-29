@@ -25,7 +25,8 @@ export default function RoutePopup({
     <Popup
       longitude={coordinates[0]}
       latitude={coordinates[1]}
-      offset={16}
+      offset={28}
+      maxWidth="340px"
       closeButton
       closeOnClick={false}
       onClose={onClose}

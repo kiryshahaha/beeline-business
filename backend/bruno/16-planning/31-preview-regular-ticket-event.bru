@@ -1,0 +1,46 @@
+meta {
+  name: Предпросмотр обычного события T4
+  type: http
+  seq: 31
+}
+
+post {
+  url: {{base_url}}/api/v1/planning/areas/{{planning_service_area_id}}/2030-01-15/tickets/{{planning_event_regular_ticket_id}}/preview
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"base_day_revision":{{planning_day_revision}}}
+}
+
+assert {
+  res.status: eq 201
+  res.body.event.category: eq "repair"
+  res.body.event.outcome: eq "insertion_ready"
+}
+
+script:post-response {
+  if (res.getStatus() === 201 && res.getBody().plan) {
+    bru.setVar("planning_event_regular_plan_id", res.getBody().plan.plan_id);
+    bru.setVar("planning_event_regular_from_revision", res.getBody().plan.day_revision);
+    bru.setVar("planning_event_regular_event_id", res.getBody().event.source_event_id);
+  }
+}
+
+tests {
+  test("Обычная заявка получает локальный слот и объяснение дороги", () => {
+    const body = res.getBody();
+    expect(body.event.source_event_id).to.be.a("number");
+    expect(body.event.selected_slot.worker_id).to.be.a("number");
+    expect(body.event.road_contribution).to.have.property("added_travel_minutes");
+    expect(body.plan.replan_diff.from_revision).to.equal(bru.getVar("planning_day_revision"));
+    expect(body.plan.replan_diff.ticket_event.source_event_id)
+      .to.equal(body.event.source_event_id);
+    expect(body.plan.ticket_event.outcome).to.equal("insertion_ready");
+  });
+}

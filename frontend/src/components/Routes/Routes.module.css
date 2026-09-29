@@ -567,7 +567,7 @@
 .routeHoverTooltip {
   position: fixed;
   pointer-events: none;
-  z-index: 100;
+  z-index: 500;
   transform: translate(12px, -14px);
   padding: 6px 10px;
   border-radius: 8px;

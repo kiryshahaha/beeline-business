@@ -22,6 +22,9 @@ class SlotCandidate:
     estimated_arrival_at: datetime
     service_start_at: datetime
     service_end_at: datetime
+    travel_to_minutes: int
+    travel_from_minutes: int
+    replaced_travel_minutes: int
     added_travel_minutes: int
     shifted_visits_count: int
     proposed_state: dict
@@ -94,7 +97,7 @@ def find_regular_ticket_slot(
     for worker in candidate_workers:
         wid = worker["user_id"]
         w_skills = set(worker.get("skills") or [])
-        w_transport = worker.get("transport_type", "car")
+        w_transport = worker.get("transport_profile", worker.get("transport_type", "car"))
         w_appliances = worker.get("available_appliances") or {}
         shift_start = _parse_iso(worker["shift_start_at"])
         shift_end = _parse_iso(worker["shift_end_at"])
@@ -148,25 +151,30 @@ def find_regular_ticket_slot(
 
         worker_best_slot: SlotCandidate | None = None
         rejection_reasons_worker: list[str] = []
+        worker_office_location_id = worker.get("office_location_id", office_location_id)
 
         # 3. Test each insertion index from min_insertion_index to len(route_visits)
         num_existing = len(route_visits)
         for insert_idx in range(min_insertion_index, num_existing + 1):
             # Previous stop
             if insert_idx == 0:
-                prev_loc = office_location_id
+                prev_loc = worker_office_location_id
                 prev_finish_time = max(shift_start, now)
             else:
                 prev_v = route_visits[insert_idx - 1]
-                prev_loc = prev_v.get("location_id", office_location_id)
+                prev_loc = prev_v.get("location_id", worker_office_location_id)
                 prev_finish_time = _parse_iso(prev_v["service_end_at"])
+                if lifecycle_by_ticket.get(prev_v["ticket_id"]) == "completed":
+                    prev_finish_time = max(prev_finish_time, now)
+                elif safe_point["is_frozen"] and insert_idx == min_insertion_index:
+                    prev_finish_time = max(prev_finish_time, now)
 
             # Next stop
             if insert_idx < num_existing:
                 next_v = route_visits[insert_idx]
-                next_loc = next_v.get("location_id", office_location_id)
+                next_loc = next_v.get("location_id", worker_office_location_id)
             else:
-                next_loc = office_location_id
+                next_loc = worker_office_location_id
 
             # Leg 1: prev -> ticket
             travel_to = travel_time_fn(prev_loc, ticket_loc, w_transport)
@@ -196,7 +204,7 @@ def find_regular_ticket_slot(
 
             for idx in range(insert_idx, num_existing):
                 subsequent_v = route_visits[idx]
-                sub_loc = subsequent_v.get("location_id", office_location_id)
+                sub_loc = subsequent_v.get("location_id", worker_office_location_id)
                 sub_leg = travel_time_fn(current_sim_loc, sub_loc, w_transport)
                 sub_arr = current_sim_time + timedelta(minutes=sub_leg)
                 sub_win_start = _parse_iso(
@@ -237,6 +245,13 @@ def find_regular_ticket_slot(
                 current_sim_loc = sub_loc
 
             if not cascade_ok:
+                continue
+
+            return_leg = travel_time_fn(current_sim_loc, worker_office_location_id, w_transport)
+            if current_sim_time + timedelta(minutes=return_leg) > shift_end:
+                rejection_reasons_worker.append(
+                    f"pos_{insert_idx}: return to office exceeds shift end"
+                )
                 continue
 
             # Calculate added travel time: travel_to + travel_from - original_leg
@@ -310,6 +325,9 @@ def find_regular_ticket_slot(
                 estimated_arrival_at=arrival_at,
                 service_start_at=service_start,
                 service_end_at=service_end,
+                travel_to_minutes=travel_to,
+                travel_from_minutes=travel_from,
+                replaced_travel_minutes=orig_leg,
                 added_travel_minutes=added_travel,
                 shifted_visits_count=len(simulated_next_times),
                 proposed_state=proposed_state,

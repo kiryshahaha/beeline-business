@@ -1,16 +1,32 @@
 """Rules for anchoring a remaining-day route to execution facts."""
 
+import json
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from pathlib import Path
 
 from app.modules.planning.day_plans import build_replan_state
 from app.modules.planning.diagnostics import outcome
 from app.modules.planning.eligibility import worker_replan_anchor
 from app.modules.planning.errors import PlanningError
-from app.modules.planning.service import validate_replan_limits
+from app.modules.planning.schemas import ExperimentalWindowOverride
+from app.modules.planning.service import (
+    _ordinary_insert_ticket_ids,
+    _pin_existing_visits_for_ordinary_insert,
+    emergency_response_estimates,
+    snapshot_with_experimental_windows,
+    validate_replan_limits,
+)
 
 
 class ReplanningAnchorTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        path = (
+            Path(__file__).resolve().parents[2] / "data/planning/dynamic_replanning_scenarios.json"
+        )
+        cls.synthetic = json.loads(path.read_text(encoding="utf-8"))
+
     def test_worker_without_execution_events_starts_from_known_base_at_current_time(self):
         now = datetime(2026, 9, 27, 12, tzinfo=UTC)
 
@@ -35,7 +51,7 @@ class ReplanningAnchorTests(unittest.TestCase):
 
         self.assertEqual(anchor, {"location_id": 41, "available_at": eta, "reason": None})
 
-    def test_en_route_worker_keeps_the_in_flight_destination_as_future_anchor(self):
+    def test_en_route_worker_is_not_routed_before_the_active_stage_completes(self):
         now = datetime(2026, 9, 27, 12, tzinfo=UTC)
         eta = datetime(2026, 9, 27, 14, tzinfo=UTC)
 
@@ -46,12 +62,71 @@ class ReplanningAnchorTests(unittest.TestCase):
                 "current_destination_id": 75,
                 "expected_available_at": eta,
             },
-            {"planned_end_at": datetime(2026, 9, 27, 15, tzinfo=UTC)},
+            {
+                "planned_end_at": datetime(2026, 9, 27, 15, tzinfo=UTC),
+                "lifecycle_state": "en_route",
+            },
             now,
             default_location_id=5,
         )
 
-        self.assertEqual(anchor, {"location_id": 75, "available_at": eta, "reason": None})
+        self.assertEqual(
+            anchor,
+            {
+                "location_id": 75,
+                "available_at": eta,
+                "reason": "active_stage_not_completed",
+            },
+        )
+
+    def test_completed_worker_starts_from_confirmed_location_and_actual_time(self):
+        now = datetime(2026, 9, 27, 12, tzinfo=UTC)
+
+        anchor = worker_replan_anchor(
+            {
+                "current_ticket_id": None,
+                "last_location_id": 75,
+                "current_destination_id": None,
+            },
+            None,
+            now,
+            default_location_id=5,
+        )
+
+        self.assertEqual(anchor, {"location_id": 75, "available_at": now, "reason": None})
+
+    def test_synthetic_active_stage_cases_keep_worker_out_until_completion(self):
+        for case in self.synthetic["active_stage_cases"]:
+            with self.subTest(case=case["id"]):
+                if case["lifecycle_state"] == "completed":
+                    anchor = worker_replan_anchor(
+                        {
+                            "current_ticket_id": None,
+                            "last_location_id": case["last_location_id"],
+                        },
+                        None,
+                        datetime.fromisoformat(case["actual_completed_at"]),
+                        default_location_id=1,
+                    )
+                    self.assertIsNone(anchor["reason"])
+                    self.assertEqual(anchor["location_id"], case["expected_anchor_location_id"])
+                    self.assertEqual(anchor["available_at"].isoformat(), case["expected_anchor_at"])
+                else:
+                    anchor = worker_replan_anchor(
+                        {
+                            "current_ticket_id": 10,
+                            "last_location_id": 41,
+                            "current_destination_id": 75,
+                            "expected_available_at": datetime.fromisoformat(
+                                case["expected_available_at"]
+                            ),
+                        },
+                        {"lifecycle_state": case["lifecycle_state"]},
+                        datetime.fromisoformat(case["received_at"]),
+                        default_location_id=1,
+                    )
+                    self.assertFalse(case["expected_worker_eligible"])
+                    self.assertEqual(anchor["reason"], "active_stage_not_completed")
 
     def test_active_work_without_a_future_eta_is_not_scheduled_over(self):
         now = datetime(2026, 9, 27, 12, tzinfo=UTC)
@@ -148,6 +223,237 @@ class ReplanningStateTests(unittest.TestCase):
     def test_empty_outcome_remains_for_regular_preview_with_no_routes(self):
         self.assertEqual(outcome([], [{"ticket_id": 1}]), "empty")
         self.assertEqual(outcome([], []), "empty")
+
+    def test_experimental_windows_only_expand_a_copy_of_the_input(self):
+        snapshot = {
+            "tickets": [
+                {
+                    "id": 4,
+                    "visit_window_start": "2030-01-15T10:00:00+03:00",
+                    "visit_window_end": "2030-01-15T12:00:00+03:00",
+                }
+            ]
+        }
+        windows = [
+            ExperimentalWindowOverride(
+                ticket_id=4,
+                visit_window_start="2030-01-15T09:00:00+03:00",
+                visit_window_end="2030-01-15T14:00:00+03:00",
+            )
+        ]
+
+        scenario = snapshot_with_experimental_windows(snapshot, windows, date(2030, 1, 15))
+
+        self.assertEqual(snapshot["tickets"][0]["visit_window_start"], "2030-01-15T10:00:00+03:00")
+        self.assertEqual(scenario["tickets"][0]["visit_window_start"], "2030-01-15T09:00:00+03:00")
+        self.assertEqual(scenario["tickets"][0]["visit_window_end"], "2030-01-15T14:00:00+03:00")
+
+    def test_experiment_rejects_window_shrink_unknown_ticket_and_other_day(self):
+        snapshot = {
+            "tickets": [
+                {
+                    "id": 4,
+                    "visit_window_start": "2030-01-15T10:00:00+03:00",
+                    "visit_window_end": "2030-01-15T12:00:00+03:00",
+                }
+            ]
+        }
+        cases = (
+            ExperimentalWindowOverride(
+                ticket_id=4,
+                visit_window_start="2030-01-15T11:00:00+03:00",
+                visit_window_end="2030-01-15T13:00:00+03:00",
+            ),
+            ExperimentalWindowOverride(
+                ticket_id=9,
+                visit_window_start="2030-01-15T09:00:00+03:00",
+                visit_window_end="2030-01-15T14:00:00+03:00",
+            ),
+            ExperimentalWindowOverride(
+                ticket_id=4,
+                visit_window_start="2030-01-16T09:00:00+03:00",
+                visit_window_end="2030-01-16T14:00:00+03:00",
+            ),
+        )
+        expected = (
+            "experimental_window_must_only_expand",
+            "experimental_ticket_not_in_day",
+            "experimental_window_outside_day",
+        )
+        for override, code in zip(cases, expected, strict=True):
+            with self.subTest(code=code), self.assertRaises(PlanningError) as caught:
+                snapshot_with_experimental_windows(snapshot, [override], date(2030, 1, 15))
+            self.assertEqual(caught.exception.code, code)
+
+
+class OrdinaryInsertRulesTests(unittest.TestCase):
+    def test_area_backlog_created_before_the_published_revision_is_not_new_demand(self):
+        snapshot = {
+            "current_day_state": {
+                "visits": [{"ticket_id": 1}],
+                "unassigned_ticket_ids": [],
+                "area_scope_tickets": [
+                    {"id": 1, "assigned_worker_id": 10},
+                    {"id": 2, "assigned_worker_id": None},
+                ],
+            },
+            "tickets": [
+                {"id": 1, "category": "repair", "lifecycle_state": "assigned"},
+                {
+                    "id": 2,
+                    "category": "repair",
+                    "lifecycle_state": "waiting_assignment",
+                    "assigned_worker_id": None,
+                },
+            ],
+        }
+
+        self.assertIsNone(_ordinary_insert_ticket_ids(snapshot))
+
+    def test_request_absent_from_published_area_scope_is_new_demand(self):
+        snapshot = {
+            "current_day_state": {
+                "visits": [{"ticket_id": 1}],
+                "unassigned_ticket_ids": [],
+                "area_scope_tickets": [{"id": 1, "assigned_worker_id": 10}],
+            },
+            "tickets": [
+                {"id": 1, "category": "repair", "lifecycle_state": "assigned"},
+                {
+                    "id": 2,
+                    "category": "repair",
+                    "lifecycle_state": "waiting_assignment",
+                },
+            ],
+        }
+
+        self.assertEqual(_ordinary_insert_ticket_ids(snapshot), {2})
+
+    def test_new_manual_assignment_of_an_existing_request_is_new_demand(self):
+        snapshot = {
+            "current_day_state": {
+                "visits": [{"ticket_id": 1}],
+                "unassigned_ticket_ids": [],
+                "area_scope_tickets": [
+                    {"id": 1, "assigned_worker_id": 10},
+                    {"id": 2, "assigned_worker_id": None},
+                ],
+            },
+            "tickets": [
+                {"id": 1, "category": "repair", "lifecycle_state": "assigned"},
+                {
+                    "id": 2,
+                    "category": "repair",
+                    "lifecycle_state": "assigned",
+                    "assigned_worker_id": 11,
+                },
+            ],
+        }
+
+        self.assertEqual(_ordinary_insert_ticket_ids(snapshot), {2})
+
+    def test_new_regular_ticket_is_pinned_around_published_visits(self):
+        snapshot = {
+            "current_day_state": {
+                "visits": [
+                    {
+                        "ticket_id": 1,
+                        "worker_id": 10,
+                        "service_start_at": "2030-01-15T10:00:00+03:00",
+                    },
+                    {
+                        "ticket_id": 2,
+                        "worker_id": 10,
+                        "service_start_at": "2030-01-15T13:00:00+03:00",
+                    },
+                ],
+                "unassigned_ticket_ids": [],
+            },
+            "tickets": [
+                {"id": 1, "category": "repair", "lifecycle_state": "assigned"},
+                {"id": 2, "category": "repair", "lifecycle_state": "assigned"},
+                {"id": 7, "category": "repair", "lifecycle_state": "waiting_assignment"},
+            ],
+        }
+        self.assertEqual(_ordinary_insert_ticket_ids(snapshot), {7})
+        prepared = {
+            "epoch": datetime.fromisoformat("2030-01-15T06:00:00+00:00"),
+            "workers": [{"user_id": 10}],
+            "tickets": [
+                {"id": 1, "assigned_worker_id": 10, "allowed": [0], "window": (60, 60)},
+                {"id": 2, "assigned_worker_id": 10, "allowed": [0], "window": (240, 240)},
+                {"id": 7, "assigned_worker_id": None, "allowed": [0], "window": (120, 180)},
+            ],
+            "unassigned": [],
+        }
+
+        preserved = _pin_existing_visits_for_ordinary_insert(prepared, snapshot, {7})
+
+        self.assertEqual(preserved, {1, 2})
+        self.assertEqual(prepared["tickets"][0]["allowed"], [0])
+        self.assertEqual(prepared["tickets"][0]["window"], (60, 60))
+        self.assertEqual(prepared["tickets"][1]["window"], (240, 240))
+        self.assertEqual(prepared["tickets"][2]["window"], (120, 180))
+
+    def test_new_emergency_uses_emergency_replan_branch(self):
+        snapshot = {
+            "current_day_state": {"visits": [{"ticket_id": 1, "worker_id": 10}]},
+            "tickets": [
+                {"id": 1, "category": "repair", "lifecycle_state": "assigned"},
+                {"id": 7, "category": "emergency", "lifecycle_state": "waiting_assignment"},
+            ],
+        }
+
+        self.assertIsNone(_ordinary_insert_ticket_ids(snapshot))
+
+    def test_synthetic_emergency_response_cases_measure_from_received_at(self):
+        path = (
+            Path(__file__).resolve().parents[2] / "data/planning/dynamic_replanning_scenarios.json"
+        )
+        cases = json.loads(path.read_text(encoding="utf-8"))["response_cases"]
+        for index, case in enumerate(cases, start=1):
+            with self.subTest(case=case["id"]):
+                estimate = emergency_response_estimates(
+                    {
+                        "tickets": [
+                            {
+                                "id": index,
+                                "category": "emergency",
+                                "received_at": case["received_at"],
+                                "sla_deadline_at": case["service_deadline_at"],
+                            }
+                        ]
+                    },
+                    {
+                        "routes": [
+                            {
+                                "stops": [
+                                    {
+                                        "ticket_id": index,
+                                        "arrival_at": case["arrival_at"],
+                                        "service_start_at": case["service_start_at"],
+                                        "service_end_at": case["service_end_at"],
+                                    }
+                                ]
+                            }
+                        ],
+                        "unassigned": [],
+                    },
+                )[0]
+                self.assertEqual(
+                    estimate["reaction_to_arrival_minutes"], case["expected_arrival_minutes"]
+                )
+                self.assertEqual(
+                    estimate["reaction_to_service_start_minutes"],
+                    case["expected_service_start_minutes"],
+                )
+                self.assertEqual(
+                    estimate["within_60_minutes_to_arrival"], case["expected_within_60"]
+                )
+                self.assertEqual(
+                    estimate["within_120_minutes_to_arrival"], case["expected_within_120"]
+                )
+                self.assertEqual(estimate["service_deadline_met"], case["expected_deadline_met"])
 
 
 if __name__ == "__main__":

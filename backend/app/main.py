@@ -1,4 +1,5 @@
 """FastAPI entry point and module router registration."""
+# Geoapify config reload
 
 import asyncio
 from contextlib import asynccontextmanager

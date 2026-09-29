@@ -35,6 +35,94 @@ JWT пользователя или ключ Geoapify.
 Новые предложения записывают политику версии 2. Снимки версии 1 читаются и
 применяются с сохранёнными правилами, но заново через solver не рассчитываются.
 
+## Перепланирование в течение дня
+
+POST /api/v1/planning/areas/{service_area_id}/{route_date}/replan/preview применяет общую политику
+системы без клиентского переключателя. Без новой аварийной заявки текущая ревизия
+сохраняет исполнителя и точное обещанное время каждой незавершённой остановки;
+новые обычные заявки могут занять только допустимый промежуток. Если существующая
+остановка или новая заявка не помещается без изменения опубликованных визитов,
+preview отвечает 409 ordinary_insert_no_gap и не сохраняет план.
+
+Для события `NEW_TICKET` используется отдельная команда:
+`POST /api/v1/planning/areas/{service_area_id}/{route_date}/tickets/{ticket_id}/preview`.
+Тело содержит только текущую `base_day_revision`; передать режим нельзя. Backend берёт
+`category` и `request_type_hd` из сохранённой заявки: обычная категория вызывает локальный
+поиск слота, `emergency` запускает replan остатка дня. Для первой команды успешный ответ
+содержит `event.outcome="insertion_ready"`, выбранного исполнителя, позицию, времена и дорожную
+дельту вместе с `plan`. Если допустимого слота нет, API отвечает `201` с
+`event.outcome="not_insertable"`, причинами по кандидатам и `plan=null`; solver и apply
+не запускаются. У аварии доступны `emergency_replan_ready`, `waiting_safe_point`,
+`emergency_unassigned`, `sla_risk` и `sla_violation`.
+
+```http
+POST /api/v1/planning/areas/7/2030-01-15/tickets/481/preview
+Content-Type: application/json
+
+{"base_day_revision":12}
+```
+
+Пример успешного ответа:
+
+```json
+{
+  "event": {
+    "source_event_id": 905,
+    "event_type": "new_ticket",
+    "ticket_id": 481,
+    "category": "repair",
+    "request_type_hd": "ремонт",
+    "received_at": "2030-01-15T09:10:00+03:00",
+    "outcome": "insertion_ready",
+    "can_apply": true,
+    "selected_slot": {
+      "worker_id": 33,
+      "sequence": 2,
+      "arrival_at": "2030-01-15T10:04:00+03:00",
+      "service_start_at": "2030-01-15T10:10:00+03:00",
+      "service_end_at": "2030-01-15T10:40:00+03:00",
+      "service_minutes": 30
+    },
+    "road_contribution": {
+      "inbound_minutes": 4,
+      "outbound_minutes": 5,
+      "replaced_leg_minutes": 7,
+      "added_travel_minutes": 2,
+      "service_minutes": 30
+    },
+    "shifted_ticket_ids": [482],
+    "preserved_current_stage": [],
+    "candidate_reasons": [],
+    "sla_forecast": null,
+    "reason": null
+  },
+  "plan": {"plan_id": "<UUID>", "replan_diff": {"from_revision": 12}}
+}
+```
+
+The operator applies a ready plan with the existing
+`POST /api/v1/planning/plans/{plan_id}/apply`. Apply checks the base revision and complete
+input fingerprint in the same transaction that publishes the schedule and the source
+`NEW_TICKET` event link. A successful regular insertion uses revision reason
+`ticket_inserted`, while a scheduled emergency uses `emergency_replan`. A preview with
+`can_apply=false` returns `409 ticket_event_preview_not_applicable` if submitted to apply.
+
+Если появилась новая заявка категории emergency, существующий solver может
+перестроить только незамороженный остаток дня. Инженер в en_route или in_progress
+исключён из расчёта до события завершения текущей работы. Совместимый legacy endpoint
+redirect возвращает 409 active_route_redirect_forbidden; повтор не меняет состояние.
+Завершившийся инженер начинает остаток от подтверждённого адреса и времени.
+
+Replan diff включает оценку реакции на аварию от received_at: прибытие, начало и
+окончание работ, норматив 60/120 минут и выполнение service deadline. Это оценка
+плана, а не телеметрия.
+
+POST /api/v1/planning/areas/{service_area_id}/{route_date}/window-experiment
+считает базовый и расширенный варианты на одном снимке. Ответ помечен
+experimental=true и applied=false; операция не сохраняет preview/ревизию и не
+изменяет окно заявки. Изменение клиентского окна выполняется отдельно через
+execution API.
+
 ## Ограничения и целевая функция
 
 Планируются неназначенные заявки planned и ещё не начавшиеся смены. Смена каждого
@@ -195,7 +283,7 @@ Live smoke запускается только по запросу: `GEOAPIFY_LI
 |---|---|
 | `revision`, `previous_revision` | номер в рамках участка и дня и предыдущий номер |
 | `superseded_at`, `superseded_by_revision` | когда и какой ревизией заменена |
-| `reason` | `plan_applied`, `worker_redirected`, `manual_edit`, `event_replan` |
+| `reason` | `plan_applied`, `worker_redirected`, `manual_edit`, `event_replan`, `ticket_inserted`, `emergency_replan` |
 | `actor_id`, `event_id`, `plan_id` | кто применил, какое событие и какой preview |
 | `effective_at` | с какого момента ревизия действует |
 | `plan_state` | визиты `{ticket_id, worker_id, route_id, sequence, arrival_at, service_start_at, service_end_at}` и метрики |
@@ -247,7 +335,9 @@ endpoint отвечает `404 day_plan_not_found`, поскольку ему н
 Ответ содержит обычные маршруты и `replan_diff`: номер исходной ревизии, новые,
 удалённые, изменённые и неизменные визиты. Preview ничего не назначает. Диспетчер
 публикует его через `POST /api/v1/planning/plans/{plan_id}/apply`; атомарное применение
-создаёт одну ревизию с причиной `event_replan`. Повтор возвращает прежнюю квитанцию,
+создаёт одну ревизию с причиной `event_replan`. Preview новой заявки создаёт ревизию
+`ticket_inserted` или `emergency_replan` и связывает её с событием `NEW_TICKET`.
+Повтор возвращает прежнюю квитанцию,
 изменившаяся заявка, событие или ревизия дают `409 plan_stale` либо `409 day_revision_stale`.
 
 Завершённые, выполняемые и уже en_route визиты остаются в плане с прежними обещанными
@@ -343,4 +433,3 @@ replan, apply, ручное назначение и его предпросмо�
 опубликованных визитов; если восстановить нечего — `409 day_roster_unrecoverable`, весь
 участок не подставляется. Форс-мажорный вызов инженера вне состава отдельной операцией
 не реализован.
-

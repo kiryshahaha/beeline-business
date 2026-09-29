@@ -1,0 +1,27 @@
+meta {
+  name: Подготовить комплект заявки без слота T4
+  type: http
+  seq: 40
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets/{{planning_event_no_slot_ticket_id}}/appliances
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "appliance_id": {{planning_appliance_id}},
+    "quantity": 1,
+    "office_id": {{planning_office_id}}
+  }
+}
+
+assert {
+  res.status: eq 201
+}

@@ -32,6 +32,10 @@ from app.modules.planning.schemas import (
     PolicyRead,
     PreviewRequest,
     ReplanRequest,
+    TicketEventPreviewRead,
+    TicketEventPreviewRequest,
+    WindowExperimentRead,
+    WindowExperimentRequest,
 )
 from app.modules.routing.cache import GEOAPIFY_RESULT_CACHE
 from app.modules.routing.client import AsyncGeoapifyRoutingClient
@@ -213,8 +217,194 @@ async def preview_remainder(
 
 
 @router.post(
+    "/areas/{service_area_id}/{route_date}/tickets/{ticket_id}/preview",
+    status_code=201,
+    response_model=TicketEventPreviewRead,
+)
+async def preview_ticket_event(
+    service_area_id: int,
+    route_date: date,
+    ticket_id: int,
+    data: TicketEventPreviewRequest,
+    actor: Observer,
+    response: Response,
+    engine=Depends(get_planning_engine),
+    settings=Depends(planning_settings),
+    provider=Depends(get_provider_factory),
+    planner=Depends(get_planner_client),
+    clock=Depends(get_clock),
+):
+    """Preview one new-ticket event using the category already classified by the server."""
+    if not _preview_slots.acquire(blocking=False):
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "planning_busy"},
+            headers={"Retry-After": "5"},
+        )
+    try:
+        with oplog.operation(
+            "planning.ticket_event_preview",
+            route_date=route_date,
+            service_area_id=service_area_id,
+            ticket_id=ticket_id,
+            base_day_revision=data.base_day_revision,
+        ) as fields:
+            request, snapshot, event_data = await asyncio.to_thread(
+                service.read_ticket_event_snapshot,
+                engine,
+                service_area_id,
+                route_date,
+                ticket_id,
+                data,
+                execution_policy(settings),
+                max_tickets=settings.planning_max_tickets,
+                max_workers=settings.planning_max_workers,
+            )
+            event_policy = service.ticket_event_policy(event_data["category"])
+            if event_policy == "emergency_replan":
+                result = await service.preview(
+                    engine,
+                    request,
+                    actor.id,
+                    settings,
+                    provider,
+                    planner,
+                    clock,
+                    snapshot_override=snapshot,
+                    ticket_event=event_data,
+                )
+            else:
+                insertion, prepared, rejection = await service.find_regular_ticket_insertion(
+                    snapshot, ticket_id, settings, provider, clock
+                )
+                if insertion is None or insertion.selected is None:
+                    reasons = []
+                    if rejection:
+                        reasons = [
+                            {"worker_id": item["worker_id"], "reason": item["reason"]}
+                            for item in rejection.get("candidates", [])
+                        ]
+                    if insertion is not None:
+                        reasons.extend(
+                            {"worker_id": worker_id, "reason": reason}
+                            for worker_id, reason in insertion.candidate_reasons.items()
+                        )
+                    if not reasons and rejection:
+                        reasons.append({"reason": rejection["reason"]})
+                    lifecycle_by_ticket = {
+                        item["id"]: item["lifecycle_state"]
+                        for item in snapshot["area_scope"]["tickets"]
+                    }
+                    event_result = {
+                        **event_data,
+                        "outcome": "not_insertable",
+                        "can_apply": False,
+                        "candidate_reasons": reasons,
+                        "shifted_ticket_ids": [],
+                        "preserved_current_stage": [
+                            visit
+                            for visit in snapshot["current_day_state"].get("visits", [])
+                            if lifecycle_by_ticket.get(visit["ticket_id"])
+                            in {"en_route", "in_progress"}
+                        ],
+                        "reason": (
+                            rejection.get("reason", {}).get("code")
+                            if rejection
+                            else "no_feasible_slot"
+                        ),
+                    }
+                    fields.update(event_outcome="not_insertable", plan_id=None)
+                    return {"event": event_result, "plan": None}
+                result = await service.preview(
+                    engine,
+                    request,
+                    actor.id,
+                    settings,
+                    provider,
+                    planner,
+                    clock,
+                    snapshot_override=snapshot,
+                    ticket_event=event_data,
+                    event_insertion=insertion,
+                )
+            fields.update(
+                event_outcome=result["ticket_event"]["outcome"], plan_id=result["plan_id"]
+            )
+        response.headers["Location"] = f"/api/v1/planning/plans/{result['plan_id']}"
+        return {"event": result["ticket_event"], "plan": result}
+    except (PlanningError, OperationalError) as error:
+        fail(error)
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail={"code": "planning_timeout"})
+    finally:
+        _preview_slots.release()
+
+
+@router.post(
+    "/areas/{service_area_id}/{route_date}/window-experiment",
+    response_model=WindowExperimentRead,
+)
+async def compare_window_experiment(
+    service_area_id: int,
+    route_date: date,
+    data: WindowExperimentRequest,
+    actor: Observer,
+    engine=Depends(get_planning_engine),
+    settings=Depends(planning_settings),
+    provider=Depends(get_provider_factory),
+    planner=Depends(get_planner_client),
+    clock=Depends(get_clock),
+):
+    if not _preview_slots.acquire(blocking=False):
+        raise HTTPException(503, detail={"code": "planning_busy"}, headers={"Retry-After": "5"})
+    try:
+        with oplog.operation(
+            "planning.window_experiment",
+            route_date=route_date,
+            service_area_id=service_area_id,
+            base_day_revision=data.base_day_revision,
+            overridden_tickets=len(data.windows),
+        ) as fields:
+            request, snapshot = await asyncio.to_thread(
+                service.read_replan_snapshot,
+                engine,
+                service_area_id,
+                route_date,
+                data,
+                execution_policy(settings),
+                max_tickets=settings.planning_max_tickets,
+                max_workers=settings.planning_max_workers,
+            )
+            result = await service.compare_window_experiment(
+                engine,
+                request,
+                data.windows,
+                actor.id,
+                settings,
+                provider,
+                planner,
+                clock,
+                snapshot=snapshot,
+            )
+            metrics = result["experiment"].get("metrics") or {}
+            oplog.merge_stages((metrics.get("routing") or {}).get("stages"))
+            fields.update(
+                plan_outcome=result["experiment"]["outcome"],
+                baseline_outcome=result["baseline"]["outcome"],
+            )
+        return result
+    except (PlanningError, OperationalError) as error:
+        fail(error)
+    except TimeoutError:
+        raise HTTPException(504, detail={"code": "planning_timeout"})
+    finally:
+        _preview_slots.release()
+
+
+@router.post(
     "/days/{service_area_id}/{route_date}/redirect",
     response_model=WorkerDayStateRead,
+    description="Deprecated compatibility endpoint. Active travel cannot be redirected.",
 )
 def redirect_worker(
     service_area_id: int,
@@ -248,7 +438,7 @@ def redirect_worker(
     except day_state.ServiceAreaNotFound as error:
         raise HTTPException(404, detail="Зона обслуживания не найдена") from error
     except day_state.UnsafeRedirect as error:
-        raise HTTPException(422, detail=str(error)) from error
+        raise HTTPException(409, detail={"code": error.code}) from error
 
 
 @router.get("/plans/{plan_id}", response_model=PlanRead, response_model_exclude_unset=True)

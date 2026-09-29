@@ -1,17 +1,18 @@
-import styles from "./TicketsStatuses.module.css"
+import React from "react";
+import styles from "./TicketsStatuses.module.css";
 
-const Status = ({ label, count, variant, onClick, isInteractive, isInactive }) => {
+const Status = ({ label, count, variant, onClick, isInactive = false, isInteractive = true }) => {
     return (
         <div 
             className={`
                 ${styles.statusContainer} 
-                ${styles[variant]} 
+                ${styles[variant] || ""} 
                 ${isInteractive ? styles.interactive : ""} 
                 ${isInactive ? styles.inactive : ""}
             `}
             onClick={(e) => {
-                if (onClick && isInteractive) {
-                    e.stopPropagation(); // Чтобы клик по таблетке не закрывал/открывал общую плашку
+                if (onClick) {
+                    e.stopPropagation();
                     onClick();
                 }
             }}

@@ -1,6 +1,8 @@
 "use client";
-
+import { useState, useEffect } from "react";
 import { Popup } from "@vis.gl/react-maplibre";
+import { useQueryClient } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/apiFetch";
 import styles from "../MapComponent.module.css";
 import routeStyles from "../Routes/Routes.module.css";
 import { IconPin } from "../Markers/MapIcons";
@@ -18,13 +20,25 @@ export default function WorkerPopup({
   onSelectRoute,
   onClose,
 }) {
+  const queryClient = useQueryClient();
+  const initialOnline = Boolean(worker?.worker_profile?.is_on_line);
+  const [isOnLine, setIsOnLine] = useState(initialOnline);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setIsOnLine(Boolean(worker?.worker_profile?.is_on_line));
+      setErrorMessage(null);
+    });
+  }, [worker]);
+
   if (!worker || !worker.location) return null;
 
   const fullName = [worker.surname, worker.name, worker.lastname]
     .filter(Boolean)
     .join(" ");
 
-  const isOnline = worker.worker_profile?.is_on_line;
   const transportKey = worker.worker_profile?.transport_type || "car";
   const transportName = TRANSPORT_NAMES[transportKey] || transportKey;
 
@@ -34,11 +48,42 @@ export default function WorkerPopup({
       .join(", ")
   ) || "Адрес базирования не указан";
 
+  const handleToggleLineStatus = async (e) => {
+    e.stopPropagation();
+    if (isUpdating) return;
+    setIsUpdating(true);
+    setErrorMessage(null);
+
+    const targetStatus = !isOnLine;
+    try {
+      const res = await apiFetch(`/workers/${worker.id}/line-status`, {
+        method: "PUT",
+        body: JSON.stringify({ is_on_line: targetStatus }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || "Не удалось изменить статус мастера");
+      }
+
+      setIsOnLine(targetStatus);
+      // Инвалидируем кэш для обновления маркеров на карте
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["workers"] });
+      queryClient.invalidateQueries({ queryKey: ["fast-stats"] });
+    } catch (err) {
+      setErrorMessage(err.message || "Ошибка обновления");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <Popup
       longitude={worker.location.longitude}
       latitude={worker.location.latitude}
-      offset={16}
+      offset={28}
+      maxWidth="340px"
       closeButton
       closeOnClick={false}
       onClose={onClose}
@@ -46,17 +91,23 @@ export default function WorkerPopup({
       <div className={styles.geoPopup}>
         <div className={styles.popupHeader}>
           <span className={styles.popupEyebrow}>Инженер</span>
-          <span
-            className={styles.status}
-            style={{
-              background: isOnline ? "rgba(48, 209, 88, 0.18)" : "rgba(255, 255, 255, 0.08)",
-              color: isOnline ? "#30D158" : "rgba(255, 255, 255, 0.6)",
-              border: isOnline ? "1px solid rgba(48, 209, 88, 0.3)" : "1px solid rgba(255, 255, 255, 0.12)",
-            }}
+          <button
+            type="button"
+            className={`${styles.lineStatusToggleBtn} ${isOnLine ? styles.lineStatusOnline : styles.lineStatusOffline}`}
+            onClick={handleToggleLineStatus}
+            disabled={isUpdating}
+            title={isOnLine ? "Нажмите, чтобы снять с линии" : "Нажмите, чтобы вывести на линию"}
           >
-            {isOnline ? "На линии" : "Офлайн"}
-          </span>
+            <span
+              className={styles.statusIndicatorDot}
+              style={{ background: isOnLine ? "#30D158" : "rgba(255, 255, 255, 0.4)" }}
+            />
+            <span>{isUpdating ? "Обновление..." : isOnLine ? "На линии" : "Офлайн"}</span>
+          </button>
         </div>
+        {errorMessage && (
+          <div className={styles.actionErrorMsg}>{errorMessage}</div>
+        )}
 
         <h3 className={styles.popupTitle}>{fullName}</h3>
         <p className={styles.popupAddress}>

@@ -101,6 +101,7 @@ def get_fast_stats(
                 at_risk_tickets_ids=[],
                 idle_workers_ids=[],
                 active_brigades_count=0,
+                avg_km_per_worker_per_day=0.0,
             )
 
     data = repository.find_fast_stats(

@@ -467,6 +467,44 @@ def find_fast_stats(
         SELECT COUNT(DISTINCT b.id) AS active_count
         FROM brigades b
         {scope_cond_brigades}
+    ),
+    worker_daily_km AS (
+        SELECT
+            COALESCE(AVG(daily_km), 0) AS avg_km
+        FROM (
+            SELECT
+                r.worker_id,
+                r.route_date,
+                SUM(seg_km) AS daily_km
+            FROM routes r
+            CROSS JOIN LATERAL (
+                SELECT SUM(
+                    6371.0 * 2 * ASIN(LEAST(1, SQRT(
+                        POWER(SIN(RADIANS(
+                            (coords_next.pt->>1)::float - (coords_cur.pt->>1)::float
+                        ) / 2), 2)
+                        + COS(RADIANS((coords_cur.pt->>1)::float))
+                        * COS(RADIANS((coords_next.pt->>1)::float))
+                        * POWER(SIN(RADIANS(
+                            (coords_next.pt->>0)::float - (coords_cur.pt->>0)::float
+                        ) / 2), 2)
+                    )))
+                ) AS seg_km
+                FROM jsonb_array_elements(r.geojson->'features') AS feat(f)
+                CROSS JOIN LATERAL jsonb_array_elements(f->'geometry'->'coordinates')
+                    WITH ORDINALITY AS coords_cur(pt, idx)
+                CROSS JOIN LATERAL (
+                    SELECT elem AS pt
+                    FROM jsonb_array_elements(f->'geometry'->'coordinates')
+                        WITH ORDINALITY AS t(elem, ord)
+                    WHERE t.ord = coords_cur.idx + 1
+                ) AS coords_next
+                WHERE f->'properties'->>'kind' = 'path'
+                  AND jsonb_typeof(f->'geometry'->'coordinates') = 'array'
+            ) AS path_dist
+            WHERE r.route_date >= CURRENT_DATE - INTERVAL '14 days'
+            GROUP BY r.worker_id, r.route_date
+        ) AS per_worker_day
     )
     SELECT 
         ts.total_today,
@@ -476,10 +514,12 @@ def find_fast_stats(
         ts.at_risk_ids,
         iw.idle_count,
         iw.idle_ids,
-        ab.active_count
+        ab.active_count,
+        wdk.avg_km
     FROM ticket_stats ts
     CROSS JOIN idle_workers iw
-    CROSS JOIN active_brigades ab;
+    CROSS JOIN active_brigades ab
+    CROSS JOIN worker_daily_km wdk;
     """
 
     row = session.execute(text(query), parameters).mappings().one()
@@ -496,4 +536,5 @@ def find_fast_stats(
         "at_risk_tickets_ids": list(row["at_risk_ids"] or []),
         "idle_workers_ids": list(row["idle_ids"] or []),
         "active_brigades_count": row["active_count"],
+        "avg_km_per_worker_per_day": round(float(row["avg_km"]), 1),
     }
