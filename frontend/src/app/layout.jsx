@@ -20,15 +20,19 @@ export const metadata = {
 };
 
 
+import { ThemeProvider } from "@/providers/ThemeProvider";
+
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html lang="ru" data-theme="dark" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body>
         {/* Кастомный провайдер без него не сделать запросы TQ */}
         <QueryProvider>
           <AuthProvider>
-            {children}
-            <LayoutBar />
+            <ThemeProvider>
+              {children}
+              <LayoutBar />
+            </ThemeProvider>
           </AuthProvider>
         </QueryProvider>
       </body>

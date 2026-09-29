@@ -24,30 +24,41 @@ export const BrigadesPanel = ({
     const [selectedOfficeId, setSelectedOfficeId] = React.useState(null);
     const filterRef = React.useRef(null);
     const [localSelectedBrigade, setLocalSelectedBrigade] = React.useState(null);
-    const activeBrigade = selectedBrigade || localSelectedBrigade;
+    const activeBrigade = selectedBrigade ?? localSelectedBrigade;
 
-    // Reset brigade and worker filter when BrigadesPanel unmounts
+    const callbacksRef = React.useRef({ onSelectBrigade, onSelectWorker });
     React.useEffect(() => {
-        return () => {
-            onSelectBrigade?.(null);
-            onSelectWorker?.(null);
-        };
+        callbacksRef.current = { onSelectBrigade, onSelectWorker };
     }, [onSelectBrigade, onSelectWorker]);
 
+    // Reset brigade and worker filter only when BrigadesPanel unmounts
+    React.useEffect(() => {
+        return () => {
+            callbacksRef.current.onSelectBrigade?.(null);
+            callbacksRef.current.onSelectWorker?.(null);
+        };
+    }, []);
+
     const handleSelectBrigade = (brigade) => {
-        setLocalSelectedBrigade(brigade);
+        if (!onSelectBrigade) {
+            setLocalSelectedBrigade(brigade);
+        }
         onSelectBrigade?.(brigade);
         onSelectWorker?.(null);
     };
 
     const handleBack = () => {
-        setLocalSelectedBrigade(null);
+        if (!onSelectBrigade) {
+            setLocalSelectedBrigade(null);
+        }
         onSelectBrigade?.(null);
         onSelectWorker?.(null);
     };
 
     const handleClose = (e) => {
-        setLocalSelectedBrigade(null);
+        if (!onSelectBrigade) {
+            setLocalSelectedBrigade(null);
+        }
         onSelectBrigade?.(null);
         onSelectWorker?.(null);
         onClose?.(e);
