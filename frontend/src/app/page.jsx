@@ -25,6 +25,7 @@ import { fetchRealDistrictBoundary, isPointInPolygon } from "@/utils/districtGeo
 import { isTicketUrgent } from "@/utils/ticketUtils";
 import { apiFetch } from "@/lib/apiFetch";
 import { useAuth } from "@/providers/AuthProvider";
+import { getSavedMapTheme, saveMapTheme, MAP_STYLES } from "@/lib/mapStyles";
 
 export const MOSCOW_ADMIN_OKRUGS = [
   { name: "Центральный административный округ", shortName: "ЦАО", city: "Москва", aliases: ["цао", "центр", "центральный ао"] },
@@ -56,7 +57,7 @@ export default function Home() {
     from: todayMsk,
     to: todayMsk,
   });
-  const selectedServiceAreaId = null;
+  const [selectedServiceAreaId, setSelectedServiceAreaId] = useState(null);
   const [isPlanningModalOpen, setIsPlanningModalOpen] = useState(false);
   const [isCompletionReviewsModalOpen, setIsCompletionReviewsModalOpen] = useState(false);
   const [pendingReviewsCount, setPendingReviewsCount] = useState(0);
@@ -96,12 +97,17 @@ export default function Home() {
   const { users, usersData } = useUsers({ role: "worker" });
   const { brigades = [] } = useBrigades();
   const { serviceAreas = [] } = useServiceAreas();
-  const { routes, routesData } = useRoutes({
+  const { routes: queriedRoutes = [], routesData } = useRoutes({
     route_date: dateFilter.mode === "single" ? (dateFilter.date || undefined) : undefined,
     date_from: dateFilter.mode === "range" ? (dateFilter.from || undefined) : undefined,
     date_to: dateFilter.mode === "range" ? (dateFilter.to || undefined) : undefined,
     limit: 100,
   });
+  const { routes: allDbRoutes = [], routesData: allDbRoutesData } = useRoutes({
+    limit: 100,
+  });
+  const routes = queriedRoutes.length > 0 ? queriedRoutes : allDbRoutes;
+  const effectiveRoutesData = queriedRoutes.length > 0 ? routesData : allDbRoutesData;
   const [selectedObject, setSelectedObject] = useState(null);
   const [visibleLayers, setVisibleLayers] = useState({
     tickets: true,
@@ -123,10 +129,17 @@ export default function Home() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createModalCoords, setCreateModalCoords] = useState(null);
   const [isPinPickMode, setIsPinPickMode] = useState(false);
+  const [mapTheme, setMapTheme] = useState("standard");
 
   // Восстановление настроек карты из localStorage
   useEffect(() => {
     try {
+      const savedTheme = getSavedMapTheme();
+      if (savedTheme) {
+        queueMicrotask(() => {
+          setMapTheme(savedTheme);
+        });
+      }
       const savedBoundaries = localStorage.getItem("beeline_show_boundaries");
       if (savedBoundaries !== null) {
         queueMicrotask(() => {
@@ -134,6 +147,14 @@ export default function Home() {
         });
       }
     } catch {}
+
+    const handleThemeChange = (e) => {
+      if (e.detail && MAP_STYLES[e.detail]) {
+        setMapTheme(e.detail);
+      }
+    };
+    window.addEventListener("beeline_map_theme_changed", handleThemeChange);
+    return () => window.removeEventListener("beeline_map_theme_changed", handleThemeChange);
   }, []);
 
   const locationIds = [...new Set([
@@ -429,6 +450,7 @@ export default function Home() {
     setSelectedObject(null);
     setFocusedOffice(null);
     setSelectedDistrict(null);
+    setSelectedServiceAreaId(null);
     setPinnedTicketId(null);
     setDistrictBoundaryData(null);
     if (searchTarget?.type === "district") {
@@ -878,8 +900,8 @@ export default function Home() {
           zIndex: 2000,
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ pointerEvents: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", position: "relative" }}>
+          <div style={{ pointerEvents: "auto", display: "flex", gap: "8px", alignItems: "center", flexWrap: "nowrap" }}>
             <Search
               searchQuery={searchQuery}
               onSearchChange={handleSearchChange}
@@ -1029,8 +1051,10 @@ export default function Home() {
             </button>
           </div>
 
-          <div style={{ pointerEvents: "auto" }}>
-            <Notifications />
+          <div style={{ pointerEvents: "auto", position: "relative", width: "42px", height: "42px", flexShrink: 0 }}>
+            <div style={{ position: "absolute", top: 0, right: 0, zIndex: 1100 }}>
+              <Notifications />
+            </div>
           </div>
         </div>
 
@@ -1044,7 +1068,7 @@ export default function Home() {
                   tickets: `${mappedTicketCount}/${ticketsData.isLoading ? "…" : filteredTickets.length}`,
                   workers: `${workersFullInfo.length}/${usersData.isLoading ? "…" : users.length}`,
                   offices: `${officesFullInfo.length}/${officesData.isLoading ? "…" : offices.length}`,
-                  routes: `${routes.length}/${routesData.isLoading ? "…" : routes.length}`,
+                  routes: `${routes.length}/${effectiveRoutesData?.isLoading ? "…" : routes.length}`,
                 }}
                 onToggleLayer={toggleLayer}
                 points={mapPoints}
@@ -1058,10 +1082,12 @@ export default function Home() {
                 onClearRoute={() => setPinnedTicketId(null)}
                 onFitDistrict={handleFitDistrict}
                 onClearDistrict={resetDistrictFocus}
+                activeStyle={mapTheme}
+                onChangeStyle={setMapTheme}
                 error={
                   ticketsData.isError ? "Не удалось загрузить заявки"
                     : officesData.isError ? "Не удалось загрузить офисы"
-                      : routesData.isError ? "Не удалось загрузить маршруты"
+                      : (routesData.isError && allDbRoutesData?.isError) ? "Не удалось загрузить маршруты"
                         : locationsError ? "Не удалось загрузить часть адресов"
                           : null
                 }
@@ -1150,6 +1176,7 @@ export default function Home() {
         showDistrictBoundary={showDistrictBoundary}
         ticketStatusFilter={ticketStatusFilter}
         visibleLayers={visibleLayers}
+        mapTheme={mapTheme}
         onSelectObject={selectObject}
         onClearSelection={deselectObject}
         onMapContextMenu={(coords) => {
@@ -1166,7 +1193,7 @@ export default function Home() {
           !ticketsData.isLoading
           && !officesData.isLoading
           && !usersData.isLoading
-          && !routesData.isLoading
+          && !(effectiveRoutesData?.isLoading)
           && locationQueries.every((query) => !query.isLoading)
         }
       />

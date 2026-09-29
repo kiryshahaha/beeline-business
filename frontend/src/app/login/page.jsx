@@ -34,7 +34,18 @@ export default function LoginPage() {
 
       const data = await res.json();
       login(data.access_token);
-      router.push("/");
+      let role = null;
+      try {
+        const payload = JSON.parse(atob(data.access_token.split(".")[1]));
+        role = payload.role;
+      } catch {
+        // fallback
+      }
+      if (role === "worker") {
+        router.push("/worker");
+      } else {
+        router.push("/");
+      }
     } catch (err) {
       setError(err.message);
     } finally {

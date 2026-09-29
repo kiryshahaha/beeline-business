@@ -1,0 +1,153 @@
+.bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.errorAlert {
+  background: var(--danger-bg, rgba(255, 69, 58, 0.15));
+  border: 1px solid var(--danger, #ff453a);
+  color: var(--danger, #ff453a);
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.closeAlertBtn {
+  background: none;
+  border: none;
+  color: var(--danger, #ff453a);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+}
+
+.pendingBadge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--warning-bg, rgba(251, 191, 36, 0.12));
+  border: 1px solid var(--warning, #fbbf24);
+  color: var(--warning, #fbbf24);
+  padding: 12px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.badgePulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning, #fbbf24);
+  flex-shrink: 0;
+}
+
+.terminalBadge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card-subtle, #242427);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  color: var(--text-muted, #94a3b8);
+  padding: 12px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.actionsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.secondaryRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.secondaryBtn {
+  background: var(--bg-card-subtle, #242427);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  color: var(--text-secondary, #cbd5e1);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 11px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.secondaryBtn:hover {
+  background: var(--bg-card-hover, #252528);
+  color: var(--text-primary, #ffffff);
+}
+
+.secondaryBtn:active {
+  transform: scale(0.98);
+}
+
+.problemBtn:hover,
+.problemBtn:active {
+  border-color: var(--danger, #ff453a);
+  color: var(--danger, #ff453a);
+}
+
+.primaryBtn {
+  width: 100%;
+  min-height: 48px;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+  user-select: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.primaryBtn:hover {
+  opacity: 0.92;
+}
+
+.primaryBtn:active {
+  transform: scale(0.98);
+}
+
+.primaryBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.startRouteBtn {
+  background: var(--beeline, #ffc800);
+  color: #000000;
+}
+
+.startWorkBtn {
+  background: var(--accent-blue, #38bdf8);
+  color: #000000;
+}
+
+.completeBtn {
+  background: var(--success, #34d399);
+  color: #000000;
+}

@@ -7,6 +7,7 @@ import styles from "./LayoutBar.module.css";
 const icons = [
   { id: "map", src: "/icons/icon-map.svg", alt: "Карта", href: "/" },
   { id: "list", src: "/icons/icon-list.svg", alt: "Заявки", href: "/dashboard" },
+  { id: "dispatch", src: "/icons/icon-dispatch.svg", alt: "Распределение", href: "/dispatch" },
   { id: "settings", src: "/icons/icon-settings.svg", alt: "Настройки", href: "/settings" },
 ];
 
@@ -14,7 +15,7 @@ const LayoutBar = () => {
   const pathname = usePathname();
   const router = useRouter();
 
-  if (pathname === "/login") return null;
+  if (pathname === "/login" || pathname?.startsWith("/worker")) return null;
 
   const activeIndex = icons.findIndex(icon => pathname === icon.href);
   const safeIndex = activeIndex === -1 ? 0 : activeIndex;

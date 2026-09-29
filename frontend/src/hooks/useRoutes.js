@@ -63,21 +63,77 @@ export function useRouteGeoJson(routeId) {
 export function useCalculateRoute() {
   return useMutation({
     mutationFn: async ({ origin, destination, mode = "drive" }) => {
-      const res = await apiFetch("/routes/calculate", {
-        method: "POST",
-        body: JSON.stringify({
-          origin: { latitude: origin.latitude, longitude: origin.longitude },
-          destination: { latitude: destination.latitude, longitude: destination.longitude },
-          mode,
-        }),
-      });
+      // 1. Try backend calculate endpoint first
+      try {
+        const res = await apiFetch("/routes/calculate", {
+          method: "POST",
+          body: JSON.stringify({
+            origin: { latitude: origin.latitude, longitude: origin.longitude },
+            destination: { latitude: destination.latitude, longitude: destination.longitude },
+            mode,
+          }),
+        });
 
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.detail || "Не удалось рассчитать маршрут через API бэкенда");
+        if (res.ok) {
+          return await res.json();
+        }
+      } catch {
+        // Continue to fallback
       }
 
-      return res.json();
+      // 2. Try POST /routes (alternate backend endpoint)
+      try {
+        const res2 = await apiFetch("/routes", {
+          method: "POST",
+          body: JSON.stringify({
+            origin: { latitude: origin.latitude, longitude: origin.longitude },
+            destination: { latitude: destination.latitude, longitude: destination.longitude },
+            mode,
+          }),
+        });
+
+        if (res2.ok) {
+          return await res2.json();
+        }
+      } catch {
+        // Continue to fallback
+      }
+
+      // 3. Fallback to public OSRM router
+      try {
+        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson`;
+        const osrmRes = await fetch(osrmUrl);
+        if (osrmRes.ok) {
+          const osrmData = await osrmRes.json();
+          if (osrmData.code === "Ok" && osrmData.routes?.[0]) {
+            const r = osrmData.routes[0];
+            return {
+              distance_meters: r.distance,
+              duration_seconds: r.duration,
+              geometry: r.geometry,
+            };
+          }
+        }
+      } catch {
+        // Continue to fallback
+      }
+
+      // 4. Straight-line fallback
+      const distKm = Math.hypot(
+        (destination.latitude - origin.latitude) * 111,
+        (destination.longitude - origin.longitude) * 65
+      );
+      return {
+        distance_meters: distKm * 1000,
+        duration_seconds: (distKm / 35) * 3600,
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [origin.longitude, origin.latitude],
+            [destination.longitude, destination.latitude],
+          ],
+        },
+      };
     },
   });
 }

@@ -21,6 +21,15 @@
     animation: iosScaleBounce 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 
+.container.directionUp {
+    flex-direction: column-reverse;
+    transform-origin: bottom left;
+}
+
+.container.directionUp.open {
+    transform-origin: bottom left;
+}
+
 @keyframes iosScaleBounce {
     0% { transform: scale(1); }
     50% { transform: scale(1.015); }
@@ -39,6 +48,15 @@
 
 .container.open .header {
     padding-right: 16px;
+}
+
+.container.directionUp .header,
+.container.directionUp.open .header {
+    padding-right: 0;
+}
+
+.container.directionUp .bodyContent {
+    padding: 8px 8px 0 8px;
 }
 
 .bodyWrapper {
