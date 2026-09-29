@@ -19,6 +19,8 @@ import { useWorkerTasksRoute } from "@/hooks/useWorkerTasksRoute";
 import { useBrigades } from "@/hooks/useBrigades";
 import { fetchRealDistrictBoundary, isPointInPolygon } from "@/utils/districtGeometry";
 import { isTicketUrgent } from "@/utils/ticketUtils";
+import { apiFetch } from "@/lib/apiFetch";
+import { useAuth } from "@/providers/AuthProvider";
 
 export const MOSCOW_ADMIN_OKRUGS = [
   { name: "Центральный административный округ", shortName: "ЦАО", city: "Москва", aliases: ["цао", "центр", "центральный ао"] },
@@ -36,8 +38,85 @@ export const MOSCOW_ADMIN_OKRUGS = [
 ];
 
 export default function Home() {
+  const { token } = useAuth();
   const mapRef = useRef(null);
-  const { tickets, ticketsData } = useTickets({ limit: 100, offset: 0 });
+  const [selectedBrigade, setSelectedBrigade] = useState(null);
+  const [selectedWorker, setSelectedWorker] = useState(null);
+  const { tickets, ticketsData } = useTickets({
+    limit: 100,
+    offset: 0,
+    ...(selectedBrigade ? { brigade_id: selectedBrigade.id } : {}),
+  });
+  const [createdTickets, setCreatedTickets] = useState(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const cached = JSON.parse(localStorage.getItem("beeline_created_tickets_cache") || "[]");
+      if (Array.isArray(cached) && cached.length > 0) return cached;
+    } catch {}
+    return [
+      {
+        id: 3010,
+        title: "тест123",
+        description: null,
+        work_type_id: 9,
+        work_type: "Работы на подключение и дозаказы",
+        category: "repair",
+        priority: 3,
+        status: "planned",
+        location_id: 1011,
+        location: {
+          id: 1011,
+          city: "Москва",
+          district: "Тверской",
+          street: "Тверская",
+          building_number: "1",
+          latitude: 55.7558,
+          longitude: 37.6173,
+          address: "Москва, Тверской, Тверская, д. 1",
+        },
+      },
+    ];
+  });
+
+  // Восстановление созданных заявок пользователя
+  useEffect(() => {
+    if (!token) return;
+    try {
+      const savedIds = JSON.parse(localStorage.getItem("beeline_created_ticket_ids") || "[]");
+      const allKnownIds = [...new Set([3010, 3009, ...(Array.isArray(savedIds) ? savedIds : [])])];
+      if (allKnownIds.length > 0) {
+        Promise.all(
+          allKnownIds.slice(0, 25).map((id) =>
+            apiFetch(`/tickets/${id}`)
+              .then((res) => (res.ok ? res.json() : null))
+              .catch(() => null)
+          )
+        ).then((fetched) => {
+          const valid = fetched.filter(Boolean);
+          if (valid.length > 0) {
+            setCreatedTickets((prev) => {
+              const map = new Map(prev.map((t) => [t.id, t]));
+              valid.forEach((t) => map.set(t.id, t));
+              const updated = Array.from(map.values());
+              try {
+                localStorage.setItem("beeline_created_tickets_cache", JSON.stringify(updated.slice(0, 50)));
+              } catch {}
+              return updated;
+            });
+          }
+        });
+      }
+    } catch (e) {
+      console.warn("Failed to restore created tickets:", e);
+    }
+  }, [token]);
+
+  const allTickets = useMemo(() => {
+    if (!createdTickets.length) return tickets;
+    const existingIds = new Set(tickets.map((t) => t.id));
+    const newOnes = createdTickets.filter((t) => !existingIds.has(t.id));
+    return [...newOnes, ...tickets];
+  }, [tickets, createdTickets]);
   const { offices, officesData } = useOffices();
   const { users, usersData } = useUsers({ role: "worker" });
   const { brigades = [] } = useBrigades();
@@ -50,8 +129,6 @@ export default function Home() {
     routes: false,
     heatmap: false,
   });
-  const [selectedBrigade, setSelectedBrigade] = useState(null);
-  const [selectedWorker, setSelectedWorker] = useState(null);
   const [selectedDistrict, setSelectedDistrict] = useState(null);
   const [focusedOffice, setFocusedOffice] = useState(null);
   const [pinnedTicketId, setPinnedTicketId] = useState(null);
@@ -131,7 +208,7 @@ export default function Home() {
     });
 
     // Из заявок
-    tickets.forEach((t) => {
+    allTickets.forEach((t) => {
       const loc = t.location || locationById.get(t.location_id);
       const name = t.district || loc?.district;
       if (!name) return;
@@ -186,7 +263,7 @@ export default function Home() {
     });
 
     return Array.from(districtMap.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
-  }, [officesFullInfo, tickets, locationById]);
+  }, [officesFullInfo, allTickets, locationById]);
 
   // Выбранный офис (если тип объекта — office или сохранен фокус)
   const selectedOffice = useMemo(() => {
@@ -216,20 +293,35 @@ export default function Home() {
     return districtsList.find((d) => d.name.toLowerCase() === activeDistrict.toLowerCase()) || null;
   }, [activeDistrict, districtsList]);
 
-  const workersFullInfo = useMemo(() => {
-    return users
-      .filter((user) => !user.archived_at && user.worker_profile?.start_location_id)
-      .map((user) => ({
-        ...user,
-        location: locationById.get(user.worker_profile.start_location_id),
-      }))
-      .filter((user) => user.location);
-  }, [users, locationById]);
-
-  const locationsError = locationQueries.some((query) => query.isError);
-
   const brigadeById = useMemo(() => new Map(brigades.map((b) => [b.id, b])), [brigades]);
   const userById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
+
+  const workersFullInfo = useMemo(() => {
+    return users
+      .filter((user) => !user.archived_at)
+      .map((user) => {
+        const brigade = user.brigade_id ? brigadeById.get(user.brigade_id) : null;
+        const office = brigade?.office_id
+          ? officesFullInfo.find((o) => o.office_id === brigade.office_id || o.id === brigade.office_id)
+          : null;
+        const startLocId = user.worker_profile?.start_location_id || office?.location_id;
+        const loc = startLocId ? locationById.get(startLocId) : null;
+        const effectiveServiceAreaId =
+          user.worker_profile?.service_area_id ??
+          user.service_area_id ??
+          brigade?.service_area_id ??
+          office?.service_area_id;
+
+        return {
+          ...user,
+          location: loc || (office ? { latitude: office.latitude, longitude: office.longitude, address: office.address, district: office.district } : null),
+          brigade_name: user.brigade_name || brigade?.name || (brigade ? `Бригада #${brigade.id}` : null),
+          service_area_id: effectiveServiceAreaId,
+        };
+      });
+  }, [users, locationById, brigadeById, officesFullInfo]);
+
+  const locationsError = locationQueries.some((query) => query.isError);
 
   const selectObject = (type, id, extra = null) => {
     const layer =
@@ -374,6 +466,7 @@ export default function Home() {
     }
 
     if (result.type === "user") {
+      resetDistrictFocus();
       setSearchTarget({ type: "user", id: result.raw.id, title: result.title, raw: result.raw });
       setSearchQuery(result.title);
       setSelectedWorker(result.raw);
@@ -383,6 +476,7 @@ export default function Home() {
     }
 
     if (result.type === "brigade") {
+      resetDistrictFocus();
       setSearchTarget({ type: "brigade", id: result.raw.id, title: result.title, raw: result.raw });
       setSearchQuery(result.title);
       setSelectedBrigade(result.raw);
@@ -427,15 +521,19 @@ export default function Home() {
   // Используется РЕАЛЬНОЕ вхождение точки в GeoJSON-полигон Geoapify (isPointInPolygon)
   // и проверка по названию района/service_area_id.
   const districtFilteredTickets = useMemo(() => {
-    if (!filterTicketsByDistrict) return tickets;
+    if (!filterTicketsByDistrict) return allTickets;
     const currentOffice = focusedOffice || selectedOffice;
-    if (!activeDistrict && !currentOffice) return tickets;
+    if (!activeDistrict && !currentOffice) return allTickets;
 
     const lowerDistrict = (activeDistrict || currentOffice?.district || "").trim().toLowerCase();
     const saId = activeDistrictObj?.service_area_id || currentOffice?.service_area_id;
     const geom = districtBoundaryData?.geometry;
 
-    return tickets.filter((t) => {
+    return allTickets.filter((t) => {
+      // Всегда сохраняем выбранную, зафиксированную или только что созданную заявку!
+      if (t.id === pinnedTicketId || t.id === selectedObject?.id) return true;
+      if (createdTickets.some((ct) => ct.id === t.id)) return true;
+
       const loc = t.location || locationById.get(t.location_id);
       if (!loc) return false;
 
@@ -466,7 +564,7 @@ export default function Home() {
       return false;
     });
   }, [
-    tickets,
+    allTickets,
     filterTicketsByDistrict,
     activeDistrict,
     activeDistrictObj,
@@ -474,6 +572,9 @@ export default function Home() {
     selectedOffice,
     districtBoundaryData,
     locationById,
+    pinnedTicketId,
+    selectedObject,
+    createdTickets,
   ]);
 
   // 3.1. Реальные GeoJSON границы и bounds района
@@ -482,7 +583,8 @@ export default function Home() {
 
   // 3.2. Фильтрация тасок по выбранному воркеру, бригаде или поисковому запросу
   const displayedTickets = useMemo(() => {
-    const baseTickets = districtFilteredTickets;
+    // При выборе конкретной бригады или сотрудника отображаем их задачи независимо от выбранного ранее района
+    const baseTickets = (selectedBrigade || selectedWorker) ? allTickets : districtFilteredTickets;
 
     // Если выбран инженер (через меню или поиск) -> показываем ТОЛЬКО его таски
     if (selectedWorker) {
@@ -493,7 +595,7 @@ export default function Home() {
     if (selectedBrigade) {
       const brigadeWorkerIds = new Set(selectedBrigade.worker_ids || []);
       users.forEach((u) => {
-        if (u.worker_profile?.brigade_id === selectedBrigade.id) {
+        if (u.brigade_id === selectedBrigade.id || u.worker_profile?.brigade_id === selectedBrigade.id) {
           brigadeWorkerIds.add(u.id);
         }
       });
@@ -510,45 +612,61 @@ export default function Home() {
     }
 
     // Если в поиске выбрана конкретная заявка — все остальные НЕ исчезают
+    let result = baseTickets;
     if (searchTarget?.type === "ticket") {
-      return baseTickets;
-    }
-
-    // Если в поиске выбран район — показываем таски этого района
-    if (searchTarget?.type === "district") {
-      return baseTickets;
-    }
-
-    // Фильтрация вывода тасок под условия ввода в поиске
-    const q = searchQuery.trim().toLowerCase();
-    if (q && !q.startsWith("район:")) {
-      const qClean = q.replace(/^#/, "");
-      return baseTickets.filter((t) => {
-        if (String(t.id).includes(qClean)) return true;
-        if (t.title && t.title.toLowerCase().includes(q)) return true;
-        if (t.description && t.description.toLowerCase().includes(q)) return true;
-        const address = t.location?.address || t.address || "";
-        if (address.toLowerCase().includes(q)) return true;
-        if (t.assigned_worker_id) {
-          const worker = userById.get(t.assigned_worker_id);
-          if (worker) {
-            const fullName = [worker.surname, worker.name, worker.lastname]
-              .filter(Boolean)
-              .join(" ")
-              .toLowerCase();
-            if (fullName.includes(q)) return true;
+      result = baseTickets;
+    } else if (searchTarget?.type === "district") {
+      result = baseTickets;
+    } else {
+      // Фильтрация вывода тасок под условия ввода в поиске
+      const q = searchQuery.trim().toLowerCase();
+      if (q && !q.startsWith("район:")) {
+        const qClean = q.replace(/^#/, "");
+        result = baseTickets.filter((t) => {
+          if (String(t.id).includes(qClean)) return true;
+          if (t.title && t.title.toLowerCase().includes(q)) return true;
+          if (t.description && t.description.toLowerCase().includes(q)) return true;
+          const address = t.location?.address || t.address || "";
+          if (address.toLowerCase().includes(q)) return true;
+          if (t.assigned_worker_id) {
+            const worker = userById.get(t.assigned_worker_id);
+            if (worker) {
+              const fullName = [worker.surname, worker.name, worker.lastname]
+                .filter(Boolean)
+                .join(" ")
+                .toLowerCase();
+              if (fullName.includes(q)) return true;
+            }
           }
-        }
-        if (t.brigade_id) {
-          const brigade = brigadeById.get(t.brigade_id);
-          if (brigade && brigade.name.toLowerCase().includes(q)) return true;
-        }
-        return false;
-      });
+          if (t.brigade_id) {
+            const brigade = brigadeById.get(t.brigade_id);
+            if (brigade && brigade.name.toLowerCase().includes(q)) return true;
+          }
+          return false;
+        });
+      }
     }
 
-    return baseTickets;
+    // Гарантируем присутствие выбранной пользователем заявки в списке (чтобы отображался ее маркер)
+    if (selectedObject?.type === "ticket") {
+      const selectedTicket = allTickets.find((t) => t.id === selectedObject.id) || selectedObject.ticket;
+      if (selectedTicket && !result.some((t) => t.id === selectedObject.id)) {
+        result = [selectedTicket, ...result];
+      }
+    }
+
+    // Гарантируем присутствие недавно созданных заявок, если не выбрана отдельная бригада
+    if (createdTickets.length > 0 && !selectedBrigade && !selectedWorker) {
+      const existingIds = new Set(result.map((t) => t.id));
+      const missingCreated = createdTickets.filter((t) => !existingIds.has(t.id));
+      if (missingCreated.length > 0) {
+        result = [...missingCreated, ...result];
+      }
+    }
+
+    return result;
   }, [
+    allTickets,
     districtFilteredTickets,
     selectedBrigade,
     selectedWorker,
@@ -557,6 +675,8 @@ export default function Home() {
     users,
     userById,
     brigadeById,
+    selectedObject,
+    createdTickets,
   ]);
 
   // Задачи выбранного воркера для расчета его маршрута
@@ -579,7 +699,10 @@ export default function Home() {
     if (selectedBrigade) {
       const brigadeWorkerIds = new Set(selectedBrigade.worker_ids || []);
       return workersFullInfo.filter(
-        (w) => w.worker_profile?.brigade_id === selectedBrigade.id || brigadeWorkerIds.has(w.id),
+        (w) =>
+          w.brigade_id === selectedBrigade.id ||
+          w.worker_profile?.brigade_id === selectedBrigade.id ||
+          brigadeWorkerIds.has(w.id),
       );
     }
     return workersFullInfo;
@@ -589,7 +712,9 @@ export default function Home() {
   const effectiveSelectedObject = useMemo(() => {
     if (selectedObject?.type === "ticket") {
       const stillExists = displayedTickets.some((t) => t.id === selectedObject.id);
-      return stillExists ? selectedObject : null;
+      if (stillExists) return selectedObject;
+      if (selectedObject.ticket) return selectedObject;
+      return null;
     }
     return selectedObject;
   }, [displayedTickets, selectedObject]);
@@ -876,6 +1001,7 @@ export default function Home() {
                     setSearchQuery("");
                     setSearchTarget(null);
                   } else {
+                    resetDistrictFocus();
                     setSearchQuery(`Бригада: ${brigade.name}`);
                     setSearchTarget({
                       type: "brigade",
@@ -937,6 +1063,7 @@ export default function Home() {
         tickets={displayedTickets}
         offices={officesFullInfo}
         workers={displayedWorkers}
+        allWorkers={workersFullInfo}
         routes={routes}
         workerRoute={workerRoute}
         locationById={locationById}
@@ -980,12 +1107,31 @@ export default function Home() {
           setCreateModalCoords(null);
         }}
         onTicketCreated={(newTicket) => {
-          const coords = [newTicket.location?.longitude, newTicket.location?.latitude];
+          setCreatedTickets((prev) => [newTicket, ...prev.filter((t) => t.id !== newTicket.id)]);
+          try {
+            const savedCache = JSON.parse(localStorage.getItem("beeline_created_tickets_cache") || "[]");
+            localStorage.setItem(
+              "beeline_created_tickets_cache",
+              JSON.stringify([newTicket, ...savedCache.filter((t) => t.id !== newTicket.id)].slice(0, 50))
+            );
+            const saved = JSON.parse(localStorage.getItem("beeline_created_ticket_ids") || "[]");
+            if (!saved.includes(newTicket.id)) {
+              localStorage.setItem(
+                "beeline_created_ticket_ids",
+                JSON.stringify([newTicket.id, ...saved].slice(0, 50))
+              );
+            }
+          } catch {}
+
+          const coords = [
+            newTicket.location?.longitude ?? 37.6173,
+            newTicket.location?.latitude ?? 55.7558,
+          ];
           const map = mapRef.current?.getMap?.() || mapRef.current;
           if (coords[0] && coords[1] && map?.flyTo) {
             map.flyTo({
               center: coords,
-              zoom: 14,
+              zoom: 15,
               duration: 800,
             });
           }

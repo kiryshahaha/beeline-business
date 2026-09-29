@@ -1,14 +1,17 @@
 .container {
   position: relative;
-  display: inline-block;
+  display: flex;
   font-family: inherit;
+  align-self: stretch;
+  height: 100%;
 }
 
 .triggerButton {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 32px;
+  height: 100%;
+  min-height: 38px;
   padding: 0 12px;
   background-color: var(--tertiary);
   border: 2px solid var(--stroke);
