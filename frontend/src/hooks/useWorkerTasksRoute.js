@@ -96,6 +96,25 @@ export function useWorkerTasksRoute(selectedWorker, workerTickets = [], location
             const geoRes = await apiFetch(`/routes/${savedRoute.id}/geojson`);
             if (geoRes.ok) {
               const geoData = await geoRes.json();
+              let lineGeom = null;
+              if (geoData?.type === "FeatureCollection" && Array.isArray(geoData.features)) {
+                const lineFeat = geoData.features.find(
+                  (f) => f.geometry?.type === "LineString" || f.geometry?.type === "MultiLineString"
+                );
+                lineGeom = lineFeat?.geometry || null;
+              } else if (geoData?.geometry) {
+                lineGeom = geoData.geometry;
+              } else if (geoData?.type === "LineString" || geoData?.type === "MultiLineString") {
+                lineGeom = geoData;
+              }
+
+              if (!lineGeom && points.length >= 2) {
+                lineGeom = {
+                  type: "LineString",
+                  coordinates: points.map((p) => [p.longitude, p.latitude]),
+                };
+              }
+
               return {
                 id: `worker-route-${selectedWorker.id}`,
                 workerId: selectedWorker.id,
@@ -103,7 +122,7 @@ export function useWorkerTasksRoute(selectedWorker, workerTickets = [], location
                 workerName: [selectedWorker.name, selectedWorker.surname].filter(Boolean).join(" "),
                 distanceKm: (savedRoute.distance_meters ? savedRoute.distance_meters / 1000 : 0).toFixed(1),
                 durationMin: Math.max(1, Math.round((savedRoute.duration_seconds || 0) / 60)),
-                geometry: geoData.geometry || geoData,
+                geometry: lineGeom,
                 stops: points,
                 color: "#FFC800",
                 raw: savedRoute,
@@ -145,6 +164,34 @@ export function useWorkerTasksRoute(selectedWorker, workerTickets = [], location
             color: "#FFC800",
             raw: data,
           };
+        }
+      } catch {
+        // Fallback to OSRM or straight lines
+      }
+
+      // 2.1. OSRM fallback for realistic road line
+      try {
+        const coordsStr = points.map((p) => `${p.longitude},${p.latitude}`).join(";");
+        const osrmRes = await fetch(
+          `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`
+        );
+        if (osrmRes.ok) {
+          const osrmData = await osrmRes.json();
+          if (osrmData.code === "Ok" && osrmData.routes?.[0]) {
+            const r = osrmData.routes[0];
+            return {
+              id: `worker-route-${selectedWorker.id}`,
+              workerId: selectedWorker.id,
+              worker_id: selectedWorker.id,
+              workerName: [selectedWorker.name, selectedWorker.surname].filter(Boolean).join(" "),
+              distanceKm: (r.distance / 1000).toFixed(1),
+              durationMin: Math.max(1, Math.round(r.duration / 60)),
+              geometry: r.geometry,
+              stops: points,
+              color: "#FFC800",
+              raw: null,
+            };
+          }
         }
       } catch {
         // Fallback to straight lines

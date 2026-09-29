@@ -18,6 +18,7 @@ import { isTicketUrgent } from "@/utils/ticketUtils";
 import styles from "./MapComponent.module.css";
 import routeStyles from "./Routes/Routes.module.css";
 import { useTheme } from "@/providers/ThemeProvider";
+import { MAP_STYLES, getSavedMapTheme, getMapStyleUrl, MAPTILER_KEY } from "@/lib/mapStyles";
 
 const ROUTE_PALETTE = [
   "#FFB800", // Beeline Gold
@@ -57,10 +58,23 @@ export default function MapComponent({
   isPinPickMode = false,
   onPinPick,
   isDataReady,
+  mapTheme: propMapTheme,
 }) {
   const { actualTheme } = useTheme();
   const didFitBounds = useRef(false);
   const [hoveredRoute, setHoveredRoute] = useState(null);
+  const [internalMapTheme, setInternalMapTheme] = useState(() => getSavedMapTheme());
+  const effectiveMapTheme = propMapTheme || internalMapTheme;
+
+  useEffect(() => {
+    const handleSync = (e) => {
+      if (e.detail && MAP_STYLES[e.detail]) {
+        setInternalMapTheme(e.detail);
+      }
+    };
+    window.addEventListener("beeline_map_theme_changed", handleSync);
+    return () => window.removeEventListener("beeline_map_theme_changed", handleSync);
+  }, []);
 
   // 1. Подготовка и нормализация маршрутов (поддержка реальных дорожных полилиний LineString/MultiLineString)
   const parsedRoutes = useMemo(() => {
@@ -169,16 +183,18 @@ export default function MapComponent({
   const routesGeoJson = useMemo(() => {
     const features = [];
 
-    if (visibleLayers.routes) {
-      const isAnyRouteSelected = selectedObject?.type === "route";
+    const shouldShowRoutes = visibleLayers?.routes || Boolean(selectedRouteId) || selectedObject?.type === "route";
+
+    if (shouldShowRoutes) {
+      const isAnyRouteSelected = Boolean(selectedRouteId) || selectedObject?.type === "route";
 
       const lineFeatures = parsedRoutes
         .filter((r) => {
           if (!r.lineGeometry) return false;
           // Если выбран конкретный маршрут — показываем только его
-          if (selectedRouteId) return r.id === selectedRouteId;
+          if (selectedRouteId != null) return String(r.id) === String(selectedRouteId);
           // Если выбран конкретный инженер — показываем только его маршруты
-          if (selectedObject?.type === "worker") return r.worker_id === selectedObject.id;
+          if (selectedObject?.type === "worker") return String(r.worker_id) === String(selectedObject.id);
           // Если активен район/границы — показываем маршруты, имеющие точки в границах района
           if (districtBounds && r.allCoordinates?.length > 0) {
             const [[minLng, minLat], [maxLng, maxLat]] = districtBounds;
@@ -186,11 +202,11 @@ export default function MapComponent({
               ([lng, lat]) => lng >= minLng && lng <= maxLng && lat >= minLat && lat <= maxLat
             );
           }
-          // Не спамим нерелевантными тестовыми маршрутами из базы данных
-          return false;
+          // Когда включен слой «Маршруты», отображаем все доступные маршруты на карте
+          return true;
         })
         .map((r) => {
-          const isSelected = selectedRouteId === r.id;
+          const isSelected = selectedRouteId != null && String(r.id) === String(selectedRouteId);
           const isDimmed = isAnyRouteSelected && !isSelected;
 
           let geometry = r.lineGeometry;
@@ -209,7 +225,7 @@ export default function MapComponent({
             properties: {
               routeId: r.id,
               workerId: r.worker_id,
-              color: r.color,
+              color: r.color || "#FFB800",
               isSelected,
               isDimmed,
             },
@@ -378,12 +394,12 @@ export default function MapComponent({
 
   const selectedRoute = useMemo(() => {
     if (selectedObject?.type !== "route") return null;
-    return parsedRoutes.find((r) => r.id === selectedObject.id) || null;
+    return parsedRoutes.find((r) => String(r.id) === String(selectedObject.id)) || null;
   }, [parsedRoutes, selectedObject]);
 
   const selectedRouteWorker = useMemo(() => {
     if (!selectedRoute) return null;
-    return workers.find((w) => w.id === selectedRoute.worker_id) || null;
+    return workers.find((w) => String(w.id) === String(selectedRoute.worker_id)) || null;
   }, [selectedRoute, workers]);
 
   // Анимация камеры при выборе объекта
@@ -565,7 +581,7 @@ export default function MapComponent({
       (feature.layer?.id === "routes-line" || feature.layer?.id === "routes-hit-area")
     ) {
       const clickedRouteId = feature.properties.routeId;
-      const route = parsedRoutes.find((r) => r.id === clickedRouteId);
+      const route = parsedRoutes.find((r) => String(r.id) === String(clickedRouteId));
       if (route) {
         onSelectObject("route", clickedRouteId, {
           route,
@@ -605,9 +621,9 @@ export default function MapComponent({
         if (map) map.getCanvas().style.cursor = "pointer";
         return;
       }
-      const route = parsedRoutes.find((r) => r.id === clickedRouteId);
+      const route = parsedRoutes.find((r) => String(r.id) === String(clickedRouteId));
       if (route) {
-        const worker = workers.find((w) => w.id === route.worker_id);
+        const worker = workers.find((w) => String(w.id) === String(route.worker_id));
         const workerName = worker
           ? [worker.surname, worker.name].filter(Boolean).join(" ")
           : `Инженер #${route.worker_id}`;
@@ -641,17 +657,17 @@ export default function MapComponent({
   const selectedTicketRoute = useMemo(() => {
     if (selectedItem?.type !== "ticket") return null;
     const r = parsedRoutes.find((route) =>
-      route.stops.some((s) => s.ticket_id === selectedItem.id),
+      route.stops.some((s) => String(s.ticket_id) === String(selectedItem.id)),
     );
     if (!r) return null;
-    const stop = r.stops.find((s) => s.ticket_id === selectedItem.id);
+    const stop = r.stops.find((s) => String(s.ticket_id) === String(selectedItem.id));
     return { route: r, stop };
   }, [parsedRoutes, selectedItem]);
 
   // Поиск маршрута для выбранного техника
   const selectedWorkerRoute = useMemo(() => {
     if (selectedItem?.type !== "worker") return null;
-    return parsedRoutes.find((route) => route.worker_id === selectedItem.id) || null;
+    return parsedRoutes.find((route) => String(route.worker_id) === String(selectedItem.id)) || null;
   }, [parsedRoutes, selectedItem]);
 
   // Обработчик выбора остановки из карточки или маркера
@@ -678,12 +694,12 @@ export default function MapComponent({
       initialViewState={{ longitude: 35, latitude: 55, zoom: 1 }}
       mapStyle={
         actualTheme === "light"
-          ? `https://api.maptiler.com/maps/streets-v2/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`
-          : `https://api.maptiler.com/maps/01a0a53f-a24b-7778-b5e1-b59ba3d6f612/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`
+          ? `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`
+          : getMapStyleUrl(effectiveMapTheme)
       }
       attributionControl={false}
       interactiveLayerIds={
-        visibleLayers.routes || activeLegFeature || workerRoute?.geometry ? ["routes-hit-area", "routes-line"] : []
+        routesGeoJson?.features?.length > 0 ? ["routes-hit-area", "routes-line"] : []
       }
       maxZoom={20}
       minZoom={0}
@@ -858,7 +874,7 @@ export default function MapComponent({
       )}
 
       {/* 2. Маркеры последовательности визитов (1, 2, 3...) — только для активного маршрута */}
-      {visibleLayers.routes && (
+      {(visibleLayers.routes || selectedRoute) && (
         <RouteMarkers
           selectedRoute={selectedRoute}
           selectedObject={selectedObject}

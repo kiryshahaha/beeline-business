@@ -71,8 +71,20 @@ const NotificationItem = ({ notif, isRead, markAsRead }) => {
         return () => observer.disconnect();
     }, [isRead, markAsRead, notif.id]);
 
-    const kindLabel = NOTIFICATION_LABELS[notif.kind] || "Уведомление по заявке";
+    const kind = (notif.kind || "").toLowerCase();
+    const kindLabel = NOTIFICATION_LABELS[kind] || NOTIFICATION_LABELS[notif.kind] || "Уведомление по заявке";
     const statusLabel = notif.data?.status ? (STATUS_TEXT[notif.data.status] || notif.data.status) : null;
+
+    let detailText = "";
+    if (kind === "ticket_problem_reported") {
+        detailText = notif.data?.text ? ` (${notif.data?.type ? notif.data.type + ": " : ""}«${notif.data.text}»)` : "";
+    } else if (kind === "ticket_delay_reported") {
+        detailText = notif.data?.reason ? ` («${notif.data.reason}»)` : "";
+    } else if (notif.data?.note) {
+        detailText = ` («${notif.data.note}»)`;
+    } else if (notif.data?.reason_text || notif.data?.reason) {
+        detailText = ` (${notif.data.reason_text || notif.data.reason})`;
+    }
 
     return (
         <div ref={itemRef} className={`${styles.item} ${!isRead ? styles.unread : ""}`}>
@@ -82,7 +94,7 @@ const NotificationItem = ({ notif, isRead, markAsRead }) => {
             <div className={styles.body}>
                 {kindLabel}
                 {statusLabel ? ` · Статус: ${statusLabel}` : ""}
-                {notif.data?.note ? ` («${notif.data.note}»)` : ""}
+                {detailText}
             </div>
             <div className={styles.time}>
                 {new Date(notif.created_at).toLocaleString('ru-RU', {

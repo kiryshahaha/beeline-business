@@ -9,6 +9,7 @@ export default function ExpandableMenu({
   children,
   baseSize = 36,
   className = "",
+  direction = "down",
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
@@ -28,16 +29,20 @@ export default function ExpandableMenu({
     };
   }, [isOpen]);
 
+  const isUp = direction === "up";
+
   return (
     <div
       ref={menuRef}
-      className={`${styles.container} ${isOpen ? styles.open : ""} ${className}`}
+      data-open={isOpen ? "true" : undefined}
+      data-direction={direction}
+      className={`${styles.container} ${isOpen ? styles.open : ""} ${isOpen ? "open" : ""} ${isUp ? styles.directionUp : ""} ${className}`}
       style={{
         "--base-size": `${baseSize}px`,
       }}
     >
       <div className={styles.header} onClick={() => setIsOpen(!isOpen)}>
-        {renderHeader ? renderHeader({ isOpen }) : header}
+        {renderHeader ? renderHeader({ isOpen, setIsOpen }) : header}
       </div>
       <div className={styles.bodyWrapper}>
         <div className={styles.body}>

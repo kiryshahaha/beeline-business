@@ -1,0 +1,276 @@
+.loadingScreen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--bg-page);
+  color: var(--text-muted);
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 200, 0, 0.2);
+  border-top-color: var(--beeline);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.loadingText {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.appShell {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+.header {
+  width: 100%;
+  height: 64px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 900;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.headerContainer {
+  width: 100%;
+  max-width: 1400px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logoCircle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--beeline);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.logoBeeline {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: repeating-linear-gradient(
+    45deg,
+    #000,
+    #000 3.5px,
+    var(--beeline) 3.5px,
+    var(--beeline) 7px
+  );
+}
+
+.headerTitle {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.1;
+  letter-spacing: -0.2px;
+}
+
+.appSub {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--beeline);
+}
+
+/* Desktop Navigation */
+.desktopNav {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-subtle);
+  padding: 4px;
+  border-radius: 12px;
+}
+
+.desktopNavLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.desktopNavLink:hover {
+  color: var(--text-primary);
+  background: var(--hover-color);
+}
+
+.desktopNavIcon {
+  display: flex;
+  align-items: center;
+}
+
+.desktopNavActive {
+  background: var(--beeline);
+  color: #000000 !important;
+  font-weight: 700;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.workerBadge {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-subtle);
+  padding: 6px 12px;
+  border-radius: 10px;
+}
+
+.workerStatusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.workerName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bellBtn {
+  position: relative;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bellBtn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-active);
+}
+
+.bellBadge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 10px;
+  border: 2px solid var(--bg-card);
+}
+
+.mainContent {
+  flex: 1;
+  width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-bottom: 84px; /* Space for mobile bottom bar */
+  box-sizing: border-box;
+}
+
+.contentContainer {
+  width: 100%;
+  max-width: 1400px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Tablet & Desktop breakpoint */
+@media (min-width: 768px) {
+  .desktopNav {
+    display: flex;
+  }
+
+  .workerBadge {
+    display: flex;
+  }
+
+  .headerContainer {
+    padding: 0 32px;
+  }
+
+  .mainContent {
+    padding-bottom: 32px;
+  }
+}
+
+/* Map page full-bleed overrides */
+.mainContentMap {
+  padding-bottom: 64px;
+  overflow: hidden;
+  height: calc(100vh - 64px);
+  height: calc(100dvh - 64px);
+}
+
+@media (min-width: 768px) {
+  .mainContentMap {
+    padding-bottom: 0;
+    height: calc(100vh - 64px);
+  }
+}
+
+.contentContainerMap {
+  max-width: 100% !important;
+  width: 100% !important;
+  height: 100% !important;
+  flex: 1;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
