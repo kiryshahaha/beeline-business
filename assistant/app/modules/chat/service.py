@@ -1,6 +1,7 @@
-"""Answer a chat question: retrieve sections, assemble the prompt, call the model."""
+"""Answer a chat question: data first, then the knowledge base with the model."""
 
 from app.core.config import Settings
+from app.modules.chat.facts import answer_from_facts
 from app.modules.chat.knowledge import Chunk, KnowledgeBase
 from app.modules.chat.llm import LlmReply, OllamaClient
 from app.modules.chat.prompts import build_messages
@@ -10,7 +11,7 @@ from app.modules.chat.schemas import ChatRequest, ChatResponse, Source
 def retrieve(request: ChatRequest, knowledge: KnowledgeBase, top_k: int) -> list[Chunk]:
     ticket = request.context.ticket if request.context else None
     return knowledge.search(
-        request.message, request.role, top_k, work_type=ticket.work_type if ticket else None
+        request.message, request.role, top_k, category=ticket.category if ticket else None
     )
 
 
@@ -34,11 +35,26 @@ def generate(
 
 
 def answer(
-    request: ChatRequest, knowledge: KnowledgeBase, client: OllamaClient, settings: Settings
+    request: ChatRequest,
+    knowledge: KnowledgeBase,
+    client: OllamaClient,
+    settings: Settings,
+    model: str | None = None,
 ) -> ChatResponse:
-    reply, chunks = generate(request, knowledge, client, settings)
+    """Questions about the user's day and tickets are answered from data, not by the model."""
+    fact = answer_from_facts(request)
+    if fact is not None:
+        return ChatResponse(
+            answer=fact.text,
+            source_type="facts",
+            sources=fact.sources,
+            model=None,
+            intent=fact.intent,
+        )
+    reply, chunks = generate(request, knowledge, client, settings, model=model)
     return ChatResponse(
         answer=reply.text,
+        source_type="knowledge" if chunks else "model",
         sources=[Source(title=chunk.title, section=chunk.section) for chunk in chunks],
-        model=settings.assistant_model,
+        model=model or settings.assistant_model,
     )

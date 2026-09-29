@@ -1,38 +1,39 @@
 # Набор проверки ассистента.
-#   must      — группы фактов; группа засчитана, если в ответе есть любой из вариантов
-#               (без учёта регистра, ё = е). Оценка вопроса = доля засчитанных групп.
-#   must_not  — фрагменты, появление которых означает выдумку или неверный совет.
-#   sources   — разделы базы знаний, которые должен найти поиск (для hit@k).
-#   context   — ключ из contexts.yaml.
-# Автоматическая оценка грубая: итоговые ответы дополнительно читаются вручную.
+#   must        — группы фактов; группа засчитана, если в ответе есть любой из вариантов
+#                 (без учёта регистра, ё = е). Оценка вопроса = доля засчитанных групп.
+#   must_not    — фрагменты, появление которых означает выдумку или неверный совет.
+#   sources     — разделы базы знаний, которые должен найти поиск (для hit@k).
+#   context     — ключ из contexts.yaml.
+#   answered_by — facts: ответ должен собираться из данных системы, без модели.
+# Автоматическая оценка грубая: ответы модели дополнительно читаются вручную.
 
 # --- Исполнитель: как сделать в системе ---
 - id: w-start
   role: worker
   category: howto
-  question: Я приехал к клиенту и начинаю работу. Какой статус поставить?
-  must: [[в работе, в работу]]
+  question: Я приехал к клиенту и начинаю работу. Что нажать?
+  must: [[начал работу, в работе]]
   sources: [system/statuses.md, system/worker.md]
 
 - id: w-finish
   role: worker
   category: howto
   question: Всё сделал у клиента. Как правильно закрыть заявку?
-  must: [[завершен], [комментари]]
-  sources: [system/statuses.md, system/worker.md]
+  must: [[завершил], [подтвер, диспетчер]]
+  sources: [system/worker.md, system/statuses.md]
 
 - id: w-client-absent
   role: worker
   category: howto
   question: Клиента нет дома, дверь никто не открывает. Что делать с заявкой?
-  must: [[комментари], [диспетчер]]
+  must: [[сообщить о проблеме, проблем], [диспетчер]]
   sources: [system/worker.md]
 
 - id: w-late
   role: worker
   category: howto
   question: Застрял в пробке и не успеваю к клиенту, что делать?
-  must: [[комментари, предупред, сообщ], [диспетчер]]
+  must: [[задерживаюсь, задержк]]
   sources: [system/worker.md, system/ticket.md]
 
 - id: w-no-ticket
@@ -57,6 +58,20 @@
   must: [[клиент], [планов]]
   sources: [system/ticket.md]
 
+- id: w-returned
+  role: worker
+  category: howto
+  question: Диспетчер вернул мою заявку в работу, что делать?
+  must: [[причин], [завершил]]
+  sources: [system/statuses.md]
+
+- id: w-no-equipment
+  role: worker
+  category: howto
+  question: На заявку не хватает роутера, что делать?
+  must: [[сообщить о проблеме, проблем], [оборудован]]
+  sources: [system/equipment.md, system/worker.md]
+
 - id: w-push
   role: worker
   category: howto
@@ -71,6 +86,13 @@
   question: Как мне назначить себя на заявку соседа?
   must: [[диспетчер]]
   sources: [system/worker.md, system/about.md]
+
+- id: w-cancel
+  role: worker
+  category: boundary
+  question: Клиент отказался, как мне отменить заявку?
+  must: [[диспетчер], [проблем]]
+  sources: [system/worker.md, system/statuses.md]
 
 - id: w-change-shift
   role: worker
@@ -116,100 +138,172 @@
   must: [[смен], [навык]]
   sources: [system/observer.md]
 
-- id: o-add-assignee
+- id: o-confirm
   role: observer
   category: howto
-  question: Как добавить второго исполнителя в заявку, не убрав первого?
-  must: [[целиком, оставьте, прежн, заменяется]]
-  sources: [system/observer.md]
+  question: Исполнитель нажал «Завершил», что мне делать?
+  must: [[подтверд], [вернуть, верните, причин]]
+  sources: [system/observer.md, system/statuses.md]
 
 - id: o-dropped
   role: observer
   category: howto
   question: Планировщик не назначил заявку никому. Почему так бывает и что делать?
-  must: [[навык], [смен, окно]]
+  must: [[навык, оборудован], [смен, окно]]
   sources: [system/observer.md, system/planning.md]
 
-- id: o-foreman
+- id: o-problem
   role: observer
   category: howto
-  question: Как сделать сотрудника начальником бригады?
-  must: [[рол]]
+  question: Исполнитель сообщил, что клиента нет дома. Какие у меня варианты?
+  must: [[пересчит, передать, окно, отменить]]
   sources: [system/observer.md]
 
-- id: o-new-skill
-  role: observer
-  category: howto
-  question: Нужен новый навык «Монтаж видеонаблюдения», как его добавить?
-  must: [[справочник, созда, добав]]
-  sources: [system/observer.md]
-
-# --- Конкретная заявка (контекст из бэкенда) ---
-- id: t-why-moved
-  role: worker
-  category: ticket
-  context: ticket_rescheduled
-  question: Почему мою заявку перенесли?
-  must: [[авари], ["18.09", "15:00"]]
-
-- id: t-new-time
-  role: worker
-  category: ticket
-  context: ticket_rescheduled
-  question: Во сколько мне теперь ехать к этому клиенту?
-  must: [["15:00"]]
-
-- id: t-before-visit
-  role: worker
-  category: ticket
-  context: ticket_access_notes
-  question: Что важно знать перед выездом на эту заявку?
-  must: [[30 минут, позвон], [консьерж, ключ]]
-
-- id: t-wont-fix
-  role: foreman
-  category: ticket
-  context: ticket_wont_fix
-  question: Почему у заявки статус «Не будет исправлено»?
-  must: [[отказ], [устройств, ноутбук, wi-fi]]
-
-- id: t-what-to-take
-  role: worker
-  category: ticket
-  context: ticket_rescheduled
-  question: Что взять с собой на эту заявку?
-  must: [[роутер, устройств, маршрутизатор], [патч, блок питания]]
-  sources: [work/equipment-replacement.md]
-
-# --- Смена и день ---
+# --- Вопросы о данных: ответ собирается из данных системы ---
 - id: d-shift
   role: worker
   category: day
   context: worker_day
+  answered_by: facts
   question: Какая у меня сегодня смена и сколько заявок?
-  must: [["08:00"], ["17:00"], ["3 ", три, "3.", "3,", "(3)"]]
+  must: [["08:00"], ["17:00"], [5 заяв]]
+
+- id: d-tomorrow
+  role: worker
+  category: day
+  context: worker_day
+  answered_by: facts
+  question: Я завтра работаю?
+  must: [[выходной]]
 
 - id: d-next
   role: worker
   category: day
   context: worker_day
+  answered_by: facts
   question: Какая у меня заявка после проверки кабеля и во сколько?
-  must: [[оптик, кросс], ["13:30"]]
+  must: [[оптик], ["13:30"]]
 
-- id: f-not-started
-  role: foreman
+- id: d-where-now
+  role: worker
   category: day
-  context: foreman_brigade
-  question: Какие заявки бригады ещё не начаты?
-  must: [[проверить кабель], [оптик]]
+  context: worker_day
+  answered_by: facts
+  question: Куда мне теперь ехать?
+  must: [[комендантск]]
+
+- id: d-remaining
+  role: worker
+  category: day
+  context: worker_day
+  answered_by: facts
+  question: Сколько заявок ещё осталось?
+  must: [[осталось 2]]
+
+- id: d-current
+  role: worker
+  category: day
+  context: worker_day
+  answered_by: facts
+  question: На какой я сейчас заявке?
+  must: [[проверить кабель]]
+
+- id: d-not-started
+  role: worker
+  category: day
+  context: worker_day
+  answered_by: facts
+  question: Какие заявки у меня ещё не начаты?
+  must: [[оптик], [второй роутер]]
   must_not: [настроить wi-fi]
 
-- id: f-count
-  role: foreman
+- id: d-removed
+  role: worker
   category: day
-  context: foreman_brigade
-  question: Сколько заявок сегодня у Ивана Иванова?
-  must: [["3 ", три, "3.", "3,", "(3)"]]
+  context: worker_day
+  answered_by: facts
+  question: Почему у меня забрали заявку?
+  must: [[№93], [аварийн]]
+
+- id: d-pending
+  role: worker
+  category: day
+  context: worker_day
+  answered_by: facts
+  question: Мою заявку на Туристской подтвердили?
+  must: [[ждет подтверждения]]
+
+- id: d-why-moved
+  role: worker
+  category: day
+  context: worker_day
+  answered_by: facts
+  question: Почему перенесли заявку с оптикой?
+  must: [["12:40"], ["13:30"], [аварийн]]
+
+- id: d-equipment
+  role: worker
+  category: day
+  context: worker_day
+  answered_by: facts
+  question: Что взять с собой на заявку с оптикой?
+  must: [[ont]]
+
+- id: t-why-moved
+  role: worker
+  category: ticket
+  context: ticket_rescheduled
+  answered_by: facts
+  question: Почему мою заявку перенесли?
+  must: [[аварийн], ["15:00"]]
+
+- id: t-new-time
+  role: worker
+  category: ticket
+  context: ticket_rescheduled
+  answered_by: facts
+  question: Во сколько мне теперь ехать к этому клиенту?
+  must: [["15:00"], [завтра]]
+
+- id: t-what-to-take
+  role: worker
+  category: ticket
+  context: ticket_rescheduled
+  answered_by: facts
+  question: Что взять с собой на эту заявку?
+  must: [[маршрутизатор], [патч]]
+
+- id: t-before-visit
+  role: worker
+  category: ticket
+  context: ticket_access_notes
+  answered_by: facts
+  question: Что важно знать перед выездом на эту заявку?
+  must: [[30 минут, позвон], [консьерж, ключ]]
+
+- id: t-entrance
+  role: worker
+  category: ticket
+  context: ticket_access_notes
+  answered_by: facts
+  question: Какой там подъезд?
+  must: [[не указан]]
+
+- id: t-cancelled
+  role: foreman
+  category: ticket
+  context: ticket_cancelled
+  answered_by: facts
+  question: Почему заявку отменили?
+  must: [[отказал]]
+
+- id: t-status
+  role: foreman
+  category: ticket
+  context: ticket_cancelled
+  answered_by: facts
+  question: Какой статус у этой заявки?
+  must: [[отменен]]
 
 # --- Подсказки по работам (база знаний) ---
 - id: k-fiber-eye
@@ -217,46 +311,164 @@
   category: work
   question: Можно посмотреть в оптический коннектор, чтобы проверить, есть ли свет?
   must: [[нельзя, не смотр, никогда, опасно], [лазер, глаз]]
-  sources: [work/fiber-installation.md]
+  sources: [work/emergency.md, work/connection.md]
 
 - id: k-slow-wifi
   role: worker
   category: work
   question: У клиента медленный интернет по Wi-Fi. С чего начать проверку?
   must: [[кабел]]
-  sources: [work/network-diagnostics.md]
+  sources: [work/repair.md]
 
 - id: k-emergency
   role: worker
   category: work
   question: Мне пришла аварийная заявка, что делать первым делом?
-  must: [[в работе, в работу]]
-  sources: [work/emergency-repair.md]
+  must: [[выехал, в работ, начал]]
+  sources: [work/emergency.md]
+
+- id: k-norm
+  role: worker
+  category: work
+  question: Сколько времени по нормативу даётся на подключение клиента?
+  must: [["90"]]
+  sources: [work/connection.md]
 
 - id: k-wifi-password
   role: worker
   category: work
   question: Нужно ли писать пароль от Wi-Fi клиента в комментарий?
   must: [[не пиш, не нужно, не указ, не следует, не стоит, нельзя]]
-  sources: [work/network-setup.md]
+  sources: [work/repair.md]
 
-# --- Нет в базе знаний: ждём честное «не знаю» ---
+# --- Нет ни в данных, ни в базе знаний: ждём честное «не знаю» ---
 - id: u-salary
   role: worker
   category: unknown
   question: Какая зарплата у выездного инженера и когда аванс?
-  must: [[справке этого нет, нет информации, не знаю, уточните, обратитесь]]
+  must: [[не знаю, нет информации, уточните, обратитесь]]
   must_not: [руб]
 
 - id: u-iptv
   role: worker
   category: unknown
   question: Как настроить IPTV-приставку клиента?
-  must: [[справке этого нет, нет информации, не знаю, уточните, обратитесь]]
+  must: [[не знаю, нет информации, уточните, обратитесь]]
 
 - id: u-tariff
   role: observer
   category: unknown
   question: Сколько стоит тариф на 500 Мбит/с?
-  must: [[справке этого нет, нет информации, не знаю, уточните, обратитесь]]
+  must: [[не знаю, нет информации, уточните, обратитесь]]
   must_not: [руб]
+
+# --- Отложенные вопросы: написаны до дообучения и в обучающие данные не входят ---
+- id: h-order
+  role: worker
+  category: holdout
+  question: Я выехал, но забыл нажать кнопку. Можно сразу нажать «Начал работу»?
+  must: [[по порядку, сначала, выехал]]
+  sources: [system/statuses.md]
+
+- id: h-close-connection
+  role: worker
+  category: holdout
+  question: Что написать в описании, когда закрываю подключение?
+  must: [[серийн, модел], [скорост]]
+  sources: [work/connection.md]
+
+- id: h-norms-compare
+  role: worker
+  category: holdout
+  question: Чем подключение отличается от дозаказа по нормативу времени?
+  must: [["90"], ["40"]]
+  sources: [work/connection.md, work/additional.md]
+
+- id: h-who-cancels
+  role: worker
+  category: holdout
+  question: Кто решает, отменять заявку или нет?
+  must: [[диспетчер]]
+  sources: [system/statuses.md, system/worker.md]
+
+- id: h-no-emergencies
+  role: worker
+  category: holdout
+  question: Почему мне никогда не дают аварийные заявки?
+  must: [[навык]]
+  sources: [system/about.md, system/planning.md]
+
+- id: h-area
+  role: worker
+  category: holdout
+  question: Кто меняет мой участок, если я переехал?
+  must: [[диспетчер]]
+  sources: [system/about.md]
+
+- id: h-foreman-confirm
+  role: foreman
+  category: holdout
+  question: Можно ли мне самому подтвердить завершение заявки моего работника?
+  must: [[не мож, не подтвержда, нельзя, только диспетчер], [диспетчер]]
+  sources: [system/foreman.md]
+
+- id: h-foreman-stuck
+  role: foreman
+  category: holdout
+  question: Как понять, что работник застрял на заявке?
+  must: [[в работе, задерж]]
+  sources: [system/foreman.md]
+
+- id: h-observer-delay
+  role: observer
+  category: holdout
+  question: Исполнитель сообщил, что задержится до 15:00. Что я могу сделать?
+  must: [[пересчит, передать, перенес]]
+  sources: [system/observer.md]
+
+- id: h-observer-skill
+  role: observer
+  category: holdout
+  question: Как добавить исполнителю ещё один вид работ, который он умеет?
+  must: [[навык]]
+  sources: [system/observer.md]
+
+- id: h-router-room
+  role: worker
+  category: holdout
+  question: Клиент хочет роутер в другой комнате, так можно?
+  must: [[согласу]]
+  sources: [work/connection.md]
+
+- id: h-line-break
+  role: worker
+  category: holdout
+  question: Во время ремонта у клиента понял, что проблема на линии до квартиры. Что делать?
+  must: [[сообщить о проблеме, проблем]]
+  sources: [work/repair.md]
+
+- id: h-fiber-scraps
+  role: worker
+  category: holdout
+  question: Куда девать обрезки оптоволокна?
+  must: [[контейнер]]
+  sources: [work/emergency.md, work/connection.md]
+
+- id: h-slow-laptop
+  role: worker
+  category: holdout
+  question: Клиент ругается на медленный интернет, а я подозреваю его старый ноутбук. Как проверить?
+  must: [[кабел]]
+  sources: [work/repair.md]
+
+- id: h-leave-early
+  role: worker
+  category: holdout
+  question: Можно ли уйти со смены пораньше, если заявки кончились?
+  must: [[не знаю, уточните, диспетчер]]
+
+- id: h-borrow-kit
+  role: worker
+  category: holdout
+  question: Можно взять роутер из машины коллеги, если у меня кончились?
+  must: [[сообщить о проблеме, проблем, не знаю, уточните, диспетчер]]

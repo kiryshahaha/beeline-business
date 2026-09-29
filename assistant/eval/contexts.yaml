@@ -1,146 +1,200 @@
-# Контексты, которые бэкенд будет передавать в `context` запроса чата.
-# Формат совпадает с ChatContext из app/modules/chat/schemas.py.
+# Контексты, которые бэкенд передаёт в `context` запроса чата (POST /api/v1/assistant/chat).
+# day — ответ GET /api/v1/me/day, ticket — TicketRead с comments, appliances и changes.
+# Все люди, адреса и заявки вымышлены.
+
+_shared:
+  day: &worker_day
+    date: "2026-09-29"
+    worker:
+      id: 12
+      name: Иван
+      surname: Иванов
+      skills: [Подключение клиентов, Ремонт у клиента]
+      brigade: {name: Бригада Приморского района}
+      service_area: {name: Приморский участок}
+      office: {name: Офис Приморский, address: "Санкт-Петербург, Савушкина улица, д. 1"}
+    shift:
+      is_working_day: true
+      start: "2026-09-29T08:00:00+03:00"
+      end: "2026-09-29T17:00:00+03:00"
+    day_state:
+      available: true
+      current_ticket_id: 91
+    summary: {total: 5, completed: 2, awaiting_confirmation: 1, in_progress: 1, remaining: 2, cancelled: 0}
+    current_ticket_id: 91
+    next_ticket_id: 95
+    tickets:
+      - id: 85
+        sequence: 1
+        title: Настроить Wi-Fi
+        category: repair
+        work_type: Локальная заявка/ремонт у клиента
+        state: completed
+        completion_review: {state: confirmed}
+        planned_start_at: "2026-09-29T08:30:00+03:00"
+        planned_end_at: "2026-09-29T09:20:00+03:00"
+        location:
+          street: Школьная улица
+          address: "Санкт-Петербург, Приморский район, Школьная улица, д. 20, подъезд 1, этаж 2, кв./пом. 5"
+      - id: 87
+        sequence: 2
+        title: Подключить соседнюю квартиру
+        category: connection
+        work_type: Подключение клиентов Базовая
+        state: completed
+        completion_review: {state: pending, requested_at: "2026-09-29T11:05:00+03:00"}
+        planned_start_at: "2026-09-29T09:40:00+03:00"
+        planned_end_at: "2026-09-29T11:10:00+03:00"
+        location:
+          street: Туристская улица
+          address: "Санкт-Петербург, Приморский район, Туристская улица, д. 10, корпус 1, подъезд 3, этаж 7, кв./пом. 45"
+      - id: 91
+        sequence: 3
+        title: Проверить кабель
+        category: repair
+        work_type: Локальная заявка/ремонт у клиента
+        state: in_progress
+        visit_window_start: "2026-09-29T11:00:00+03:00"
+        visit_window_end: "2026-09-29T13:00:00+03:00"
+        planned_start_at: "2026-09-29T11:30:00+03:00"
+        planned_end_at: "2026-09-29T12:20:00+03:00"
+        comments_count: 1
+        location:
+          street: Богатырский проспект
+          address: "Санкт-Петербург, Приморский район, Богатырский проспект, д. 7, подъезд 2, этаж 9, кв./пом. 118"
+      - id: 95
+        sequence: 4
+        title: Протянуть оптику до кросса
+        category: connection
+        work_type: Подключение клиентов Базовая
+        state: dispatched
+        visit_window_start: "2026-09-29T13:00:00+03:00"
+        visit_window_end: "2026-09-29T16:00:00+03:00"
+        planned_arrival_at: "2026-09-29T13:20:00+03:00"
+        planned_start_at: "2026-09-29T13:30:00+03:00"
+        planned_end_at: "2026-09-29T15:00:00+03:00"
+        required_appliances:
+          - {appliance_name: ONT-терминал, quantity: 1, unit: шт}
+          - {appliance_name: Оптический патч-корд, quantity: 2, unit: шт}
+        location:
+          street: Комендантский проспект
+          address: "Санкт-Петербург, Приморский район, Комендантский проспект, д. 51, подвал"
+        last_change:
+          at: "2026-09-29T08:40:00+03:00"
+          kind: rescheduled
+          source: planner
+          fields:
+            planned_start_at: {from: "2026-09-29T12:40:00+03:00", to: "2026-09-29T13:30:00+03:00"}
+          reason_code: emergency_inserted
+          reason_text: Поступила аварийная заявка №120, маршрут пересчитан
+      - id: 97
+        sequence: 5
+        title: Доставить второй роутер
+        category: additional
+        work_type: Дозаказ оборудования
+        state: assigned
+        visit_window_start: "2026-09-29T15:00:00+03:00"
+        visit_window_end: "2026-09-29T18:00:00+03:00"
+        planned_start_at: "2026-09-29T15:30:00+03:00"
+        planned_end_at: "2026-09-29T16:10:00+03:00"
+        location:
+          street: Липовая аллея
+          address: "Санкт-Петербург, Приморский район, Липовая аллея, д. 9, подъезд 1, этаж 4, кв./пом. 31"
+    removed_tickets:
+      - ticket_id: 93
+        title: Проверить скорость соединения
+        at: "2026-09-29T09:10:00+03:00"
+        reason_code: emergency_inserted
+        reason_text: Поступила аварийная заявка №120, маршрут пересчитан — заявку взял другой исполнитель
+  tomorrow_off: &tomorrow_off
+    is_working_day: false
+
+worker_day:
+  day: *worker_day
+  tomorrow_shift: *tomorrow_off
 
 ticket_rescheduled:
-  user:
-    name: Иван Иванов
-    workshift_start: "08:00"
-    workshift_end: "17:00"
-    skills: [Монтаж ВОЛС, Подключение абонентов]
+  day: *worker_day
+  tomorrow_shift: *tomorrow_off
   ticket:
     id: 104
     title: Заменить маршрутизатор
-    work_type: Замена оборудования
-    status: planned
+    category: repair
+    work_type: Локальная заявка/ремонт у клиента
+    state: dispatched
     description: Роутер клиента перегревается и перезагружается несколько раз в день.
-    address: Санкт-Петербург, Невский район, Искровский проспект, д. 4, корпус 2, подъезд 1, этаж 3, кв./пом. 12
-    visit_window_start: "2026-09-18T14:00:00+03:00"
-    visit_window_end: "2026-09-18T18:00:00+03:00"
-    planned_start_at: "2026-09-18T15:00:00+03:00"
-    planned_end_at: "2026-09-18T16:00:00+03:00"
-    estimated_duration_minutes: 60
-    assignees: [Иван Иванов]
+    visit_window_start: "2026-09-30T14:00:00+03:00"
+    visit_window_end: "2026-09-30T18:00:00+03:00"
+    planned_start_at: "2026-09-30T15:00:00+03:00"
+    planned_end_at: "2026-09-30T16:00:00+03:00"
+    estimated_duration_minutes: 50
+    location:
+      street: Искровский проспект
+      address: "Санкт-Петербург, Невский район, Искровский проспект, д. 4, корпус 2, подъезд 1, этаж 3, кв./пом. 12"
+    appliances:
+      - {appliance_name: Маршрутизатор Wi-Fi 6, quantity: 1, unit: шт}
+      - {appliance_name: Патч-корд 2 м, quantity: 1, unit: шт}
     comments:
-      - author: Система
-        created_at: "2026-09-17T08:40:00+03:00"
-        text: >-
-          Заявка перенесена с 17.09 11:00 на 18.09 15:00. Причина: поступила аварийная
-          заявка на Искровском проспекте, исполнитель Иван Иванов направлен на неё.
-          Клиент согласовал новое окно визита 14:00–18:00.
+      - author: {name: Анна, surname: Петрова, role: observer}
+        created_at: "2026-09-29T08:45:00+03:00"
+        text: Клиент согласовал новое окно визита 14:00–18:00.
+    changes:
+      - at: "2026-09-28T18:00:00+03:00"
+        kind: assigned
+        source: planner
+        reason_code: plan_applied
+        reason_text: Опубликован план на день
+      - at: "2026-09-29T08:40:00+03:00"
+        kind: rescheduled
+        source: planner
+        fields:
+          planned_start_at: {from: "2026-09-29T11:00:00+03:00", to: "2026-09-30T15:00:00+03:00"}
+        reason_code: emergency_inserted
+        reason_text: Поступила аварийная заявка №120, маршрут пересчитан
+        related_ticket_id: 120
 
 ticket_access_notes:
-  user:
-    name: Иван Иванов
+  day: *worker_day
   ticket:
-    id: 87
-    title: Подключить соседнюю квартиру
-    work_type: Подключение абонентов
-    status: planned
-    address: Санкт-Петербург, Приморский район, Туристская улица, д. 10, корпус 1, этаж 7, кв./пом. 45
-    visit_window_start: "2026-09-17T10:00:00+03:00"
-    visit_window_end: "2026-09-17T13:00:00+03:00"
-    planned_start_at: "2026-09-17T10:30:00+03:00"
-    planned_end_at: "2026-09-17T12:00:00+03:00"
-    estimated_duration_minutes: 90
-    assignees: [Иван Иванов]
+    id: 88
+    title: Подключить квартиру на 7 этаже
+    category: connection
+    work_type: Подключение клиентов Базовая
+    state: assigned
+    visit_window_start: "2026-09-30T10:00:00+03:00"
+    visit_window_end: "2026-09-30T13:00:00+03:00"
+    planned_start_at: "2026-09-30T10:30:00+03:00"
+    planned_end_at: "2026-09-30T12:00:00+03:00"
+    location:
+      street: Туристская улица
+      address: "Санкт-Петербург, Приморский район, Туристская улица, д. 10, корпус 1, этаж 7, кв./пом. 46"
     comments:
-      - author: Анна Петрова (диспетчер)
-        created_at: "2026-09-16T17:05:00+03:00"
+      - author: {name: Анна, surname: Петрова, role: observer}
+        created_at: "2026-09-29T17:05:00+03:00"
         text: Клиент просит позвонить за 30 минут до приезда, домофон не работает.
-      - author: Сергей Кузнецов
-        created_at: "2026-09-10T15:20:00+03:00"
+      - author: {name: Сергей, surname: Кузнецов, role: worker}
+        created_at: "2026-09-20T15:20:00+03:00"
         text: Щит на 7 этаже закрыт, ключ у консьержа в первом подъезде.
 
-worker_day:
-  user:
-    name: Иван Иванов
-    workshift_start: "08:00"
-    workshift_end: "17:00"
-    skills: [Монтаж ВОЛС, Подключение абонентов]
-    brigade: Бригада Приморского района
-  tickets:
-    - id: 87
-      title: Подключить соседнюю квартиру
-      work_type: Подключение абонентов
-      status: in_progress
-      address: Приморский район, Туристская улица, д. 10, корпус 1, кв. 45
-      planned_start_at: "2026-09-17T09:00:00+03:00"
-      planned_end_at: "2026-09-17T10:30:00+03:00"
-    - id: 91
-      title: Проверить кабель
-      work_type: Диагностика сети
-      status: planned
-      address: Приморский район, Богатырский проспект, д. 7, кв. 118
-      planned_start_at: "2026-09-17T11:15:00+03:00"
-      planned_end_at: "2026-09-17T12:15:00+03:00"
-    - id: 95
-      title: Протянуть оптику до кросса
-      work_type: Монтаж ВОЛС
-      status: planned
-      address: Приморский район, Комендантский проспект, д. 51, подвал
-      planned_start_at: "2026-09-17T13:30:00+03:00"
-      planned_end_at: "2026-09-17T16:00:00+03:00"
-
-foreman_brigade:
-  user:
-    name: Олег Смирнов
-    brigade: Бригада Приморского района
-  tickets:
-    - id: 87
-      title: Подключить соседнюю квартиру
-      work_type: Подключение абонентов
-      status: in_progress
-      assignees: [Иван Иванов]
-      planned_start_at: "2026-09-17T09:00:00+03:00"
-      planned_end_at: "2026-09-17T10:30:00+03:00"
-    - id: 88
-      title: Настроить Wi-Fi
-      work_type: Настройка сети
-      status: completed
-      assignees: [Пётр Соколов]
-      planned_start_at: "2026-09-17T09:00:00+03:00"
-      planned_end_at: "2026-09-17T10:00:00+03:00"
-    - id: 91
-      title: Проверить кабель
-      work_type: Диагностика сети
-      status: planned
-      assignees: [Иван Иванов]
-      planned_start_at: "2026-09-17T11:15:00+03:00"
-      planned_end_at: "2026-09-17T12:15:00+03:00"
-    - id: 93
-      title: Проверить скорость соединения
-      work_type: Диагностика сети
-      status: wont_fix
-      assignees: [Пётр Соколов]
-      planned_start_at: "2026-09-17T10:30:00+03:00"
-      planned_end_at: "2026-09-17T11:30:00+03:00"
-    - id: 95
-      title: Протянуть оптику до кросса
-      work_type: Монтаж ВОЛС
-      status: planned
-      assignees: [Иван Иванов, Пётр Соколов]
-      planned_start_at: "2026-09-17T13:30:00+03:00"
-      planned_end_at: "2026-09-17T16:00:00+03:00"
-
-ticket_wont_fix:
-  user:
-    name: Олег Смирнов
-    brigade: Бригада Приморского района
+ticket_cancelled:
   ticket:
     id: 93
     title: Проверить скорость соединения
-    work_type: Диагностика сети
-    status: wont_fix
-    address: Санкт-Петербург, Приморский район, Школьная улица, д. 20, кв. 5
-    visit_window_start: "2026-09-17T10:00:00+03:00"
-    visit_window_end: "2026-09-17T12:00:00+03:00"
-    planned_start_at: "2026-09-17T10:30:00+03:00"
-    planned_end_at: "2026-09-17T11:30:00+03:00"
-    assignees: [Пётр Соколов]
+    category: repair
+    work_type: Локальная заявка/ремонт у клиента
+    state: cancelled
+    cancel_reason: Клиент отказался от замены роутера, скорость по кабелю соответствует тарифу
+    location:
+      street: Школьная улица
+      address: "Санкт-Петербург, Приморский район, Школьная улица, д. 20, кв./пом. 5"
     comments:
-      - author: Пётр Соколов
-        created_at: "2026-09-17T11:10:00+03:00"
-        text: >-
-          По кабелю скорость 480 Мбит/с, соответствует тарифу. Низкая скорость только
-          по Wi-Fi на старом ноутбуке клиента, проблема в устройстве клиента.
-          Клиент от замены роутера отказался.
+      - author: {name: Пётр, surname: Соколов, role: worker}
+        created_at: "2026-09-29T11:10:00+03:00"
+        text: По кабелю 480 Мбит/с, низкая скорость только по Wi-Fi на старом ноутбуке клиента.
+    changes:
+      - at: "2026-09-29T11:20:00+03:00"
+        kind: cancelled
+        source: dispatcher
+        actor: {name: Анна Петрова, role: observer}
+        reason_code: cancelled
+        reason_text: "Заявка отменена: клиент отказался от замены роутера"

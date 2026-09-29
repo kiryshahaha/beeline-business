@@ -1,16 +1,17 @@
-"""Benchmark chat models on the eval set through the same code path as the service.
+"""Benchmark the assistant on the eval set through the same code path as the service.
 
-Run from the assistant directory with Ollama listening on OLLAMA_URL:
+Questions about the user's day are answered from data; the rest go to the model.
+Run from the assistant directory; the model runs need Ollama on OLLAMA_URL:
 
     python -m eval.run_bench --retrieval-only
-    python -m eval.run_bench --models qwen3.5:0.8b qwen3:0.6b
+    python -m eval.run_bench --facts-only
+    python -m eval.run_bench --models qwen3.5:0.8b qwen3.5:2b
 """
 
 import argparse
 import json
 import statistics
 import time
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
@@ -18,6 +19,7 @@ import httpx
 import yaml
 
 from app.core.config import get_settings
+from app.modules.chat.facts import answer_from_facts
 from app.modules.chat.knowledge import KnowledgeBase
 from app.modules.chat.llm import OllamaClient
 from app.modules.chat.schemas import ChatContext, ChatRequest
@@ -64,6 +66,25 @@ def retrieval_report(cases: list[dict], knowledge: KnowledgeBase, top_k: int) ->
     return hit_rate, rows
 
 
+def facts_report(cases: list[dict]) -> list[dict]:
+    """Every data question must be answered from data, and correctly."""
+    rows = []
+    for case in cases:
+        fact = answer_from_facts(case["request"])
+        if case.get("answered_by") != "facts" and fact is None:
+            continue
+        row = {"id": case["id"], "expected_facts": case.get("answered_by") == "facts"}
+        if fact is None:
+            row.update(answer=None, score=0.0, missed=case.get("must", []), violations=[])
+        else:
+            row.update(
+                answer=fact.text,
+                **score_answer(fact.text, case.get("must", []), case.get("must_not", [])),
+            )
+        rows.append(row)
+    return rows
+
+
 def loaded_model_bytes(ollama_url: str, model: str) -> int | None:
     response = httpx.get(f"{ollama_url}/api/ps", timeout=10)
     for item in response.json().get("models", []):
@@ -83,48 +104,72 @@ def unload_all_models(ollama_url: str) -> None:
 
 
 def run_model(model: str, cases: list[dict], knowledge, client, settings) -> dict:
-    warmup = ChatRequest(role="worker", message="Привет")
+    warmup = ChatRequest(role="worker", message="Как закрыть заявку?")
     started = time.perf_counter()
-    reply, _ = generate(warmup, knowledge, client, settings, model=model)
+    generate(warmup, knowledge, client, settings, model=model)
     warmup_seconds = time.perf_counter() - started
     memory = loaded_model_bytes(settings.ollama_url, model)
 
     results = []
     for case in cases:
-        reply, chunks = generate(case["request"], knowledge, client, settings, model=model)
-        results.append(
-            {
-                "id": case["id"],
-                "role": case["role"],
-                "category": case["category"],
-                "question": case["question"],
-                "answer": reply.text,
-                "sources": [f"{chunk.path} / {chunk.section}" for chunk in chunks],
-                **score_answer(reply.text, case.get("must", []), case.get("must_not", [])),
-                **{key: value for key, value in asdict(reply).items() if key != "text"},
-                "tokens_per_second": reply.tokens_per_second,
-            }
+        request = case["request"]
+        fact = answer_from_facts(request)
+        row = {
+            "id": case["id"],
+            "role": case["role"],
+            "category": case["category"],
+            "question": case["question"],
+        }
+        if fact is not None:
+            row.update(
+                answer=fact.text,
+                source_type="facts",
+                sources=[s.section for s in fact.sources],
+                total_seconds=0.0,
+                prompt_tokens=0,
+                completion_tokens=0,
+                tokens_per_second=None,
+            )
+        else:
+            reply, chunks = generate(request, knowledge, client, settings, model=model)
+            row.update(
+                answer=reply.text,
+                source_type="knowledge" if chunks else "model",
+                sources=[f"{chunk.path} / {chunk.section}" for chunk in chunks],
+                total_seconds=reply.total_seconds,
+                prompt_tokens=reply.prompt_tokens,
+                completion_tokens=reply.completion_tokens,
+                tokens_per_second=reply.tokens_per_second,
+            )
+        row.update(score_answer(row["answer"], case.get("must", []), case.get("must_not", [])))
+        results.append(row)
+        print(
+            f"  {case['id']:<18} {row['source_type']:<9} score={row['score']:.2f} "
+            f"{row['total_seconds']:5.1f}s"
         )
-        print(f"  {case['id']:<18} score={results[-1]['score']:.2f} {reply.total_seconds:5.1f}s")
 
-    latencies = sorted(result["total_seconds"] for result in results)
+    model_rows = [r for r in results if r["source_type"] != "facts"]
+    latencies = sorted(r["total_seconds"] for r in model_rows) or [0.0]
     return {
         "model": model,
         "warmup_seconds": warmup_seconds,
         "memory_bytes": memory,
-        "avg_score": statistics.mean(result["score"] for result in results),
-        "full_marks": sum(result["score"] == 1.0 for result in results),
-        "violations": sum(bool(result["violations"]) for result in results),
+        "avg_score": statistics.mean(r["score"] for r in results),
+        "full_marks": sum(r["score"] == 1.0 for r in results),
+        "violations": sum(bool(r["violations"]) for r in results),
+        "facts_answers": len(results) - len(model_rows),
+        "model_answers": len(model_rows),
+        "model_avg_score": statistics.mean(r["score"] for r in model_rows) if model_rows else None,
         "avg_seconds": statistics.mean(latencies),
         "p95_seconds": latencies[max(0, round(0.95 * len(latencies)) - 1)],
-        "avg_prompt_tokens": statistics.mean(result["prompt_tokens"] for result in results),
-        "avg_prompt_tps": statistics.mean(
-            r["prompt_tokens"] / r["prompt_seconds"] for r in results if r["prompt_seconds"]
-        ),
-        "avg_generation_tps": statistics.mean(result["tokens_per_second"] for result in results),
+        "avg_generation_tps": statistics.mean(
+            r["tokens_per_second"] for r in model_rows if r["tokens_per_second"]
+        )
+        if model_rows
+        else None,
         "by_category": {
             category: statistics.mean(r["score"] for r in results if r["category"] == category)
-            for category in dict.fromkeys(result["category"] for result in results)
+            for category in dict.fromkeys(r["category"] for r in results)
         },
         "results": results,
     }
@@ -136,17 +181,19 @@ def write_report(out_dir: Path, hit_rate: float, runs: list[dict], top_k: int) -
         "",
         f"Поиск по базе знаний: hit@{top_k} = {hit_rate:.0%}",
         "",
-        "| Модель | Память | Средний балл | Полностью верно | Нарушения | Ср. время, с"
-        " | p95, с | Промпт, ток/с | Генерация, ток/с |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Модель | Память | Балл (всё) | Полностью верно | Из данных | Модель"
+        " | Балл ответов модели | Ответ модели, с | p95, с | Генерация, ток/с |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for run in runs:
         memory = f"{run['memory_bytes'] / 2**30:.2f} ГБ" if run["memory_bytes"] else "?"
+        model_score = f"{run['model_avg_score']:.2f}" if run["model_avg_score"] is not None else "—"
+        tps = f"{run['avg_generation_tps']:.0f}" if run["avg_generation_tps"] else "—"
         lines.append(
             f"| `{run['model']}` | {memory} | {run['avg_score']:.2f} "
-            f"| {run['full_marks']}/{len(run['results'])} | {run['violations']} "
-            f"| {run['avg_seconds']:.1f} | {run['p95_seconds']:.1f} "
-            f"| {run['avg_prompt_tps']:.0f} | {run['avg_generation_tps']:.0f} |"
+            f"| {run['full_marks']}/{len(run['results'])} | {run['facts_answers']} "
+            f"| {run['model_answers']} | {model_score} | {run['avg_seconds']:.1f} "
+            f"| {run['p95_seconds']:.1f} | {tps} |"
         )
     categories = list(runs[0]["by_category"]) if runs else []
     if categories:
@@ -160,7 +207,7 @@ def write_report(out_dir: Path, hit_rate: float, runs: list[dict], top_k: int) -
         for result in run["results"]:
             flag = " ⚠️ " + ", ".join(result["violations"]) if result["violations"] else ""
             lines += [
-                f"### {result['id']} — {result['score']:.2f}{flag}",
+                f"### {result['id']} — {result['score']:.2f} ({result['source_type']}){flag}",
                 f"**{result['role']}:** {result['question']}",
                 "",
                 result["answer"],
@@ -176,6 +223,7 @@ def main() -> None:
     parser.add_argument("--models", nargs="*", default=[])
     parser.add_argument("--only", help="Comma-separated question ids")
     parser.add_argument("--retrieval-only", action="store_true")
+    parser.add_argument("--facts-only", action="store_true")
     args = parser.parse_args()
 
     settings = get_settings()
@@ -190,7 +238,17 @@ def main() -> None:
     for case_id, hit, found, expected in rows:
         if not hit:
             print(f"  MISS {case_id}: expected {expected}, found {found}")
-    if args.retrieval_only:
+
+    facts = facts_report(cases)
+    expected = [row for row in facts if row["expected_facts"]]
+    exact = sum(row["score"] == 1.0 for row in expected)
+    print(f"facts: {exact}/{len(expected)} вопросов о данных отвечены из данных полностью верно")
+    for row in facts:
+        if not row["expected_facts"]:
+            print(f"  ЛИШНИЙ ответ из данных {row['id']}: {row['answer']}")
+        elif row["score"] < 1.0:
+            print(f"  ✗ {row['id']}: не хватает {row['missed']} — {row['answer']}")
+    if args.retrieval_only or args.facts_only:
         return
 
     out_dir = EVAL_DIR / "results" / datetime.now().strftime("%Y%m%d-%H%M%S")
