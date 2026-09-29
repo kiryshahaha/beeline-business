@@ -167,7 +167,7 @@ async def run_all():
         res = await measure(t, w)
         results.append(res)
 
-    with open("../docs/T18_BUDGET_A26.md", "w") as f:
+    with open("../Артефакты_нейронки/T18_BUDGET_A26.md", "w") as f:
         f.write("# T18: Measured Budgets A26\n\n")
         f.write(
             "| Tickets | Workers | Snapshot (KB) | Unique Coords | Matrix Cells (4 profs) | HTTP Matrix Blocks | Geom Time (ms) | Total Time (s) |\n"  # noqa: E501

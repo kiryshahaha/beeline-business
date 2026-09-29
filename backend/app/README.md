@@ -8,5 +8,5 @@
 - [db](db/README.md): metadata, реестр таблиц, engine и жизненный цикл сессий.
 - [modules](modules/README.md): предметный код, API и модели.
 
-Команды чистого запуска backend и planner находятся в [руководстве runtime](../../docs/RUNTIME.md).
+Команды чистого запуска backend и planner находятся в [руководстве runtime](../../Артефакты_нейронки/RUNTIME.md).
 Импорт модулей сам по себе не должен выполнять миграции, seeding или запросы к БД.

@@ -1,0 +1,137 @@
+# Проверка распознавания вопросов о данных (app/modules/chat/facts.py).
+#   intent: ожидаемый вопрос о данных; null — вопрос не о данных, отвечает модель.
+#   Список — составной вопрос, ответ на каждую часть.
+# dev — по нему настраиваются правила; test — написан вместе с dev до первого запуска
+# и для настройки не используется: он показывает точность на незнакомых формулировках.
+
+dev:
+  - {text: "Почему мою заявку перенесли?", intent: why_changed}
+  - {text: "почему перенесли заявку на оптику", intent: why_changed}
+  - {text: "Зачем мне сдвинули время?", intent: why_changed}
+  - {text: "почему у меня забрали заявку", intent: why_changed}
+  - {text: "по какой причине заявку отдали другому", intent: why_changed}
+  - {text: "из-за чего поменяли время визита", intent: why_changed}
+  - {text: "Какая у меня сегодня смена?", intent: shift}
+  - {text: "до скольки я сегодня работаю", intent: shift}
+  - {text: "Во сколько я заканчиваю?", intent: shift}
+  - {text: "я завтра работаю?", intent: shift}
+  - {text: "когда домой", intent: shift}
+  - {text: "у меня завтра выходной?", intent: shift}
+  - {text: "Сколько у меня заявок сегодня?", intent: day_count}
+  - {text: "сколько еще осталось", intent: day_count}
+  - {text: "много ещё работы?", intent: day_count}
+  - {text: "сколько заявок я уже сделал", intent: day_count}
+  - {text: "сколько адресов на сегодня", intent: day_count}
+  - {text: "Куда мне дальше?", intent: next_ticket}
+  - {text: "какая следующая заявка", intent: next_ticket}
+  - {text: "что у меня потом", intent: next_ticket}
+  - {text: "куда теперь ехать", intent: next_ticket}
+  - {text: "Какая заявка после проверки кабеля?", intent: next_ticket}
+  - {text: "следующий адрес какой", intent: next_ticket}
+  - {text: "На какой я сейчас заявке?", intent: current_ticket}
+  - {text: "какая у меня текущая заявка", intent: current_ticket}
+  - {text: "что я сейчас делаю", intent: current_ticket}
+  - {text: "Во сколько мне ехать к клиенту?", intent: ticket_time}
+  - {text: "когда надо быть на заявке", intent: ticket_time}
+  - {text: "к скольки мне к клиенту", intent: ticket_time}
+  - {text: "до скольки окно у клиента", intent: ticket_time}
+  - {text: "во сколько начинать работу по этой заявке", intent: ticket_time}
+  - {text: "Заявку подтвердили?", intent: ticket_status}
+  - {text: "моя заявка закрыта?", intent: ticket_status}
+  - {text: "какой статус у заявки на туристской", intent: ticket_status}
+  - {text: "заявка на Школьной завершена?", intent: ticket_status}
+  - {text: "Что взять с собой на эту заявку?", intent: ticket_equipment}
+  - {text: "какое оборудование нужно", intent: ticket_equipment}
+  - {text: "что мне брать на заявку с оптикой", intent: ticket_equipment}
+  - {text: "какой роутер везти", intent: ticket_equipment}
+  - {text: "Что важно знать перед выездом?", intent: ticket_notes}
+  - {text: "есть комментарии по заявке?", intent: ticket_notes}
+  - {text: "что написал диспетчер", intent: ticket_notes}
+  - {text: "есть особенности по этому адресу?", intent: ticket_notes}
+  - {text: "Какой адрес у заявки?", intent: ticket_address}
+  - {text: "какой подъезд", intent: ticket_address}
+  - {text: "какой этаж и квартира", intent: ticket_address}
+  - {text: "куда ехать на эту заявку", intent: ticket_address}
+  - {text: "Какие у меня заявки сегодня?", intent: day_list}
+  - {text: "покажи мой маршрут", intent: day_list}
+  - {text: "что у меня сегодня по плану", intent: day_list}
+  - {text: "какие заявки ещё не начаты", intent: day_list}
+  - {text: "Привет", intent: greeting}
+  - {text: "здравствуйте", intent: greeting}
+  - {text: "Какая у меня смена и сколько заявок?", intent: [shift, day_count]}
+  - {text: "Есть комментарии по текущей заявке?", intent: ticket_notes}
+  - {text: "адрес следующей заявки", intent: ticket_address}
+  - {text: "Какой статус поставить, когда приехал к клиенту?", intent: null}
+  - {text: "Как закрыть заявку?", intent: null}
+  - {text: "Как поменять смену на ночную?", intent: null}
+  - {text: "Можно ли исправить комментарий?", intent: null}
+  - {text: "Клиента нет дома, что делать?", intent: null}
+  - {text: "Как назначить себя на заявку?", intent: null}
+  - {text: "Можно смотреть в оптический коннектор?", intent: null}
+  - {text: "Нужно ли писать пароль от Wi-Fi в комментарий?", intent: null}
+  - {text: "Какая зарплата у инженера?", intent: null}
+  - {text: "Как настроить IPTV-приставку?", intent: null}
+  - {text: "где посмотреть мои заявки", intent: null}
+  - {text: "что делать после завершения работы", intent: null}
+  - {text: "кто подтверждает завершение заявки", intent: null}
+  - {text: "сколько длится подключение по нормативу", intent: null}
+  - {text: "как сообщить о проблеме", intent: null}
+  - {text: "что значит статус в пути", intent: null}
+
+test:
+  - {text: "а чего заявку на комендантском передвинули", intent: why_changed}
+  - {text: "почему время по заявке поменялось?", intent: why_changed}
+  - {text: "с какой стати заявку сняли с меня", intent: why_changed}
+  - {text: "почему отменили заявку", intent: why_changed}
+  - {text: "объясни почему перенесли", intent: why_changed}
+  - {text: "почему меня сняли с заявки 93", intent: why_changed}
+  - {text: "во сколько у меня начинается смена", intent: shift}
+  - {text: "работаю ли я завтра", intent: shift}
+  - {text: "какой у меня график сегодня", intent: shift}
+  - {text: "когда заканчивается рабочий день", intent: shift}
+  - {text: "мне завтра на работу?", intent: shift}
+  - {text: "сколько всего вызовов на сегодня", intent: day_count}
+  - {text: "сколько точек осталось объехать", intent: day_count}
+  - {text: "сколько работы осталось на сегодня", intent: day_count}
+  - {text: "сколько заявок ждут подтверждения", intent: day_count}
+  - {text: "а дальше куда", intent: next_ticket}
+  - {text: "следующая заявка во сколько", intent: next_ticket}
+  - {text: "что после этой заявки", intent: next_ticket}
+  - {text: "куда сейчас ехать", intent: next_ticket}
+  - {text: "после туристской куда", intent: next_ticket}
+  - {text: "какая сейчас заявка", intent: current_ticket}
+  - {text: "на какой я задаче", intent: current_ticket}
+  - {text: "когда меня ждет клиент", intent: ticket_time}
+  - {text: "к какому времени надо приехать", intent: ticket_time}
+  - {text: "во сколько нужно быть по адресу", intent: ticket_time}
+  - {text: "в какое время визит", intent: ticket_time}
+  - {text: "заявку на туристской уже приняли?", intent: ticket_status}
+  - {text: "статус заявки 95", intent: ticket_status}
+  - {text: "работу на школьной засчитали?", intent: ticket_status}
+  - {text: "что понадобится на заявке", intent: ticket_equipment}
+  - {text: "какие материалы нужны на подключение", intent: ticket_equipment}
+  - {text: "какое оборудование брать на комендантский", intent: ticket_equipment}
+  - {text: "что по заявке известно", intent: ticket_notes}
+  - {text: "какие заметки по клиенту", intent: ticket_notes}
+  - {text: "есть описание заявки?", intent: ticket_notes}
+  - {text: "что пишут в комментариях", intent: ticket_notes}
+  - {text: "где находится клиент", intent: ticket_address}
+  - {text: "на какой улице заявка", intent: ticket_address}
+  - {text: "какая квартира у клиента", intent: ticket_address}
+  - {text: "перечисли мои заявки", intent: day_list}
+  - {text: "какие адреса у меня сегодня", intent: day_list}
+  - {text: "что я уже сделал сегодня", intent: day_list}
+  - {text: "добрый день", intent: greeting}
+  - {text: "как отметить что я выехал", intent: null}
+  - {text: "что делать если клиент отказался", intent: null}
+  - {text: "куда девать старый роутер", intent: null}
+  - {text: "как узнать норматив по аварии", intent: null}
+  - {text: "что такое окно визита", intent: null}
+  - {text: "можно ли поменяться сменой с коллегой", intent: null}
+  - {text: "кто назначает заявки", intent: null}
+  - {text: "почему не приходят уведомления", intent: null}
+  - {text: "как вернуть оборудование на склад", intent: null}
+  - {text: "сколько стоит тариф 500 мегабит", intent: null}
+  - {text: "как оставить комментарий", intent: null}
+  - {text: "что нажать когда закончил работу", intent: null}
+  - {text: "нужно ли фотографировать работу", intent: null}

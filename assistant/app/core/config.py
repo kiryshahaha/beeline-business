@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     ollama_url: str = "http://localhost:11434"
-    assistant_model: str = "qwen3.5:0.8b"
+    assistant_model: str = "qwen3.5:2b"
     llm_timeout_seconds: float = 120.0
     llm_temperature: float = 0.3
     llm_num_ctx: int = 8192

@@ -1,0 +1,25 @@
+# mlx-lm LoRA settings for Qwen3.5-2B on a 16 GB Apple Silicon Mac.
+# Paths (model, data, adapter_path) are passed on the command line; see finetune/README.md.
+train: true
+fine_tune_type: lora
+num_layers: 16
+batch_size: 1
+iters: 1000            # ~2 epochs over 490 examples
+val_batches: -1        # the whole validation split: small random subsets are too noisy
+steps_per_report: 20
+steps_per_eval: 200
+save_every: 200
+learning_rate: 1.0e-5  # mlx-lm default; 5e-5 with scale 20 degraded answers
+max_seq_length: 1536   # longest example is ~1 500 tokens
+mask_prompt: true      # learn the answer only, not the prompt
+grad_checkpoint: true
+seed: 42
+lora_parameters:
+  rank: 8
+  scale: 20.0
+  dropout: 0.05
+lr_schedule:
+  name: cosine_decay
+  warmup: 50
+  warmup_init: 1.0e-6
+  arguments: [1.0e-5, 1000, 1.0e-6]
