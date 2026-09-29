@@ -7,16 +7,16 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, computed_f
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 LOCATION_CREATE_EXAMPLE = {
-    "city": "Санкт-Петербург",
-    "district": "Невский район",
-    "street": "Искровский проспект",
-    "building_number": "4",
-    "block": "корпус 2",
+    "city": "Москва",
+    "district": "Восток",
+    "street": "улица Юных Ленинцев",
+    "building_number": "44",
+    "block": "корпус 1",
     "entrance_number": "1",
-    "floor": 3,
-    "apartment": "12",
-    "latitude": 59.9156,
-    "longitude": 30.4631,
+    "floor": 2,
+    "apartment": "5",
+    "latitude": 55.700654,
+    "longitude": 37.759714,
 }
 
 

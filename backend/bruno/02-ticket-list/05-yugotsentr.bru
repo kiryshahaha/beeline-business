@@ -1,11 +1,11 @@
 meta {
-  name: Красногвардейский район
+  name: Участок «Югоцентр»
   type: http
   seq: 5
 }
 
 get {
-  url: {{base_url}}/api/v1/tickets?service_area_id={{krasnogvardeysky_service_area_id}}
+  url: {{base_url}}/api/v1/tickets?service_area_id={{yugotsentr_service_area_id}}
   body: none
   auth: bearer
 }
@@ -15,7 +15,7 @@ auth:bearer {
 }
 
 params:query {
-  service_area_id: {{krasnogvardeysky_service_area_id}}
+  service_area_id: {{yugotsentr_service_area_id}}
 }
 
 assert {
@@ -25,7 +25,7 @@ assert {
 tests {
   test("Каждая заявка соответствует заданным фильтрам", function () {
     res.getBody().forEach(function (ticket) {
-      expect(ticket.location.service_area_id).to.equal(Number(bru.getVar("krasnogvardeysky_service_area_id")));
+      expect(ticket.location.service_area_id).to.equal(Number(bru.getVar("yugotsentr_service_area_id")));
     });
   });
 
@@ -35,5 +35,5 @@ tests {
 }
 
 docs {
-  Пример третьего района. Проверьте ID по location.service_area_id в ответе списка.
+  Третий участок демобазы — «Югоцентр». Проверьте ID по location.service_area_id в ответе списка.
 }

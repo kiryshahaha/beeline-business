@@ -146,7 +146,10 @@ class PlanReportApiTests(CommittedDatabaseTestCase):
         )
         for category, count in plan["metrics"]["unassigned_by_category"].items():
             self.assertEqual(summary[f"unassigned_by_category.{category}"].value, count)
-        self.assertEqual(summary["unassigned_by_category.skill"].value, 8)
+        self.assertEqual(
+            summary["unassigned_by_category.skill"].value,
+            plan["metrics"]["unassigned_by_category"]["skill"],
+        )
         self.assertIsNone(summary["applied_at"].value)
 
         visits = sheet_rows(workbook, "visits")

@@ -23,8 +23,8 @@ NonNegativeInt32 = Annotated[int, Field(strict=True, ge=0, le=2_147_483_647)]
 # Documentation examples only. IDs must be replaced with values from the user's database.
 TICKET_CREATE_EXAMPLE = {
     "location_id": 1,
-    "title": "Настроить Wi-Fi",
-    "description": "Учебный пример заявки",
+    "title": "Подключение по конвергентному тарифу",
+    "description": "Интернет 500 Мбит/с, роутер в аренду, кабель в кабель-канале.",
     "work_type_id": 1,
     "category": "connection",
     "priority": 2,
@@ -42,10 +42,10 @@ TICKET_CREATE_EXAMPLE = {
 
 TICKET_READ_EXAMPLE = {
     **TICKET_CREATE_EXAMPLE,
-    "work_type": "Настройка сети",
+    "work_type": "Подключение клиентов Базовая",
     "id": 1,
     "brigade_id": 1,
-    "district": "Невский район",
+    "district": "Восток",
     "assigned_worker_id": 2,
     "is_pinned": False,
     "state": "waiting_assignment",
@@ -60,23 +60,22 @@ TICKET_READ_EXAMPLE = {
     "location": {
         "id": 1,
         "city_id": 1,
-        "city": "Санкт-Петербург",
+        "city": "Москва",
         "service_area_id": 1,
-        "district": "Невский район",
+        "district": "Восток",
         "street_id": 1,
-        "street": "Искровский проспект",
+        "street": "улица Юных Ленинцев",
         "building_id": 1,
-        "building_number": "4",
-        "block": "корпус 2",
+        "building_number": "44",
+        "block": "корпус 1",
         "entrance_id": 1,
         "entrance_number": "1",
-        "floor": 3,
-        "apartment": "12",
-        "latitude": 59.9156,
-        "longitude": 30.4631,
+        "floor": 2,
+        "apartment": "5",
+        "latitude": 55.700654,
+        "longitude": 37.759714,
         "address": (
-            "Санкт-Петербург, Невский район, Искровский проспект, д. 4, корпус 2, "
-            "подъезд 1, этаж 3, кв./пом. 12"
+            "Москва, Восток, улица Юных Ленинцев, д. 44, корпус 1, подъезд 1, этаж 2, кв./пом. 5"
         ),
     },
 }

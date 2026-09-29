@@ -779,7 +779,8 @@ def s04_constraints(run: Run, roles: dict) -> list[dict]:
 
 def s04_import(run: Run, cases: list[dict]) -> None:
     """The exchange import refuses an active assignment that breaks the same rules."""
-    template = next(row for row in run.package["tickets"] if row["assigned_worker_id"])
+    # The Moscow package has no assignments; the invalid assignment is set below.
+    template = run.package["tickets"][0]
     allocation = run.package["ticket_appliances"][0]
     tickets_before = run.scalar("SELECT count(*) FROM tickets")
     imports_before = run.scalar("SELECT count(*) FROM data_imports")

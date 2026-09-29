@@ -52,7 +52,12 @@ def provider_factory():
 
 
 class FeasiblePlanner:
-    """Simple fixture assignment, never presented as an optimizing implementation."""
+    """Simple fixture assignment, never presented as an optimizing implementation.
+
+    A greedy pass takes visits in window order; then every visit left over is tried in
+    the waiting gaps of the routes, so a fixed visit keeps its time and a short request
+    can still use the time before it, as a real solver would.
+    """
 
     async def solve(self, problem):
         remaining = set(map(int, problem.allowed_vehicles))
@@ -60,30 +65,22 @@ class FeasiblePlanner:
             set(range(len(problem.time_windows))) - set(problem.starts) - set(problem.ends)
         )
         policy_by_node = dict(zip(task_nodes, problem.ticket_policies, strict=True))
-        routes = []
-        response = reassigned = 0
-        for vehicle, depot in enumerate(problem.starts):
-            finish = problem.ends[vehicle]
+
+        def schedule(vehicle, order):
+            """Arrival times and totals of a route, or None when it breaks a window."""
+            depot, finish = problem.starts[vehicle], problem.ends[vehicle]
             matrix = problem.matrices[problem.vehicle_profiles[vehicle]]
             arrival = problem.vehicle_time_windows[vehicle][0]
             steps = [{"node": depot, "arrival_time": arrival}]
-            travel = distance = service = waiting = 0
+            totals = {"travel": 0, "distance": 0, "service": 0, "waiting": 0}
+            response = reassigned = 0
             previous = depot
-            for node in sorted(
-                remaining,
-                key=lambda item: (
-                    problem.time_windows[item][0] != problem.time_windows[item][1],
-                    problem.time_windows[item][0],
-                    item,
-                ),
-            ):
-                if vehicle not in problem.allowed_vehicles[str(node)]:
-                    continue
+            for node in order:
                 policy = policy_by_node[node]
                 duration = matrix.time_minutes[previous][node]
                 back = matrix.time_minutes[node][finish]
                 if duration is None or back is None:
-                    continue
+                    return None
                 earliest = arrival + problem.service_times[previous] + duration
                 next_time = max(earliest, problem.time_windows[node][0])
                 if (
@@ -96,31 +93,70 @@ class FeasiblePlanner:
                     or next_time + problem.service_times[node] + back
                     > problem.vehicle_time_windows[vehicle][1]
                 ):
-                    continue
-                waiting += next_time - earliest
-                service += problem.service_times[previous]
-                travel += duration
-                distance += matrix.distance_meters[previous][node]
+                    return None
+                totals["waiting"] += next_time - earliest
+                totals["service"] += problem.service_times[previous]
+                totals["travel"] += duration
+                totals["distance"] += matrix.distance_meters[previous][node]
                 arrival, previous = next_time, node
                 steps.append({"node": node, "arrival_time": arrival})
-                remaining.remove(node)
                 if policy.category == "emergency":
                     response += arrival - policy.received_at
                 reassigned += policy.previous_vehicle_id not in (None, vehicle)
             duration = matrix.time_minutes[previous][finish]
             arrival += problem.service_times[previous] + duration
-            service += problem.service_times[previous]
-            travel += duration
-            distance += matrix.distance_meters[previous][finish]
+            totals["service"] += problem.service_times[previous]
+            totals["travel"] += duration
+            totals["distance"] += matrix.distance_meters[previous][finish]
             steps.append({"node": finish, "arrival_time": arrival})
+            return steps, totals, response, reassigned
+
+        orders = []
+        for vehicle in range(len(problem.starts)):
+            order = []
+            for node in sorted(
+                remaining,
+                key=lambda item: (
+                    problem.time_windows[item][0] != problem.time_windows[item][1],
+                    problem.time_windows[item][0],
+                    item,
+                ),
+            ):
+                if vehicle in problem.allowed_vehicles[str(node)] and schedule(
+                    vehicle, [*order, node]
+                ):
+                    order.append(node)
+                    remaining.remove(node)
+            orders.append(order)
+        for node in sorted(remaining, key=lambda item: (problem.time_windows[item][0], item)):
+            for vehicle in problem.allowed_vehicles[str(node)]:
+                order = orders[vehicle]
+                position = next(
+                    (
+                        index
+                        for index in range(len(order) + 1)
+                        if schedule(vehicle, [*order[:index], node, *order[index:]])
+                    ),
+                    None,
+                )
+                if position is not None:
+                    order.insert(position, node)
+                    remaining.remove(node)
+                    break
+        routes = []
+        response = reassigned = 0
+        for vehicle, order in enumerate(orders):
+            steps, totals, route_response, route_reassigned = schedule(vehicle, order)
+            response += route_response
+            reassigned += route_reassigned
             routes.append(
                 {
                     "vehicle_id": vehicle,
                     "steps": steps,
-                    "distance": distance,
-                    "travel_minutes": travel,
-                    "service_minutes": service,
-                    "waiting_minutes": waiting,
+                    "distance": totals["distance"],
+                    "travel_minutes": totals["travel"],
+                    "service_minutes": totals["service"],
+                    "waiting_minutes": totals["waiting"],
                 }
             )
         dropped = [policy_by_node[node].category for node in remaining]

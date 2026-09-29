@@ -1,4 +1,4 @@
-"""Fictional files in the organizer's day format: cp1251, «;», office address below."""
+"""Files in the organizer's day format: cp1251, «;», office address below."""
 
 import csv
 import hashlib
@@ -30,7 +30,9 @@ CONTROL_HEADER = [
     "Подключение",
     "Гигабитное подключение",
 ]
-OFFICE = "г. Москва, ул Учебная, д 5с 1"
+OFFICE = "г. Москва, ул Юных Ленинцев, д 83с 4"
+# Real houses (OpenStreetMap) in the spellings of the organizer files; the requests, apartments
+# and people are fictional and none of the houses comes from the organizer's day files.
 # id, BK, HD, start, end, district, address, apartment, brigade, BK status
 VISITS = [
     (
@@ -39,10 +41,10 @@ VISITS = [
         "Конвергенция абонента",
         "10.09.2026 10:00",
         "10.09.2026 12:00",
-        "Центральный",
-        "Город Москва, ул.Вымышленная, д. 1 к 2",
+        "Кузьминки",
+        "Город Москва, ул.Юных Ленинцев, д. 44 к 1",
         "5",
-        "Бригада Тестов",
+        "Бригада Сазонов",
         "Выполнена",
     ),
     (
@@ -51,10 +53,10 @@ VISITS = [
         "Нет линка",
         "10.09.2026 12:00",
         "10.09.2026 14:00",
-        "Центральный",
-        "г.Город Москва, пр-кт.Учебный, д. 7",
+        "Текстильщики",
+        "г.Город Москва, пр-кт.Волгоградский, д. 53",
         "12",
-        "Бригада Тестов",
+        "Бригада Сазонов",
         "Отменена",
     ),
     (
@@ -63,10 +65,10 @@ VISITS = [
         "Авария",
         "10.09.2026 0:01",
         "10.09.2026 23:59",
-        "Южный",
-        "МО, г. Учебногорск Садовая ул. д. 3/1",
+        "Кашира",
+        "МО, г. Кашира Клубная ул. д. 13",
         None,
-        "Бригада Пробный",
+        "Бригада Лаврентьев",
         "В пути",
     ),
     (
@@ -75,10 +77,10 @@ VISITS = [
         "Дозаказ оборудования",
         "10.09.2026 14:00",
         "10.09.2026 16:00",
-        "Южный",
-        "Домодедово, проезд.Опытный 1-й, д. 2А",
+        "Домодедово",
+        "Домодедово, ш.Каширское, д. 94А",
         "44",
-        "Пробный Иван",
+        "Лаврентьев Иван",
         "Просрочена",
     ),
     (
@@ -87,8 +89,8 @@ VISITS = [
         "Заявка на подключение",
         "10.09.2026 16:00",
         "10.09.2026 18:00",
-        "Центральный",
-        "Город Москва, б-р.Тестовый Квартал 12а, д. к3",
+        "Выхино",
+        "Город Москва, б-р.Жулебинский, д. 25",
         "25",
         "",
         "Не отправлена",
@@ -99,13 +101,15 @@ VISITS = [
         "Работа с кабелем",
         "10.09.2026 18:00",
         "10.09.2026 20:00",
-        "Центральный",
-        "Город Москва, ул.Вымышленная, д. 1 к 2",
+        "Кузьминки",
+        "Город Москва, ул.Юных Ленинцев, д. 44 к 1",
         "9",
-        "Бригада Тестов",
+        "Бригада Сазонов",
         "В работе",
     ),
 ]
+# The geocoder knows this newer house only down to its street.
+WEAK_GEOCODE = "Жулебинский"
 
 
 def _csv(rows: list[list[str]], encoding: str = "cp1251", delimiter: str = ";") -> bytes:
@@ -162,12 +166,12 @@ def control_csv(visits=VISITS, extra=()) -> bytes:
 
 
 def geocode_response(request: httpx.Request) -> httpx.Response:
-    """Deterministic Moscow points; «Квартал» answers weakly, «Нигдеевка» is not found."""
+    """Deterministic Moscow points; one house answers weakly, «Нигдеевка» is not found."""
     text = request.url.params["text"]
     if "Нигдеевка" in text:
         return httpx.Response(200, json={"results": []})
     digest = hashlib.sha256(text.encode()).digest()
-    weak = "Квартал" in text
+    weak = WEAK_GEOCODE in text
     return httpx.Response(
         200,
         json={

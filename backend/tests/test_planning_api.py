@@ -1,7 +1,7 @@
 """Committed PostgreSQL tests of preview, atomic application and invalidation."""
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from unittest.mock import patch
 from uuid import UUID
 
@@ -36,6 +36,7 @@ from app.modules.planning.snapshot import fingerprint
 from app.modules.planning.solver_contract import SolveResponse
 from app.modules.service_areas.models import ServiceArea
 from app.modules.tickets import router as tickets_api
+from generate_synthetic import TZ as MOSCOW
 from planning_scenarios import NOW, generate_planning_dataset, preview_request
 from tests.planning_fakes import FeasiblePlanner, provider_factory
 from tests.support import CommittedDatabaseTestCase
@@ -87,6 +88,14 @@ class PlanningApiTests(CommittedDatabaseTestCase):
             + create_access_token({"sub": str(self.receipt["id_map"]["users"][str(source_id)])})
         }
 
+    def tickets_needing_skill(self, source_skill_id):
+        types = {
+            row["work_type_id"]
+            for row in self.data["work_type_required_skills"]
+            if row["skill_id"] == source_skill_id
+        }
+        return sum(t["work_type_id"] in types for t in self.data["tickets"])
+
     def preview(self, **overrides):
         response = self.client.post(
             "/api/v1/planning/preview", json={**self.payload, **overrides}, headers=self.headers
@@ -125,11 +134,17 @@ class PlanningApiTests(CommittedDatabaseTestCase):
         self.assertEqual(self.counts(), (4, 24, 4))
         read = self.client.get(f"/api/v1/planning/plans/{plan['plan_id']}", headers=self.headers)
         self.assertTrue(read.json()["is_current"], read.text)
+        norms = {
+            self.receipt["id_map"]["work_types"][str(w["id"])]: w["work_minutes"]
+            + w["documents_minutes"]
+            for w in self.data["work_types"]
+        }
         with Session(self.engine) as session:
             for ticket in session.scalars(select(Ticket)):
                 self.assertIsNotNone(ticket.planned_start_at)
                 self.assertEqual(
-                    ticket.planned_end_at - ticket.planned_start_at, timedelta(minutes=20)
+                    ticket.planned_end_at - ticket.planned_start_at,
+                    timedelta(minutes=norms[ticket.work_type_id]),
                 )
             for route in session.scalars(select(Route)):
                 self.assertEqual(route.geojson["features"][-1]["properties"]["source"], "geoapify")
@@ -494,6 +509,16 @@ class PlanningApiTests(CommittedDatabaseTestCase):
         self.assertEqual(plan["metrics"]["assigned_tickets"], 24)
         self.assertEqual(plan["metrics"]["used_workers"], 4)
         self.assertIsNone(plan["resource_estimate"])
+        with_sla = {
+            self.receipt["id_map"]["tickets"][str(t["id"])]
+            for t in self.data["tickets"]
+            if t["sla_deadline_at"] is not None
+        }
+        # A visit with a kit reserved for it names that kit; a visit without one says so.
+        with_kit = {
+            self.receipt["id_map"]["tickets"][str(a["ticket_id"])]
+            for a in self.data["ticket_appliances"]
+        }
         for route in plan["routes"]:
             for visit in route["stops"]:
                 factors = {f["code"]: f for f in visit["factors"]}
@@ -503,9 +528,14 @@ class PlanningApiTests(CommittedDatabaseTestCase):
                         "skills_match",
                         "transport",
                         "start_in_window",
-                        "equipment_reserved",
+                        (
+                            "equipment_reserved"
+                            if visit["ticket_id"] in with_kit
+                            else "no_equipment_required"
+                        ),
                         "priority_applied",
-                        "no_sla_deadline",
+                        # Outages carry the 24-hour resolution deadline of the case.
+                        "sla_on_time" if visit["ticket_id"] in with_sla else "no_sla_deadline",
                         "only_eligible_worker",
                     ],
                 )
@@ -551,9 +581,12 @@ class PlanningApiTests(CommittedDatabaseTestCase):
             )
         plan = self.preview()
         self.assertEqual(plan["outcome"], "partial")
+        # Every request whose work type needs the removed skill («Локальные работы»).
+        needing = self.tickets_needing_skill(1)
+        self.assertGreater(needing, 0)
         rejected = [x for x in plan["unassigned"] if x["reason"]["code"] == "missing_skill"]
-        self.assertEqual(len(rejected), 8)
-        self.assertEqual(len(plan["unassigned"]), 8)
+        self.assertEqual(len(rejected), needing)
+        self.assertEqual(len(plan["unassigned"]), needing)
         for item in rejected:
             self.assertEqual(item["reason"]["category"], "skill")
             self.assertEqual(item["reason"]["ids"], {"skill_ids": [skill_id]})
@@ -570,11 +603,21 @@ class PlanningApiTests(CommittedDatabaseTestCase):
                 ),
                 1,
             )
-        self.assertEqual(plan["metrics"]["unassigned_by_category"], {"skill": 8})
+        self.assertEqual(plan["metrics"]["unassigned_by_category"], {"skill": needing})
 
     def test_full_routes_are_not_called_impossible_and_extra_staff_is_an_estimate(self):
+        # Four-hour visits the client can take at any time of the 12-hour shift.
         with self.engine.begin() as connection:
-            connection.execute(update(Ticket).values(estimated_duration_minutes=240))
+            connection.execute(
+                update(WorkTypePlanningRule).values(service_duration_source="ticket_estimate")
+            )
+            connection.execute(
+                update(Ticket).values(
+                    estimated_duration_minutes=240,
+                    visit_window_start=datetime(2030, 1, 15, 10, tzinfo=MOSCOW),
+                    visit_window_end=datetime(2030, 1, 15, 22, tzinfo=MOSCOW),
+                )
+            )
         plan = self.preview()
         self.assertEqual(plan["outcome"], "partial")
         self.assertEqual(plan["metrics"]["assigned_tickets"], 8)
@@ -610,9 +653,14 @@ class PlanningApiTests(CommittedDatabaseTestCase):
         item = plan["unassigned"][0]
         self.assertEqual(item["reason"]["code"], "feasible_slot_missed")
         self.assertEqual(item["reason"]["category"], "search")
+        last = max(self.data["tickets"], key=lambda t: t["id"])
         self.assertEqual(
             item["reason"]["observed"],
-            {"search_time_limit_seconds": 5, "category": "repair", "priority": 3},
+            {
+                "search_time_limit_seconds": 5,
+                "category": last["category"],
+                "priority": last["priority"],
+            },
         )
         slots = [c for c in item["candidates"] if c["reason"]["code"] == "slot_available"]
         self.assertEqual(len(slots), 1)
@@ -682,12 +730,24 @@ class PlanningApiTests(CommittedDatabaseTestCase):
         response = self.client.put(url, json=rules, headers=self.headers)
         self.assertEqual(response.status_code, 200, response.text)
         plan = self.preview()
-        changed = set(self.payload["ticket_ids"][::3])
+        work_type = self.data["work_types"][0]
+        changed = {
+            self.receipt["id_map"]["tickets"][str(t["id"])]
+            for t in self.data["tickets"]
+            if t["work_type_id"] == work_type["id"]
+        }
+        self.assertTrue(changed)
+        seen = 0
         for route in plan["routes"]:
             for visit in route["stops"]:
                 if visit["ticket_id"] in changed:
-                    # travel_minutes=15 is excluded: matrix already accounts for travel.
-                    self.assertEqual(visit["effective_service_minutes"], 40)
+                    seen += 1
+                    # The travel part of the norm is excluded: the matrix accounts for travel.
+                    self.assertEqual(
+                        visit["effective_service_minutes"],
+                        work_type["work_minutes"] + work_type["documents_minutes"],
+                    )
+        self.assertEqual(seen, len(changed))
 
     def test_partial_preview_lists_every_unassigned_ticket(self):
         with self.engine.begin() as connection:
@@ -710,8 +770,8 @@ class PlanningApiTests(CommittedDatabaseTestCase):
                         "ids": {},
                         "observed": {
                             "work_type": "unknown",
-                            "category": "repair",
-                            "priority": 3,
+                            "category": self.data["tickets"][0]["category"],
+                            "priority": self.data["tickets"][0]["priority"],
                         },
                         "required": {
                             "planning_priority_order": [
@@ -720,7 +780,7 @@ class PlanningApiTests(CommittedDatabaseTestCase):
                                 "repair",
                                 "additional",
                             ],
-                            "ticket_priority": 3,
+                            "ticket_priority": self.data["tickets"][0]["priority"],
                         },
                     },
                     "candidates": [],

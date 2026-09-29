@@ -58,7 +58,9 @@ def seed(*, database_url: str, seed: int = 42, tickets=1500, workers=120, days=7
             "schema": schema,
             "counts": result["counts"],
             "duplicate": result["duplicate"],
-            "observer_username": f"synthetic_{seed}_observer_1",
+            "observer_username": next(
+                u["username"] for u in data["users"] if u["role"] == "observer"
+            ),
         }
     finally:
         engine.dispose()

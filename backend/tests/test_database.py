@@ -15,26 +15,26 @@ class DatabaseTests(DatabaseTestCase):
     def setUp(self):
         super().setUp()
 
-        self.city = self.save(City(name="Санкт-Петербург"))
-        self.district = self.save(District(city_id=self.city.id, name="Невский район"))
-        self.street = self.save(Street(city_id=self.city.id, name="улица Ленина"))
+        self.city = self.save(City(name="Москва"))
+        self.district = self.save(District(city_id=self.city.id, name="Нижегородский"))
+        self.street = self.save(Street(city_id=self.city.id, name="Перовское шоссе"))
         self.building = self.save(
             Building(
                 city_id=self.city.id,
                 service_area_id=self.service_area_for_district(self.district.id),
                 street_id=self.street.id,
-                number="12А",
+                number="6А",
             )
         )
-        self.entrance = self.save(Entrance(building_id=self.building.id, number="1"))
+        self.entrance = self.save(Entrance(building_id=self.building.id, number="2"))
         self.location = self.save(
             Location(
                 building_id=self.building.id,
                 entrance_id=self.entrance.id,
                 apartment="24Б",
-                floor=5,
-                latitude=Decimal("59.940000"),
-                longitude=Decimal("30.320000"),
+                floor=1,
+                latitude=Decimal("55.734974"),
+                longitude=Decimal("37.743675"),
             )
         )
         self.window_start = datetime(2026, 9, 12, 10, tzinfo=timezone(timedelta(hours=3)))
@@ -79,28 +79,28 @@ class DatabaseTests(DatabaseTestCase):
         self.assertIsNotNone(first.created_at.tzinfo)
 
     def test_city_duplicate_is_case_insensitive_in_cyrillic(self):
-        self.rejected(City(name="санкт-петербург"))
+        self.rejected(City(name="москва"))
 
     def test_street_duplicate_is_scoped_to_city(self):
-        self.rejected(Street(city_id=self.city.id, name="УЛИЦА ЛЕНИНА"))
-        other_city = self.save(City(name="Москва"))
-        other_street = self.save(Street(city_id=other_city.id, name="улица Ленина"))
+        self.rejected(Street(city_id=self.city.id, name="ПЕРОВСКОЕ ШОССЕ"))
+        other_city = self.save(City(name="Домодедово"))
+        other_street = self.save(Street(city_id=other_city.id, name="Перовское шоссе"))
         self.assertNotEqual(other_street.id, self.street.id)
 
     def test_district_duplicate_is_case_insensitive_and_scoped_to_city(self):
         district = self.district
-        self.rejected(District(city_id=self.city.id, name="НЕВСКИЙ РАЙОН"))
-        other_city = self.save(City(name="Другой город"))
-        other = self.save(District(city_id=other_city.id, name="Невский район"))
+        self.rejected(District(city_id=self.city.id, name="НИЖЕГОРОДСКИЙ"))
+        other_city = self.save(City(name="Домодедово"))
+        other = self.save(District(city_id=other_city.id, name="Нижегородский"))
         self.assertNotEqual(district.id, other.id)
         for name in ("", " ", " Район", "Район "):
             with self.subTest(name=name):
                 self.rejected(District(city_id=self.city.id, name=name))
 
     def test_building_area_is_global_but_street_must_belong_to_its_city(self):
-        other_city = self.save(City(name="Другой город"))
+        other_city = self.save(City(name="Домодедово"))
         district = self.save(District(city_id=other_city.id, name="Центральный район"))
-        other_street = self.save(Street(city_id=other_city.id, name="улица Ленина"))
+        other_street = self.save(Street(city_id=other_city.id, name="Перовское шоссе"))
         other_area_id = self.service_area_for_district(district.id)
         local_building = self.save(
             Building(
@@ -141,7 +141,7 @@ class DatabaseTests(DatabaseTestCase):
                 city_id=self.city.id,
                 service_area_id=self.service_area_for_district(self.district.id),
                 street_id=self.street.id,
-                number="12а",
+                number="6а",
             )
         )
 
@@ -182,14 +182,14 @@ class DatabaseTests(DatabaseTestCase):
                 city_id=self.city.id,
                 service_area_id=self.service_area_for_district(self.district.id),
                 street_id=self.street.id,
-                number="12А",
+                number="6А",
                 block="корпус 2",
             )
         )
         self.assertNotEqual(other_building.id, self.building.id)
 
     def test_entrance_duplicate_is_scoped_to_building(self):
-        self.rejected(Entrance(building_id=self.building.id, number="1"))
+        self.rejected(Entrance(building_id=self.building.id, number="2"))
         other_building = self.save(
             Building(
                 city_id=self.city.id,
@@ -282,15 +282,15 @@ class DatabaseTests(DatabaseTestCase):
     def test_report_groups_tickets_by_city_through_directory(self):
         self.save(self.ticket())
         self.save(self.ticket())
-        other_city = self.save(City(name="Москва"))
-        other_street = self.save(Street(city_id=other_city.id, name="улица Ленина"))
+        other_city = self.save(City(name="Домодедово"))
+        other_street = self.save(Street(city_id=other_city.id, name="Перовское шоссе"))
         other_district = self.save(District(city_id=other_city.id, name="Тестовый район"))
         other_building = self.save(
             Building(
                 city_id=other_city.id,
                 service_area_id=self.service_area_for_district(other_district.id),
                 street_id=other_street.id,
-                number="12А",
+                number="6А",
             )
         )
         other_location = self.save(Location(building_id=other_building.id, apartment="24Б"))

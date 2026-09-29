@@ -599,7 +599,6 @@ export default function SettingsPage() {
                     }
                   >
                     <option value="msk">Москва (Центральный филиал)</option>
-                    <option value="spb">Санкт-Петербург (Северо-Запад)</option>
                     <option value="auto">Автоопределение по геолокации</option>
                   </select>
                 </div>

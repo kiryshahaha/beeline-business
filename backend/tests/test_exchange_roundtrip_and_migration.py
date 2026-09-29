@@ -1,7 +1,6 @@
 """Round trips across migrated databases, including historical schema upgrades."""
 
 import copy
-from pathlib import Path
 
 from alembic import command
 from fastapi.testclient import TestClient
@@ -16,8 +15,9 @@ from app.modules.data_exchange.registry import TABLES
 from app.modules.data_exchange.service import export_data, import_data
 from app.modules.routing.schemas import RouteCreate
 from app.modules.routing.service import save_routes
-from generate_synthetic import generate_dataset
+from generate_synthetic import generate_dataset, serialize_legacy_v2
 from testing.database import migrated_schema
+from tests.exchange_samples import add_journal_samples
 from tests.support import DatabaseTestCase
 
 
@@ -25,7 +25,9 @@ class ExchangeRoundtripTests(DatabaseTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        data = generate_dataset(seed=800, tickets=80, workers=12, days=2)
+        data = add_journal_samples(
+            generate_dataset(seed=800, tickets=80, workers=12, days=2), seed=800
+        )
         data["workers"][0]["is_on_line"] = False
         data["notification_events"][0]["data"]["actor_id"] = 1
         data["notification_events"][0]["websocket_delivered_at"] = None
@@ -131,8 +133,14 @@ class ExchangeRoundtripTests(DatabaseTestCase):
                                 )
 
     def test_legacy_district_keyed_package_imports_area_references(self):
-        package_path = Path(__file__).resolve().parents[1] / "bruno/fixtures/dataset.zip"
-        tables = parse_file(package_path.read_bytes(), package_path.name)
+        # A realistic package with every journal, written in exchange format 2.
+        legacy = serialize_legacy_v2(
+            add_journal_samples(
+                generate_dataset(seed=906, tickets=24, workers=4, days=1), seed=906
+            ),
+            "csv",
+        )
+        tables = parse_file(legacy, "dataset.zip")
         referenced_tables = (
             "buildings",
             "divisions",

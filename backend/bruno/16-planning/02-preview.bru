@@ -53,7 +53,12 @@ tests {
     for (const r of b.routes) {
       expect(r.geometry.type).to.equal("MultiLineString");
       expect(r.route_number).to.equal(undefined);
-      for (const s of r.stops) expect(Date.parse(s.service_end_at) - Date.parse(s.arrival_at)).to.equal(20*60000);
+      for (const s of r.stops) {
+        // A two-hour client window may make the engineer wait before the work starts.
+        expect(Date.parse(s.service_start_at)).to.be.at.least(Date.parse(s.arrival_at));
+        expect(Date.parse(s.service_end_at) - Date.parse(s.service_start_at))
+          .to.equal(s.effective_service_minutes * 60000);
+      }
     }
   });
 }

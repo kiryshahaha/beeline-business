@@ -7,8 +7,8 @@ import subprocess
 import sys
 import time
 from contextlib import ExitStack
-from datetime import datetime, timedelta
-from datetime import time as clock_time
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as time_of_day
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -58,6 +58,34 @@ def _request(client, method, path, expected, **kwargs):
     if response.status_code != expected:
         raise AssertionError(f"{method} {path}: {response.status_code} {body}")
     return body
+
+
+def assert_visits_within_shifts(day):
+    """Verify published visits against the admitted roster, including overnight shifts."""
+    route_date = date.fromisoformat(day["route_date"])
+    moscow = timezone(timedelta(hours=3))
+    shifts = {}
+    for worker in day["roster"]:
+        if not worker["workshift_start"] or not worker["workshift_end"]:
+            raise AssertionError(f"Worker {worker['worker_id']} has no published shift")
+        start = datetime.combine(
+            route_date, time_of_day.fromisoformat(worker["workshift_start"]), moscow
+        )
+        end = datetime.combine(
+            route_date, time_of_day.fromisoformat(worker["workshift_end"]), moscow
+        )
+        if end <= start:
+            end += timedelta(days=1)
+        shifts[worker["worker_id"]] = start, end
+    for visit in day["visits"]:
+        if visit["worker_id"] not in shifts:
+            raise AssertionError(f"Ticket {visit['ticket_id']} is assigned outside the roster")
+        start, end = shifts[visit["worker_id"]]
+        arrival = datetime.fromisoformat(visit["arrival_at"])
+        service_start = datetime.fromisoformat(visit["service_start_at"])
+        service_end = datetime.fromisoformat(visit["service_end_at"])
+        if not start <= arrival <= service_start < service_end <= end:
+            raise AssertionError(f"Visit of ticket {visit['ticket_id']} left its worker shift")
 
 
 def _route_snapshots(client, database, day, historical_route_ids=frozenset()):
@@ -274,19 +302,54 @@ def main():
                 "POST",
                 "/api/v1/auth/login",
                 200,
-                json={"username": "synthetic_5025_observer_1", "password": PASSWORD},
+                json={"username": tables["users"][0]["username"], "password": PASSWORD},
             )
             client.headers.update({"Authorization": f"Bearer {login['access_token']}"})
             areas = {source: ids["service_areas"][str(source)] for source in (101, 102, 103)}
+            roster = set(scenarios["roster_worker_ids"])
+            workers = {row["user_id"]: row["service_area_id"] for row in tables["workers"]}
             initial = {}
             for source, area_id in areas.items():
+                # The package has no published day: the native planner builds the first plan
+                # from the morning requests and the area's roster.
+                morning = [
+                    ids["tickets"][str(case["ticket_id"])]
+                    for case in scenarios["tickets"]
+                    if case["phase"] == "planned" and case["service_area_id"] == source
+                ]
+                crew = [
+                    ids["workers"][str(worker)]
+                    for worker, area in sorted(workers.items())
+                    if worker in roster and area == source
+                ]
+                first = _request(
+                    client,
+                    "POST",
+                    "/api/v1/planning/preview",
+                    201,
+                    json={
+                        "route_date": "2030-01-15",
+                        "service_area_id": area_id,
+                        "ticket_ids": morning,
+                        "worker_ids": crew,
+                        "allow_partial": True,
+                    },
+                )
+                if first["unassigned"]:
+                    raise AssertionError(f"Initial plan left requests: {first['unassigned']}")
+                _request(client, "POST", f"/api/v1/planning/plans/{first['plan_id']}/apply", 200)
                 current = _request(
                     client, "GET", f"/api/v1/planning/areas/{area_id}/2030-01-15/current", 200
                 )
+                if current["revision"] != 1 or len(current["visits"]) != len(morning):
+                    raise AssertionError(f"Initial plan of area {source} was not published")
+                assert_visits_within_shifts(current)
                 initial[source] = current
                 report["steps"].append(
                     {
                         "id": f"initial_{source}",
+                        "plan_id": first["plan_id"],
+                        "solver_status": first.get("solver_status"),
                         "revision": current["revision"],
                         "visits": len(current["visits"]),
                         "roster": len(current["roster"]),
@@ -301,17 +364,26 @@ def main():
                 lengths = []
                 for member in current["roster"]:
                     start = datetime.combine(
-                        route_day, clock_time.fromisoformat(member["workshift_start"]), MOSCOW
+                        route_day, time_of_day.fromisoformat(member["workshift_start"]), MOSCOW
                     )
                     end = datetime.combine(
-                        route_day, clock_time.fromisoformat(member["workshift_end"]), MOSCOW
+                        route_day, time_of_day.fromisoformat(member["workshift_end"]), MOSCOW
                     )
                     if end <= start:
                         end += timedelta(days=1)
                     shifts[member["worker_id"]] = (start, end)
                     lengths.append(int((end - start).total_seconds() // 60))
-                if sorted(lengths) != [480, 480, 720, 720]:
-                    raise AssertionError(f"Area {source} has unexpected shift profiles: {lengths}")
+                expected_shifts = {}
+                for worker in tables["workers"]:
+                    if worker["user_id"] not in roster or worker["service_area_id"] != source:
+                        continue
+                    start = datetime.combine(route_day, worker["workshift_start"], MOSCOW)
+                    end = datetime.combine(route_day, worker["workshift_end"], MOSCOW)
+                    if end <= start:
+                        end += timedelta(days=1)
+                    expected_shifts[ids["workers"][str(worker["user_id"])]] = (start, end)
+                if shifts != expected_shifts:
+                    raise AssertionError(f"Area {source} changed imported shift profiles")
                 for visit in current["visits"]:
                     shift = shifts.get(visit["worker_id"])
                     start = datetime.fromisoformat(visit["service_start_at"])
@@ -429,14 +501,45 @@ def main():
             updated = {visit["ticket_id"]: visit for visit in current["visits"]}
             if set(updated) != set(old) | {regular_id}:
                 raise AssertionError("Regular apply changed the set of published tickets")
-            altered = [
+            reassigned = [
                 ticket_id
                 for ticket_id, previous in old.items()
                 if updated[ticket_id]["worker_id"] != previous["worker_id"]
-                or updated[ticket_id]["service_start_at"] != previous["service_start_at"]
             ]
-            if altered:
-                raise AssertionError(f"Regular apply moved published visits: {altered}")
+            if reassigned:
+                raise AssertionError(f"Regular apply reassigned published visits: {reassigned}")
+            # S05 keeps assignments and order; a later stop may start later inside its fixed
+            # window, and every such shift must be declared in the preview diff.
+            moved = sorted(
+                ticket_id
+                for ticket_id, previous in old.items()
+                if updated[ticket_id]["service_start_at"] != previous["service_start_at"]
+            )
+            undeclared = set(moved) - set(regular["event"]["shifted_ticket_ids"])
+            if undeclared:
+                raise AssertionError(f"Regular apply moved undeclared visits: {sorted(undeclared)}")
+            windows = {
+                ids["tickets"][str(case["ticket_id"])]: [
+                    datetime.fromisoformat(value) for value in case["window"]
+                ]
+                for case in scenarios["tickets"]
+            }
+            for ticket_id, visit in updated.items():
+                start = datetime.fromisoformat(visit["service_start_at"])
+                end = datetime.fromisoformat(visit["service_end_at"])
+                window_start, window_end = windows[ticket_id]
+                if start < window_start or end > window_end:
+                    raise AssertionError(f"Visit of ticket {ticket_id} left its window")
+                if ticket_id in old and start < datetime.fromisoformat(
+                    old[ticket_id]["service_start_at"]
+                ):
+                    raise AssertionError(f"Regular apply moved ticket {ticket_id} earlier")
+            inserted = updated[regular_id]
+            neighbours = [
+                v["sequence"] for v in old.values() if v["worker_id"] == inserted["worker_id"]
+            ]
+            if not neighbours or not min(neighbours) < inserted["sequence"] <= max(neighbours):
+                raise AssertionError("Regular ticket was not inserted between two stops")
             for worker_id in {visit["worker_id"] for visit in old.values()}:
                 before = [
                     v["ticket_id"]
@@ -452,6 +555,8 @@ def main():
                     raise AssertionError(f"Regular apply changed worker {worker_id} stop order")
             if current["roster"] != initial[101]["roster"] or current["revision"] != 2:
                 raise AssertionError("Regular apply changed roster or revision count")
+            assert_visits_within_shifts(current)
+
             regular_geometry = _route_snapshots(client, isolated, current)
             _assert_historical_geometry(client, initial_geometry[101])
             if not set(regular_geometry) - set(initial_geometry[101]):
@@ -465,6 +570,12 @@ def main():
                     "revision": current["revision"],
                     "published_visits": len(current["visits"]),
                     "old_visits_preserved": len(old),
+                    "inserted": {
+                        key: inserted[key]
+                        for key in ("worker_id", "sequence", "service_start_at", "service_end_at")
+                    },
+                    "shifted_within_windows": moved,
+                    "all_visits_within_shifts": True,
                     "already_applied_on_replay": replay["already_applied"],
                 }
             )
@@ -724,6 +835,7 @@ def main():
                 raise AssertionError("Emergency apply did not publish exactly one revision")
             if emergency_current["roster"] != initial[103]["roster"]:
                 raise AssertionError("Emergency replan changed the published roster")
+            assert_visits_within_shifts(emergency_current)
             if emergency_id not in {v["ticket_id"] for v in emergency_current["visits"]}:
                 raise AssertionError("Emergency is absent from the published route")
             emergency_geometry = _route_snapshots(

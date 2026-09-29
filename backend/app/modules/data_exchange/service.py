@@ -6,6 +6,7 @@ import json
 import re
 import secrets
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import DataError, IntegrityError
@@ -61,6 +62,100 @@ def _service_area_id_for_legacy_district(session, district_row_id, tables, ids):
     if service_area_id is None:
         raise ValueError("Для района из архива не найдена зона обслуживания")
     return service_area_id
+
+
+# Shared reference rows are found by their natural key instead of being duplicated, so
+# packages about one city (a real day, a test scenario, the demo) load into one database.
+REFERENCE_KEYS = {
+    "cities": ("name",),
+    "districts": ("city_id", "name"),
+    "streets": ("city_id", "name"),
+    "buildings": ("street_id", "number", "block"),
+    "entrances": ("building_id", "number"),
+    "locations": ("building_id", "entrance_id", "apartment"),
+    "worker_skills": ("skill",),
+    "appliances": ("name",),
+    "offices": ("name",),
+}
+CASE_SENSITIVE_KEYS = {("worker_skills", "skill")}
+# Facts of a reused row that the package must not contradict.
+REFERENCE_FACTS = {
+    "buildings": ("city_id", "service_area_id"),
+    "appliances": ("type", "unit"),
+    "offices": ("location_id",),
+}
+# Filled only when both sides know them: an unknown value does not contradict (for example
+# an office of an archive older than service areas).
+REFERENCE_OPTIONAL_FACTS = {
+    "locations": ("floor", "latitude", "longitude"),
+    "offices": ("service_area_id",),
+}
+REFERENCE_LABELS = {
+    "buildings": "Дом",
+    "appliances": "Оборудование",
+    "offices": "Офис",
+    "locations": "Место",
+}
+
+
+def _differs(stored, value) -> bool:
+    if isinstance(value, int | float | Decimal) and not isinstance(value, bool):
+        # Coordinates arrive as float or Decimal; the column keeps six decimals.
+        return round(float(stored), 6) != round(float(value), 6)
+    return stored != value
+
+
+def _existing_reference(session: Session, name: str, values: dict):
+    table = TABLES[name]
+    conditions = []
+    for column_name in REFERENCE_KEYS[name]:
+        column, value = table.c[column_name], values.get(column_name)
+        if isinstance(value, str) and (name, column_name) not in CASE_SENSITIVE_KEYS:
+            conditions.append(func.lower(column) == value.lower())
+        else:
+            conditions.append(column.is_not_distinct_from(value))
+    existing = (
+        session.execute(select(table).where(*conditions).with_for_update()).mappings().one_or_none()
+    )
+    if existing is None:
+        return None
+    differs = [key for key in REFERENCE_FACTS.get(name, ()) if existing[key] != values.get(key)]
+    differs += [
+        key
+        for key in REFERENCE_OPTIONAL_FACTS.get(name, ())
+        if existing[key] is not None
+        and values.get(key) is not None
+        and _differs(existing[key], values[key])
+    ]
+    if differs:
+        raise ValueError(
+            f"{REFERENCE_LABELS.get(name, 'Запись')} уже есть в базе с другими значениями: "
+            + ", ".join(differs)
+        )
+    return existing
+
+
+def _configured_before(session: Session, work_type_id: int, new_rules: set) -> bool:
+    """The base already had planning requirements for this work type before the package."""
+    rules = TABLES["work_type_planning_rules"]
+    return (
+        work_type_id not in new_rules
+        and session.scalar(select(rules.c.work_type_id).where(rules.c.work_type_id == work_type_id))
+        is not None
+    )
+
+
+def _kept_configuration(session: Session, name: str, values: dict, new_rules: set):
+    """A work type configured in the base keeps its requirements: the dispatcher's setup
+    stays in force and the package's own rule, skills and equipment for it are not applied.
+
+    Returns None when the row should be inserted, otherwise the base row (or {}).
+    """
+    if not _configured_before(session, values["work_type_id"], new_rules):
+        return None
+    table = TABLES[name]
+    key = [table.c[k] == values[k] for k in table.primary_key.columns.keys()]
+    return session.execute(select(table).where(*key)).mappings().one_or_none() or {}
 
 
 def _remap_operation_request(request, tables: dict, ids: dict):
@@ -262,6 +357,10 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
             with session.begin_nested() as transaction:
                 ids = {}
                 inserted = {}
+                # Work types whose planning rule this package itself inserts.
+                new_rules = set()
+                # Track reused rows too: a package may reference each catalogue entry once.
+                seen_references = {}
                 table_order = list(TABLES)
                 district_index = table_order.index("districts")
                 service_area_index = table_order.index("service_areas")
@@ -342,6 +441,8 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                                 .one_or_none()
                             )
                             if existing is not None:
+                                if existing["id"] in seen_references.get(name, ()):
+                                    raise ValueError("Запись справочника повторяется в пакете")
                                 if any(
                                     existing[k] != values[k]
                                     for k in ("travel_minutes", "work_minutes", "documents_minutes")
@@ -349,6 +450,63 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                                     raise ValueError("Existing work type has different norms")
                                 ids[name][source_id] = existing["id"]
                                 inserted[name].append(dict(existing))
+                                seen_references.setdefault(name, set()).add(existing["id"])
+                                continue
+                        if name in REFERENCE_KEYS:
+                            existing = _existing_reference(session, name, values)
+                            if existing is not None:
+                                if existing["id"] in seen_references.get(name, ()):
+                                    raise ValueError("Запись справочника повторяется в пакете")
+                                ids[name][source_id] = existing["id"]
+                                inserted[name].append(dict(existing))
+                                seen_references.setdefault(name, set()).add(existing["id"])
+                                continue
+                        if name in (
+                            "work_type_planning_rules",
+                            "work_type_required_skills",
+                            "work_type_required_appliances",
+                        ):
+                            kept = _kept_configuration(session, name, values, new_rules)
+                            if kept is not None:
+                                if name == "work_type_planning_rules":
+                                    ids[name][source["work_type_id"]] = values["work_type_id"]
+                                if kept:
+                                    inserted[name].append(dict(kept))
+                                continue
+                            if name == "work_type_planning_rules":
+                                new_rules.add(values["work_type_id"])
+                        if name == "appliance_stocks":
+                            # A reused office receives the package's equipment as a delivery.
+                            added = (
+                                session.execute(
+                                    table.update()
+                                    .where(
+                                        table.c.office_id == values["office_id"],
+                                        table.c.appliance_id == values["appliance_id"],
+                                    )
+                                    .values(stock=table.c.stock + values["stock"])
+                                    .returning(table)
+                                )
+                                .mappings()
+                                .one_or_none()
+                            )
+                            if added is not None:
+                                inserted[name].append(dict(added))
+                                continue
+                        if name == "office_kit_reserves":
+                            kept = (
+                                session.execute(
+                                    select(table).where(
+                                        table.c.office_id == values["office_id"],
+                                        table.c.appliance_id == values["appliance_id"],
+                                    )
+                                )
+                                .mappings()
+                                .one_or_none()
+                            )
+                            if kept is not None:
+                                # The office norm set earlier stays in force.
+                                inserted[name].append(dict(kept))
                                 continue
                         if name == "users":
                             # Imported accounts need a dispatcher to set a known password.
@@ -430,6 +588,8 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                             .one()
                         )
                         inserted[name].append(record)
+                        if "id" in record:
+                            seen_references.setdefault(name, set()).add(record["id"])
                         if source_id is not None:
                             ids[name][source_id] = record["id"]
                         elif name == "work_type_planning_rules":

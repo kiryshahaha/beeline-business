@@ -18,14 +18,17 @@ from app.modules.data_exchange.formats import (
     serialize,
 )
 from app.modules.data_exchange.registry import TABLES, columns_for
-from generate_synthetic import generate_dataset
+from generate_synthetic import generate_dataset, generate_package
 from seed_synthetic import validate_database_url
+from tests.exchange_samples import add_journal_samples
 
 
 class DataFormatTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.data = generate_dataset(tickets=40, workers=8, days=2)
+        cls.package = generate_package(tickets=40, workers=8, days=2)
+        # Journals come from the running system; the format test needs every table filled.
+        cls.data = add_journal_samples(generate_dataset(tickets=40, workers=8, days=2), seed=42)
 
     def test_all_tables_round_trip_in_both_formats(self):
         first = parse_file(serialize(self.data, "csv"), "data.zip")
@@ -38,21 +41,75 @@ class DataFormatTests(unittest.TestCase):
                 self.assertTrue(all(parsed[name] for name in TABLES))
 
     def test_synthetic_data_is_reproducible_and_varies_with_seed(self):
-        self.assertEqual(self.data, generate_dataset(tickets=40, workers=8, days=2))
+        data = self.package.tables
+        self.assertEqual(data, generate_dataset(tickets=40, workers=8, days=2))
         self.assertNotEqual(
-            self.data["locations"],
+            data["locations"],
             generate_dataset(seed=43, tickets=40, workers=8, days=2)["locations"],
         )
         self.assertEqual(
-            {r["transport_type"] for r in self.data["workers"]},
+            {r["transport_type"] for r in data["workers"]},
             {"car", "walking", "bicycle", "public_transport"},
         )
-        self.assertTrue(all(row["is_on_line"] for row in self.data["workers"]))
-        locations = {row["id"]: row for row in self.data["locations"]}
-        for ticket in self.data["tickets"]:
-            if "missing_coordinates" in ticket["title"]:
-                self.assertIsNone(locations[ticket["location_id"]]["latitude"])
-                self.assertIsNone(locations[ticket["location_id"]]["longitude"])
+        self.assertTrue(all(row["is_on_line"] for row in data["workers"]))
+        locations = {row["id"]: row for row in data["locations"]}
+        tickets = {row["id"]: row for row in data["tickets"]}
+        self.assertTrue(self.package.scenarios["missing_coordinates"])
+        for ticket_id in self.package.scenarios["missing_coordinates"]:
+            location = locations[tickets[ticket_id]["location_id"]]
+            self.assertIsNone(location["latitude"])
+            self.assertIsNone(location["longitude"])
+
+    def test_synthetic_packages_carry_no_routes_plans_or_journals(self):
+        data = self.package.tables
+        for name in (
+            "routes",
+            "day_plan_revisions",
+            "work_events",
+            "worker_day_states",
+            "equipment_movements",
+            "worker_appliances",
+            "appliance_operations",
+            "appliance_movements",
+            "ticket_appliance_states",
+            "source_imports",
+            "source_addresses",
+            "source_records",
+        ):
+            with self.subTest(table=name):
+                self.assertEqual(data[name], [])
+        today = self.package.planning_day
+        for ticket in data["tickets"]:
+            self.assertIsNone(ticket["planned_start_at"])
+            if ticket["visit_window_start"].date() == today:
+                self.assertEqual(ticket["status"], "planned")
+                self.assertIsNone(ticket["assigned_worker_id"])
+            else:
+                self.assertIn(ticket["status"], ("completed", "wont_fix"))
+
+    def test_synthetic_places_are_real_moscow_buildings(self):
+        from synthetic_moscow.geography import buildings_by_district
+
+        data = self.package.tables
+        streets = {row["id"]: row["name"] for row in data["streets"]}
+        known = {
+            (b.street, b.number, b.block) for rows in buildings_by_district().values() for b in rows
+        }
+        self.assertEqual({row["name"] for row in data["cities"]}, {"Москва"})
+        offices = {o["location_id"] for o in data["offices"]}
+        office_buildings = {row["building_id"] for row in data["locations"] if row["id"] in offices}
+        for building in data["buildings"]:
+            if building["id"] in office_buildings:
+                continue
+            with self.subTest(building=building["id"]):
+                self.assertIn(
+                    (streets[building["street_id"]], building["number"], building["block"]),
+                    known,
+                )
+        for location in data["locations"]:
+            if location["latitude"] is not None:
+                self.assertTrue(55.49 < location["latitude"] < 55.92)
+                self.assertTrue(37.32 < location["longitude"] < 37.95)
 
     def test_all_domain_tables_are_exported_and_seeding_rejects_work_databases(self):
         self.assertEqual(

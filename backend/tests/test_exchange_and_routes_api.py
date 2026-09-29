@@ -1,6 +1,7 @@
 """Real PostgreSQL import/export, authorization, route snapshots and concurrent numbering."""
 
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from datetime import date
 
 from fastapi.testclient import TestClient
@@ -13,10 +14,11 @@ from app.db.session import get_session
 from app.main import app
 from app.modules.data_exchange.formats import parse_file, serialize
 from app.modules.data_exchange.registry import TABLES
-from app.modules.data_exchange.service import import_data
+from app.modules.data_exchange.service import REFERENCE_KEYS, import_data
 from app.modules.routing.schemas import RouteCreate
 from app.modules.routing.service import save_routes
 from generate_synthetic import generate_dataset
+from tests.exchange_samples import add_journal_samples
 from tests.support import DatabaseTestCase
 
 
@@ -24,7 +26,9 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.dataset = generate_dataset(seed=701, tickets=32, workers=8, days=2)
+        cls.dataset = add_journal_samples(
+            generate_dataset(seed=701, tickets=32, workers=8, days=2), seed=701
+        )
         normalized = parse_file(serialize(cls.dataset, "csv"), "data.zip")
         with Session(cls.engine) as session:
             cls.receipt = import_data(session, normalized)
@@ -79,10 +83,11 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
         )
 
     def test_import_is_atomic_idempotent_and_remaps_related_ids(self):
-        data = generate_dataset(seed=702, tickets=24, workers=4, days=1)
-        # Skill names are a unique domain key: use a separate catalog for a second dataset.
-        for skill in data["worker_skills"]:
-            skill["skill"] += " 702"
+        # A second package of the same city: its streets, houses, skills, equipment and
+        # office are the ones already loaded, its people and requests are new.
+        data = add_journal_samples(
+            generate_dataset(seed=702, tickets=24, workers=4, days=1), seed=702
+        )
         before = self.session.scalar(select(func.count()).select_from(TABLES["tickets"]))
         result = self.upload(data, format="xlsx")
         self.assertEqual(result.status_code, 200, result.text)
@@ -114,6 +119,142 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
         self.assertEqual(
             route["geojson"]["features"][0]["properties"]["location_id"], ids["locations"]["1"]
         )
+
+    def test_another_package_reuses_reference_ids_without_creating_rows(self):
+        names = (*REFERENCE_KEYS, "divisions", "service_areas")
+        data = {name: deepcopy(self.dataset[name]) for name in names}
+        before = {
+            name: self.session.scalar(select(func.count()).select_from(TABLES[name]))
+            for name in names
+        }
+        result = self.upload(data)
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertFalse(result.json()["duplicate"])
+        for name in REFERENCE_KEYS:
+            with self.subTest(table=name):
+                self.assertEqual(result.json()["id_map"][name], self.ids[name])
+                self.assertEqual(
+                    self.session.scalar(select(func.count()).select_from(TABLES[name])),
+                    before[name],
+                )
+
+    def test_office_stock_is_added_once_and_dry_run_does_not_add_it(self):
+        source = deepcopy(self.dataset["appliance_stocks"][0])
+        source["office_id"] = self.ids["offices"][str(source["office_id"])]
+        source["appliance_id"] = self.ids["appliances"][str(source["appliance_id"])]
+        source["stock"] = 7
+        table = TABLES["appliance_stocks"]
+        query = select(table.c.stock).where(
+            table.c.office_id == source["office_id"],
+            table.c.appliance_id == source["appliance_id"],
+        )
+        before = self.session.scalar(query)
+        data = {"appliance_stocks": [source]}
+        dry_run = self.upload(data, dry_run=True)
+        self.assertEqual(dry_run.status_code, 200, dry_run.text)
+        self.assertEqual(self.session.scalar(query), before)
+        applied = self.upload(data)
+        self.assertEqual(applied.status_code, 200, applied.text)
+        self.assertEqual(self.session.scalar(query), before + 7)
+        repeated = self.upload(data, format="xlsx")
+        self.assertEqual(repeated.status_code, 200, repeated.text)
+        self.assertTrue(repeated.json()["duplicate"])
+        self.assertEqual(self.session.scalar(query), before + 7)
+
+    def test_existing_building_cannot_be_imported_into_another_service_area(self):
+        source = deepcopy(self.dataset["buildings"][0])
+        for field, table_name in (("city_id", "cities"), ("street_id", "streets")):
+            source[field] = self.ids[table_name][str(source[field])]
+        original_area = self.ids["service_areas"][str(source["service_area_id"])]
+        source["service_area_id"] = next(
+            value for value in self.ids["service_areas"].values() if value != original_area
+        )
+        result = self.upload({"buildings": [source]})
+        self.assertEqual(result.status_code, 422, result.text)
+        self.assertEqual(result.json()["detail"]["table"], "buildings")
+        self.assertIn("service_area_id", str(result.json()["detail"]))
+        table = TABLES["buildings"]
+        self.assertEqual(
+            self.session.scalar(
+                select(table.c.service_area_id).where(
+                    table.c.id == self.ids["buildings"][str(source["id"])]
+                )
+            ),
+            original_area,
+        )
+
+    def test_duplicate_reference_in_one_package_is_rejected_for_new_and_existing_rows(self):
+        table = TABLES["cities"]
+        before = self.session.scalar(select(func.count()).select_from(table))
+        for name in (self.dataset["cities"][0]["name"], "New import test city"):
+            with self.subTest(name=name):
+                result = self.upload(
+                    {"cities": [{"id": 90001, "name": name}, {"id": 90002, "name": name}]}
+                )
+                self.assertEqual(result.status_code, 422, result.text)
+                self.assertEqual(result.json()["detail"]["table"], "cities")
+                self.assertEqual(result.json()["detail"]["row"], 3)
+                self.assertEqual(
+                    self.session.scalar(select(func.count()).select_from(table)), before
+                )
+
+    def test_duplicate_existing_work_type_in_one_package_is_rejected(self):
+        first = deepcopy(self.dataset["work_types"][0])
+        second = {**first, "id": 90002}
+        result = self.upload({"work_types": [first, second]})
+        self.assertEqual(result.status_code, 422, result.text)
+        self.assertEqual(result.json()["detail"]["table"], "work_types")
+        self.assertEqual(result.json()["detail"]["row"], 3)
+
+    def test_import_preserves_existing_work_type_rules_skills_and_equipment(self):
+        rule = deepcopy(self.dataset["work_type_planning_rules"][0])
+        work_type_id = self.ids["work_types"][str(rule["work_type_id"])]
+        names = (
+            "work_type_planning_rules",
+            "work_type_required_skills",
+            "work_type_required_appliances",
+        )
+
+        def configuration():
+            return {
+                name: [
+                    dict(row)
+                    for row in self.session.execute(
+                        select(TABLES[name]).where(TABLES[name].c.work_type_id == work_type_id)
+                    ).mappings()
+                ]
+                for name in names
+            }
+
+        before = configuration()
+        rule.update(
+            work_type_id=work_type_id,
+            configured_by=self.ids["users"]["2"],
+            service_duration_source=(
+                "ticket_estimate" if rule["service_duration_source"] == "work_norm" else "work_norm"
+            ),
+        )
+        existing_skills = {row["skill_id"] for row in before["work_type_required_skills"]}
+        new_skill = next(
+            value for value in self.ids["worker_skills"].values() if value not in existing_skills
+        )
+        appliance = before["work_type_required_appliances"][0]
+        new_appliance = next(
+            value
+            for value in self.ids["appliances"].values()
+            if value not in {row["appliance_id"] for row in before["work_type_required_appliances"]}
+        )
+        data = {
+            names[0]: [rule],
+            names[1]: [{"work_type_id": work_type_id, "skill_id": new_skill}],
+            names[2]: [
+                {**appliance, "quantity": appliance["quantity"] + 5},
+                {"work_type_id": work_type_id, "appliance_id": new_appliance, "quantity": 3},
+            ],
+        }
+        result = self.upload(data)
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(configuration(), before)
 
     def test_dry_run_has_no_rows_or_receipt_and_error_rolls_back(self):
         data = {"cities": [{"id": 1, "name": "Импорт только для проверки"}]}
@@ -372,14 +513,26 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
                 )
             )
         )
-        # Ticket 1 is planned; source appliance 26 has zero stock.
+        # A planned request of the day asks for more tools than the office has.
+        planned = next(t for t in self.dataset["tickets"] if t["status"] == "planned")
+        office = next(
+            o["id"]
+            for o in self.dataset["offices"]
+            if o["service_area_id"] == planned["service_area_id"]
+        )
+        tool = next(a["id"] for a in self.dataset["appliances"] if a["type"] == "TOOL")
+        stock = next(
+            row["stock"]
+            for row in self.dataset["appliance_stocks"]
+            if (row["office_id"], row["appliance_id"]) == (office, tool)
+        )
         data = {
             "ticket_appliances": [
                 {
-                    "ticket_id": self.ids["tickets"]["1"],
-                    "appliance_id": self.ids["appliances"]["26"],
-                    "office_id": self.ids["offices"]["1"],
-                    "quantity": 1,
+                    "ticket_id": self.ids["tickets"][str(planned["id"])],
+                    "appliance_id": self.ids["appliances"][str(tool)],
+                    "office_id": self.ids["offices"][str(office)],
+                    "quantity": stock + 1,
                     "created_at": "2026-09-21T08:00:00+03:00",
                 }
             ]

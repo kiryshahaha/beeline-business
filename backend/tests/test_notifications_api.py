@@ -20,9 +20,9 @@ from tests.support import DatabaseTestCase
 class NotificationsApiTests(DatabaseTestCase):
     def setUp(self):
         super().setUp()
-        city = self.save(City(name="Санкт-Петербург"))
-        district = self.save(District(city_id=city.id, name="Невский район"))
-        street = self.save(Street(city_id=city.id, name="Тестовая улица"))
+        city = self.save(City(name="Москва"))
+        district = self.save(District(city_id=city.id, name="Кузьминки"))
+        street = self.save(Street(city_id=city.id, name="улица Юных Ленинцев"))
         building = self.save(
             Building(
                 city_id=city.id,
