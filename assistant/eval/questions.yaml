@@ -190,7 +190,7 @@
   context: worker_day
   answered_by: facts
   question: Куда мне теперь ехать?
-  must: [[комендантск]]
+  must: [[волгоградск]]
 
 - id: d-remaining
   role: worker
@@ -230,7 +230,7 @@
   category: day
   context: worker_day
   answered_by: facts
-  question: Мою заявку на Туристской подтвердили?
+  question: Мою заявку на Таганской подтвердили?
   must: [[ждет подтверждения]]
 
 - id: d-why-moved

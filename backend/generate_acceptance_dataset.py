@@ -1,331 +1,290 @@
-"""Generate the fixed, fictional Plan 5 acceptance input package."""
+"""Generate the fixed Plan 5 acceptance package on real Moscow and Moscow-region addresses.
+
+Three areas of the case with two brigades each, twelve engineers of the day roster and one
+engineer outside it, 36 requests known in the morning and 12 arriving during the day
+(six outages at house nodes and six ordinary requests). As in the organizer's files, the
+«Юго-восток» area also serves Домодедово, Ступино and Кашира; the other two areas are
+Moscow only. The package has no routes and no published day plan: the acceptance run
+builds the first plan with the native planner.
+"""
 
 import argparse
-import copy
 import csv
 import hashlib
 import io
 import json
-from collections import defaultdict
+import math
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 from app.modules.data_exchange.formats import json_default, parse_file, serialize
 from app.modules.data_exchange.registry import FORMAT_VERSION
-from app.modules.routing.schemas import RouteGeoJSON
-from generate_synthetic import TZ, generate_dataset
+from generate_synthetic import (
+    DAY_12,
+    FOREMEN,
+    OBSERVERS,
+    TZ,
+    Generator,
+    Shift,
+)
+from synthetic_moscow.catalog import REQUEST_KINDS, WORK_TYPE_BY_CODE
+from synthetic_moscow.geography import AREAS, REMOTE_TOWNS, district_buildings
 
 SEED = 5025
 DATE = date(2030, 1, 15)
 TIMEZONE = "Europe/Moscow"
-CITIES = ("Москва", "Домодедово", "Кашира", "Подольск")
-ZONE_NAMES = ("moscow_a", "remote_a", "moscow_b", "remote_b", "moscow_c", "remote_c")
-CITY_POINTS = {
-    1: (55.7500, 37.6100),
-    2: (55.4400, 37.7700),
-    3: (54.8400, 38.1500),
-    4: (55.4300, 37.5500),
+# The acceptance clock is 08:20 and a first plan covers shifts that have not begun yet.
+EARLY_8 = Shift(time(9), time(17), "5/2")
+LATE_8 = Shift(time(12), time(20), "5/2")
+FULL_12 = Shift(time(9), time(21), "2/2")
+# Brigade -> districts next to the borders of the areas, so neighbouring addresses of
+# different areas meet and distance never hides the area rule.
+BORDER_DISTRICTS = {
+    1: ("Южнопортовый",),
+    2: ("Текстильщики",),
+    3: ("Москворечье-Сабурово", "Царицыно"),
+    4: ("Орехово-Борисово Северное",),
+    5: ("Нагатинский Затон", "Нагатино-Садовники"),
+    6: ("Нагорный",),
 }
+# Engineer id -> (brigade, profile, shift, transport). Ids 9-20 form the day roster.
+ENGINEERS = {
+    9: (1, "universal", FULL_12, "car"),
+    10: (2, "universal", FULL_12, "car"),
+    11: (1, "installer", EARLY_8, "public_transport"),
+    12: (2, "technician", LATE_8, "walking"),
+    13: (3, "universal", FULL_12, "car"),
+    14: (4, "universal", FULL_12, "car"),
+    15: (3, "installer", EARLY_8, "public_transport"),
+    # Lives in Кашира and starts the day from home, as the experts describe.
+    16: (4, "universal", FULL_12, "car"),
+    17: (5, "universal", FULL_12, "car"),
+    18: (6, "universal", FULL_12, "car"),
+    19: (5, "technician", Shift(time(10), time(18), "5/2"), "bicycle"),
+    20: (6, "installer", EARLY_8, "public_transport"),
+    # Outside the published roster of the day.
+    21: (5, "universal", DAY_12, "car"),
+}
+ROSTER = tuple(range(9, 21))
+OUTSIDE_ROSTER = 21
+REMOTE_HOME_WORKER = 16
+# Six morning requests per brigade: (work type, window start). A senior engineer and a
+# junior one can serve them without the junior needing a skill he lacks.
+MORNING_WITH_INSTALLER = (
+    ("connection", 10),
+    ("repair", 10),
+    ("connection", 12),
+    ("additional", 14),
+    ("repair", 14),
+    ("connection", 16),
+)
+MORNING_WITH_TECHNICIAN = (
+    ("repair", 10),
+    ("connection", 10),
+    ("repair", 12),
+    ("repair", 14),
+    ("connection", 14),
+    ("additional", 16),
+)
+# The remote towns get the connections of brigade 4.
+REMOTE_ORDINALS = {0: "Домодедово", 2: "Ступино", 5: "Кашира"}
+NEW_ORDINARY_KINDS = ("Нет линка", "Работа с кабелем")
+ZONES = ("vostok", "yugo_vostok", "yugotsentr", "domodedovo", "stupino", "kashira")
 
 
 def _at(hour: int, minute: int = 0) -> datetime:
     return datetime.combine(DATE, time(hour, minute), TZ)
 
 
-def _area(index: int) -> int:
-    return 101 + index // 4
+class AcceptanceGenerator(Generator):
+    def __init__(self):
+        super().__init__(seed=SEED, start_date=DATE, tickets=48, workers=0, days=1)
+        # Everybody of the package works on the acceptance day; the roster decides who plans.
+        self.all_on_duty = True
+        self.cases = []
 
+    def reference(self):
+        super().reference()
+        self.city_ids = {"Москва": 1}
+        for index, town in enumerate(REMOTE_TOWNS, 2):
+            self.add("cities", id=index, name=town.name)
+            self.city_ids[town.name] = index
 
-def _geojson(worker_id: int, tickets: list[dict], locations: dict[int, dict]) -> dict:
-    features = []
-    points = []
-    for sequence, ticket in enumerate(tickets, 1):
-        location = locations[ticket["location_id"]]
-        point = [location["longitude"], location["latitude"]]
-        points.append(point)
-        features.append(
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": point},
-                "properties": {
-                    "location_id": ticket["location_id"],
-                    "ticket_id": ticket["id"],
-                    "sequence": sequence,
-                    "arrival_at": ticket["planned_start_at"].isoformat(),
-                    "service_start_at": ticket["planned_start_at"].isoformat(),
-                    "service_end_at": ticket["planned_end_at"].isoformat(),
-                    "waiting_minutes": 0,
-                    "effective_service_minutes": 30,
-                    "duration_source": "ticket_estimate",
-                },
-            }
+    def staff(self):
+        self.worker_count = 0
+        super().staff()
+        for user_id, (brigade, role, shift, transport) in ENGINEERS.items():
+            home = None
+            target = self.brigades[brigade - 1]
+            if user_id == REMOTE_HOME_WORKER:
+                town = district_buildings("Кашира")
+                building = town[len(town) // 2]
+                entrance, apartment, floor = building.apartment(user_id * 7)
+                home = self.place(
+                    building,
+                    target["area"]["id"],
+                    entrance,
+                    apartment,
+                    floor,
+                    self.city_ids["Кашира"],
+                )
+            created = self.add_worker(target, role, shift, transport, start_location_id=home)
+            assert created == user_id, "acceptance engineer ids are part of the contract"
+        self.cover_transports()
+
+    def building(self, brigade: int, ordinal: int, town: str | None = None):
+        if town:
+            pool = district_buildings(town)
+        else:
+            pool = [b for name in BORDER_DISTRICTS[brigade] for b in district_buildings(name)]
+        # A stable spread over the districts' real houses.
+        return pool[(ordinal * 37 + brigade * 11) % len(pool)]
+
+    def demand(self):
+        for index in range(48):
+            area_index = index % 3
+            if index < 36:
+                self.morning(index, area_index)
+            else:
+                self.arrival(index, area_index)
+        self.shortage_office = None
+
+    def morning(self, index: int, area_index: int):
+        brigade_number = area_index * 2 + (index // 3) % 2 + 1
+        brigade = self.brigades[brigade_number - 1]
+        ordinal = index // 6
+        juniors = {self.workers[w]["role"] for w in brigade["members"] if w in ROSTER and w != 16}
+        plan = MORNING_WITH_TECHNICIAN if "technician" in juniors else MORNING_WITH_INSTALLER
+        code, hour = plan[ordinal]
+        spec = WORK_TYPE_BY_CODE[code]
+        town = REMOTE_ORDINALS.get(ordinal) if brigade_number == 4 else None
+        building = self.building(brigade_number, ordinal, town)
+        entrance, apartment, floor = building.apartment(index * 13 + 5)
+        received = datetime.combine(DATE - timedelta(days=1), time(9 + index % 12), TZ)
+        ticket = self.create_ticket(
+            spec,
+            brigade,
+            building,
+            entrance,
+            apartment,
+            floor,
+            _at(hour),
+            _at(hour + 2),
+            received,
+            city_id=self.city_ids.get(town, 1),
         )
-    features.append(
-        {
-            "type": "Feature",
-            "geometry": {"type": "LineString", "coordinates": points},
-            "properties": {"kind": "path", "source": "straight_lines"},
-        }
-    )
-    return RouteGeoJSON.model_validate(
-        {
-            "type": "FeatureCollection",
-            "properties": {
-                "worker_id": worker_id,
-                "route_date": DATE.isoformat(),
-                "route_number": 1,
-            },
-            "features": features,
-        }
-    ).model_dump(mode="json")
+        self.finish(ticket, spec, brigade, "planned", town or "Москва")
 
-
-def build_dataset() -> tuple[dict, dict]:
-    """Return importable rows and the separate event/roster scenario contract."""
-    tables = generate_dataset(seed=SEED, start_date=DATE, tickets=48, workers=13, days=1)
-    tables["cities"] = tables["cities"][:1] + [
-        {"id": index, "name": name} for index, name in enumerate(CITIES[1:], 2)
-    ]
-    tables["cities"][0]["name"] = CITIES[0]
-    tables["service_areas"] = tables["service_areas"][:3]
-    for index, area in enumerate(tables["service_areas"]):
-        area.update(code=f"acceptance_{index + 1}", name=f"Тестовый участок {index + 1}")
-    for district in tables["districts"]:
-        local = (district["id"] - 1) % 4
-        region = (district["id"] - 1) // 4
-        district["city_id"] = 1 if local < 2 else region + 2
-        district["name"] = f"Участок {region + 1}, зона {local + 1}"
-    for street in tables["streets"]:
-        district = tables["districts"][street["id"] - 1]
-        street["city_id"] = district["city_id"]
-    for division in tables["divisions"]:
-        division["service_area_id"] = _area(division["id"] - 1)
-    for building in tables["buildings"]:
-        district = tables["districts"][building["street_id"] - 1]
-        building["city_id"] = district["city_id"]
-        building["service_area_id"] = _area(district["id"] - 1)
-    for location in tables["locations"]:
-        building = tables["buildings"][location["building_id"] - 1]
-        latitude, longitude = CITY_POINTS[building["city_id"]]
-        offset = (location["id"] % 7) * 0.0001
-        location.update(
-            latitude=round(latitude + offset, 6), longitude=round(longitude + offset, 6)
-        )
-    tables["offices"] = tables["offices"][:3]
-    tables["appliance_stocks"] = [
-        row for row in tables["appliance_stocks"] if row["office_id"] <= 3
-    ]
-    for index, office in enumerate(tables["offices"]):
-        office["location_id"] = index * 4 + 1
-        office["service_area_id"] = 101 + index
-    for index, brigade in enumerate(tables["brigades"]):
-        brigade["division_id"] = (index // 2) * 4 + (1 if index % 2 == 0 else 3)
-        brigade["office_id"] = index // 2 + 1
-    for index, worker in enumerate(tables["workers"]):
-        region = min(index // 4, 2)
-        worker.update(
-            service_area_id=101 + region,
-            workshift_start=time(8),
-            workshift_end=time(16 if index % 2 else 20),
-        )
-    for index, member in enumerate(tables["brigade_members"]):
-        region = min(index // 4, 2)
-        member["brigade_id"] = region * 2 + index % 2 + 1
-    member_brigade = {row["worker_id"]: row["brigade_id"] for row in tables["brigade_members"]}
-    tables["work_types"][2]["category"] = "emergency"
-    locations = {row["id"]: row for row in tables["locations"]}
-    area_locations = defaultdict(list)
-    for location in tables["locations"]:
-        building = tables["buildings"][location["building_id"] - 1]
-        area_locations[building["service_area_id"]].append(location["id"])
-    assigned = defaultdict(list)
-    ticket_cases = []
-    for index, ticket in enumerate(tables["tickets"]):
-        region = index % 3
-        phase = "planned" if index < 36 else "new"
-        category = "emergency" if phase == "new" and (index - 36) // 3 >= 2 else "repair"
-        # New events 37-42 are ordinary, 43-48 are emergencies.
-        worker_id = 9 + region * 4 + (index // 3) % 4 if phase == "planned" else None
-        location_id = area_locations[101 + region][(index // 3) % 8]
-        if ticket["id"] == 37:
-            # Put the new ticket on a Moscow address near the neighboring area's route.
-            location_id = area_locations[101][1]
-        elif ticket["id"] == 38:
-            # This ticket exercises a remote city that still belongs to area 102.
-            location_id = next(
-                location_id
-                for location_id in area_locations[102]
-                if tables["buildings"][locations[location_id]["building_id"] - 1]["city_id"] != 1
-            )
-        hour = (9, 11, 14)[(index // 12) % 3] if phase == "planned" else 10 + (index - 36) // 3
-        start = _at(hour)
-        received = _at(8) if phase == "planned" else start - timedelta(minutes=20)
+    def arrival(self, index: int, area_index: int):
+        brigade_number = area_index * 2 + 1
+        brigade = self.brigades[brigade_number - 1]
+        emergency = (index - 36) // 3 >= 2
+        spec = WORK_TYPE_BY_CODE["emergency" if emergency else "repair"]
+        start = _at(10 + (index - 36) // 3)
+        received = start - timedelta(minutes=20)
         if index == 36:
             received = _at(8, 10)
         if index == 41:
             received = _at(8, 12)
-        work_type_id = 3 if category == "emergency" else 1
-        ticket.update(
-            location_id=location_id,
-            service_area_id=101 + region,
-            brigade_id=member_brigade[worker_id] if worker_id else region * 2 + 1,
-            title=f"[Приёмка {phase}] Заявка {index + 1}",
-            work_type_id=work_type_id,
-            work_type=tables["work_types"][work_type_id - 1]["name"],
-            category=category,
-            priority=1 if category == "emergency" else 3,
-            request_type_hd="Авария" if category == "emergency" else "Ремонт",
-            received_at=received,
-            response_deadline_at=(received + timedelta(minutes=60 if index % 2 else 120))
-            if category == "emergency"
-            else None,
-            status="planned",
-            lifecycle_state="assigned" if phase == "planned" else "waiting_assignment",
-            assigned_worker_id=worker_id,
-            visit_window_start=start,
-            visit_window_end=start
-            + timedelta(minutes=15 if index == 41 else 90 if category == "emergency" else 180),
-            estimated_duration_minutes=30,
-            actual_duration_minutes=None,
-            actual_started_at=None,
-            actual_completed_at=None,
-            planned_start_at=start if phase == "planned" else None,
-            planned_end_at=start + timedelta(minutes=30) if phase == "planned" else None,
-            cancel_reason=None,
+        end = start + timedelta(minutes=15 if index == 41 else 180)
+        if index == 42:
+            start, end = _at(10), _at(12)
+        elif index == 44:
+            start, end = _at(12), _at(14)
+        # The remote arrival remains inside area 102 and uses a real regional address.
+        town = "Домодедово" if index == 37 else None
+        building = self.building(brigade_number, index, town)
+        entrance, apartment, floor = building.apartment(index * 17 + 3)
+        kind = None
+        if not emergency:
+            kind = next(
+                k
+                for k in REQUEST_KINDS["repair"]
+                if k.hd_type == NEW_ORDINARY_KINDS[index % len(NEW_ORDINARY_KINDS)]
+            )
+        ticket = self.create_ticket(
+            spec,
+            brigade,
+            building,
+            entrance,
+            apartment,
+            floor,
+            start,
+            end,
+            received,
+            city_id=self.city_ids.get(town, 1),
+            kind=kind,
         )
-        if ticket["id"] == 43:
-            ticket["visit_window_start"] = _at(10)
-            ticket["visit_window_end"] = _at(12)
-        elif ticket["id"] == 45:
-            ticket["visit_window_start"] = _at(12)
-            ticket["visit_window_end"] = _at(14)
-        if worker_id:
-            assigned[worker_id].append(ticket)
-        ticket_cases.append(
+        if emergency:
+            # Both reaction norms of the case: one and two hours.
+            ticket["response_deadline_at"] = received + timedelta(minutes=60 if index % 2 else 120)
+        # The arrival itself is the event of the day that the planner reacts to.
+        self.add(
+            "work_events",
+            event_type="new_ticket",
+            ticket_id=ticket["id"],
+            worker_id=None,
+            service_area_id=ticket["service_area_id"],
+            route_date=DATE,
+            occurred_at=ticket["received_at"],
+            recorded_at=ticket["received_at"],
+            actor_id=1,
+            reason=None,
+            previous_state=None,
+            new_state="waiting_assignment",
+            before_revision=None,
+            after_revision=1,
+            idempotency_key=f"acceptance-{SEED}-{ticket['id']}",
+            payload={"ticket_id": ticket["id"], "source": "helpdesk"},
+        )
+        self.finish(ticket, spec, brigade, "new", town or "Москва")
+
+    def finish(self, ticket: dict, spec, brigade, phase: str, city: str):
+        self.allocate(ticket, spec, brigade, ticket.pop("_appliances"))
+        locations = {row["id"]: row for row in self.tables["locations"]}
+        location = locations[ticket["location_id"]]
+        building = next(
+            row for row in self.tables["buildings"] if row["id"] == location["building_id"]
+        )
+        street = next(
+            row["name"] for row in self.tables["streets"] if row["id"] == building["street_id"]
+        )
+        house = building["number"] + (f", {building['block']}" if building["block"] else "")
+        self.cases.append(
             {
                 "ticket_id": ticket["id"],
                 "phase": phase,
-                "category": category,
+                "category": spec.category,
                 "service_area_id": ticket["service_area_id"],
-                "received_at": received.isoformat(),
+                "brigade_id": ticket["brigade_id"],
+                "received_at": ticket["received_at"].isoformat(),
                 "visit_window_start": ticket["visit_window_start"].isoformat(),
                 "visit_window_end": ticket["visit_window_end"].isoformat(),
-                "expected_worker_id": worker_id,
+                "window": [
+                    ticket["visit_window_start"].isoformat(),
+                    ticket["visit_window_end"].isoformat(),
+                ],
+                "request_type_hd": ticket["request_type_hd"],
+                "title": ticket["title"],
+                "address": f"{city}, {street}, д. {house}"
+                + (f", кв. {location['apartment']}" if location["apartment"] else ""),
             }
         )
-    allocation_template = tables["ticket_appliances"][0]
-    tables["ticket_appliances"] = []
-    for ticket in tables["tickets"]:
-        allocation = copy.copy(allocation_template)
-        allocation.update(
-            ticket_id=ticket["id"],
-            appliance_id=ticket["work_type_id"],
-            office_id=ticket["service_area_id"] - 100,
-            quantity=1,
-        )
-        tables["ticket_appliances"].append(allocation)
-    # The generic package has a test issue of appliance 2 to ticket 1.
-    for table_name in ("worker_appliances", "appliance_movements", "ticket_appliance_states"):
-        for row in tables[table_name]:
-            row["appliance_id"] = 1
-            if "quantity" in row:
-                row["quantity"] = 1
-    route_template = copy.copy(tables["routes"][0])
-    tables["routes"] = []
-    for worker_id in range(9, 21):
-        tickets = sorted(assigned[worker_id], key=lambda ticket: ticket["planned_start_at"])
-        tables["routes"].append(
-            {
-                **route_template,
-                "id": worker_id - 8,
-                "worker_id": worker_id,
-                "route_date": DATE,
-                "route_number": 1,
-                "geojson": _geojson(worker_id, tickets, locations),
-            }
-        )
-    revision_template = copy.copy(tables["day_plan_revisions"][0])
-    tables["day_plan_revisions"] = []
-    for region in range(3):
-        area_id = 101 + region
-        workers = tables["workers"][region * 4 : region * 4 + 4]
-        roster = [
-            {
-                "worker_id": worker["user_id"],
-                "service_area_id": area_id,
-                "workshift_start": worker["workshift_start"].isoformat(),
-                "workshift_end": worker["workshift_end"].isoformat(),
-                "source": "published",
-            }
-            for worker in workers
-        ]
-        visits = []
-        for worker in workers:
-            for sequence, ticket in enumerate(
-                sorted(assigned[worker["user_id"]], key=lambda t: t["planned_start_at"]), 1
-            ):
-                visits.append(
-                    {
-                        "ticket_id": ticket["id"],
-                        "worker_id": worker["user_id"],
-                        "route_id": worker["user_id"] - 8,
-                        "sequence": sequence,
-                        "arrival_at": ticket["planned_start_at"].isoformat(),
-                        "service_start_at": ticket["planned_start_at"].isoformat(),
-                        "service_end_at": ticket["planned_end_at"].isoformat(),
-                    }
-                )
-        tables["day_plan_revisions"].append(
-            {
-                **revision_template,
-                "id": region + 1,
-                "service_area_id": area_id,
-                "route_date": DATE,
-                "event_id": None,
-                "roster": roster,
-                "fingerprint": hashlib.sha256(f"acceptance-{SEED}-{area_id}".encode()).hexdigest(),
-                "plan_state": {
-                    "route_date": DATE.isoformat(),
-                    "plan_id": None,
-                    "outcome": "complete",
-                    "visits": sorted(visits, key=lambda v: v["ticket_id"]),
-                    "unassigned_ticket_ids": [],
-                    "metrics": {
-                        "assigned_tickets": len(visits),
-                        "unassigned_tickets": 0,
-                        "used_workers": len(workers),
-                    },
-                },
-            }
-        )
-    event_template = copy.copy(tables["work_events"][0])
-    tables["work_events"] = []
-    for event_index, ticket in enumerate(tables["tickets"][36:], 1):
-        tables["work_events"].append(
-            {
-                **event_template,
-                "id": event_index,
-                "ticket_id": ticket["id"],
-                "worker_id": None,
-                "service_area_id": ticket["service_area_id"],
-                "route_date": DATE,
-                "occurred_at": ticket["received_at"],
-                "recorded_at": ticket["received_at"],
-                "before_revision": None,
-                "after_revision": 1,
-                "idempotency_key": f"acceptance-{SEED}-{event_index}",
-                "payload": {"ticket_id": ticket["id"], "source": "synthetic_acceptance"},
-            }
-        )
-    # The generic consumption example referenced the original first event.
-    tables["equipment_movements"] = []
+
+
+def build_dataset() -> tuple[dict, dict]:
+    """Return importable rows and the separate event/roster scenario contract."""
+    generator = AcceptanceGenerator()
+    tables = generator.run().tables
+    assert len(tables["users"]) == OBSERVERS + FOREMEN + len(ENGINEERS)
     scenarios = {
-        "schema_version": 1,
+        "schema_version": 2,
         "seed": SEED,
         "timezone": TIMEZONE,
         "route_date": DATE.isoformat(),
-        "roster_worker_ids": list(range(9, 21)),
-        "outside_roster_worker_id": 21,
+        "roster_worker_ids": list(ROSTER),
+        "outside_roster_worker_id": OUTSIDE_ROSTER,
+        "remote_home_worker_id": REMOTE_HOME_WORKER,
         "territory_cases": {
             "nearby_cross_area_ticket_id": 37,
             "nearby_reference_ticket_id": 2,
@@ -333,51 +292,81 @@ def build_dataset() -> tuple[dict, dict]:
             "same_area_remote_ticket_id": 38,
         },
         "window_cases": {"no_slot_ticket_id": 43, "later_window_ticket_id": 45},
-        "tickets": ticket_cases,
+        "initial_plan": (
+            "В пакете нет маршрутов и ревизий дня: первый план каждого участка строит "
+            "планировщик по заявкам фазы planned и дневному составу (POST "
+            "/api/v1/planning/preview с service_area_id, затем apply)."
+        ),
+        "tickets": generator.cases,
         "events": [
             {
-                "event_id": row["id"],
-                "ticket_id": row["ticket_id"],
-                "received_at": row["occurred_at"].isoformat(),
-                "category": tables["tickets"][row["ticket_id"] - 1]["category"],
+                "ticket_id": case["ticket_id"],
+                "received_at": case["received_at"],
+                "category": case["category"],
+                "request_type_hd": case["request_type_hd"],
+                "title": case["title"],
+                "address": case["address"],
             }
-            for row in tables["work_events"]
+            for case in generator.cases
+            if case["phase"] == "new"
         ],
-        "notes": "Маршруты — синтетические снимки; результаты событий требуют прогона.",
     }
     return tables, scenarios
 
 
+def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    lat1, lon1, lat2, lon2 = map(math.radians, (*a, *b))
+    h = (
+        math.sin((lat2 - lat1) / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    )
+    return 2 * 6371 * math.asin(math.sqrt(h))
+
+
+def zone_points() -> dict[str, tuple[float, float]]:
+    points = {area.code: (area.office.latitude, area.office.longitude) for area in AREAS}
+    for town, code in zip(REMOTE_TOWNS, ZONES[3:], strict=True):
+        south, west, north, east = town.bbox
+        points[code] = ((south + north) / 2, (west + east) / 2)
+    return points
+
+
 def road_matrix() -> dict:
-    travel = {}
-    distance = {}
-    for source_index, source in enumerate(ZONE_NAMES):
-        travel[source] = {}
-        distance[source] = {}
-        for target_index, target in enumerate(ZONE_NAMES):
-            minutes = (
-                0
-                if source_index == target_index
-                else 8
-                + abs(source_index - target_index) * 11
-                + (source_index * 3 + target_index) % 7
-            )
-            travel[source][target] = minutes
-            distance[source][target] = minutes * 480
+    """Directed stub: road length from real distances, slower towards the city centre."""
+    points = zone_points()
+    travel, distance = {}, {}
+    for source in ZONES:
+        travel[source], distance[source] = {}, {}
+        for target in ZONES:
+            if source == target:
+                travel[source][target] = distance[source][target] = 0
+                continue
+            road_km = _haversine_km(points[source], points[target]) * 1.35
+            remote = source in ZONES[3:] or target in ZONES[3:]
+            speed = 55 if remote else 24
+            # Morning traffic runs into Moscow: trips towards Moscow zones take longer.
+            inbound = 1.18 if target in ZONES[:3] and source in ZONES[3:] else 1.0
+            travel[source][target] = round(road_km / speed * 60 * inbound) + 8
+            distance[source][target] = round(road_km * 1000)
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "source": "deterministic_stub",
         "seed": SEED,
         "timezone": TIMEZONE,
         "route_date": DATE.isoformat(),
-        "zones": list(ZONE_NAMES),
+        "zones": list(ZONES),
+        "zone_points": {k: list(v) for k, v in points.items()},
         "travel_minutes": travel,
         "distance_meters": distance,
         "peak_profile": {
             "09:00-11:00": {"duration_multiplier": 1.3},
             "16:00-19:00": {"duration_multiplier": 1.5},
         },
-        "note": "This directed synthetic matrix is not Geoapify output or a native planner result.",
+        "note": (
+            "Directed synthetic matrix: straight-line distances between real points times "
+            "1.35, average speeds and a morning inbound delay. It is not Geoapify output "
+            "or a native planner result."
+        ),
     }
 
 
@@ -433,17 +422,18 @@ def write_package(output: Path) -> dict:
     manifest = {
         "schema_version": FORMAT_VERSION,
         "generator": "backend/generate_acceptance_dataset.py",
-        "generator_version": 1,
+        "generator_version": 2,
         "seed": SEED,
         "timezone": TIMEZONE,
         "route_date": DATE.isoformat(),
         "counts": {name: len(rows) for name, rows in tables.items()},
-        "expected_initial_assignments": {
-            str(ticket["id"]): ticket["assigned_worker_id"]
-            for ticket in tables["tickets"]
-            if ticket["assigned_worker_id"] is not None
-        },
+        "roster_worker_ids": list(ROSTER),
+        "initial_plan": "native_planner",
         "road_matrix_source": "deterministic_stub",
+        "addresses": (
+            "Реальные дома Москвы, Домодедово, Ступино и Каширы из OpenStreetMap "
+            "(© участники OpenStreetMap, ODbL 1.0); заявки, люди и квартиры вымышлены."
+        ),
         "files": files,
         "auxiliary_files": auxiliary_files,
     }

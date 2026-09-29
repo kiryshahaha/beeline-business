@@ -216,6 +216,14 @@ class Plan2DatabaseTests(CommittedDatabaseTestCase):
             if m["worker_id"] == source_worker_id
         )
 
+    def fixture_shift(self, source_worker_id):
+        worker = next(w for w in self.data["workers"] if w["user_id"] == source_worker_id)
+        return (worker["workshift_start"].isoformat(), worker["workshift_end"].isoformat())
+
+    def office_of(self, source_worker_id):
+        brigade = self.brigade_of(source_worker_id)
+        return next(b["office_id"] for b in self.data["brigades"] if b["id"] == brigade)
+
     def tickets_for(self, *source_worker_ids):
         brigades = {self.brigade_of(w) for w in source_worker_ids}
         return [
@@ -298,7 +306,7 @@ class Plan2DatabaseTests(CommittedDatabaseTestCase):
                 TicketAppliance(
                     ticket_id=ticket["id"],
                     appliance_id=self.ids["appliances"]["1"],
-                    office_id=self.ids["offices"][str(self.brigade_of(source_worker_id))],
+                    office_id=self.ids["offices"][str(self.office_of(source_worker_id))],
                     quantity=1,
                 )
             )
@@ -323,7 +331,7 @@ class Plan2DatabaseTests(CommittedDatabaseTestCase):
         self.assertEqual([entry["worker_id"] for entry in current["roster"]], [w9, w10])
         idle = next(entry for entry in current["roster"] if entry["worker_id"] == w10)
         self.assertEqual(idle["service_area_id"], self.area_id)
-        self.assertEqual((idle["workshift_start"], idle["workshift_end"]), ("08:00:00", "18:00:00"))
+        self.assertEqual((idle["workshift_start"], idle["workshift_end"]), self.fixture_shift(10))
         self.assertNotIn(w10, {visit["worker_id"] for visit in current["visits"]})
 
     def test_emergency_replan_keeps_the_roster_and_never_takes_the_rest_of_the_area(self):
@@ -371,7 +379,7 @@ class Plan2DatabaseTests(CommittedDatabaseTestCase):
         with Session(self.engine) as session:
             stored = session.get(PlanningPlan, proposal["plan_id"])
             row = next(w for w in stored.input_snapshot["workers"] if w["user_id"] == w9)
-        self.assertEqual((row["workshift_start"], row["workshift_end"]), ("08:00:00", "18:00:00"))
+        self.assertEqual((row["workshift_start"], row["workshift_end"]), self.fixture_shift(9))
 
     def test_manual_assignment_admits_an_engineer_explicitly_and_records_it(self):
         w9, w10 = self.worker(9), self.worker(10)
@@ -432,8 +440,15 @@ class Plan2DatabaseTests(CommittedDatabaseTestCase):
         proposal = self.replan(initial["day_revision"])
         excluded = {item["worker_id"]: item["reason"] for item in proposal["excluded_workers"]}
         self.assertEqual(excluded[w10]["code"], MISMATCH)
+        # The brigade, its office and the stock office still say the plan's area.
         self.assertEqual(
-            excluded[w10]["observed"]["sources"], {"brigade": self.area_id, "worker": other}
+            excluded[w10]["observed"]["sources"],
+            {
+                "brigade": self.area_id,
+                "brigade_office": self.area_id,
+                "stock_office": self.area_id,
+                "worker": other,
+            },
         )
 
     # Territory ---------------------------------------------------------------
@@ -442,7 +457,9 @@ class Plan2DatabaseTests(CommittedDatabaseTestCase):
         w12 = self.worker(12)
         with Session(self.engine) as session, session.begin():
             session.execute(
-                update(Worker).where(Worker.user_id == w12).values(service_area_id=None)
+                update(Worker)
+                .where(Worker.user_id == w12)
+                .values(service_area_id=None, stock_office_id=None)
             )
             session.query(BrigadeMember).filter(BrigadeMember.worker_id == w12).delete()
 
@@ -619,7 +636,7 @@ class Plan2DatabaseTests(CommittedDatabaseTestCase):
 
         w10 = self.worker(10)
         other = self.other_area()
-        office_id = self.ids["offices"][str(self.brigade_of(9))]
+        office_id = self.ids["offices"][str(self.office_of(9))]
         with Session(self.engine) as session, session.begin():
             session.execute(
                 update(Worker).where(Worker.user_id == w10).values(service_area_id=other)
@@ -632,11 +649,25 @@ class Plan2DatabaseTests(CommittedDatabaseTestCase):
         self.assertFalse(report["consistent"])
         by_worker = {issue["subject_id"]: issue for issue in report["workers"]}
         self.assertEqual(by_worker[w10]["code"], MISMATCH)
-        self.assertEqual(by_worker[w10]["sources"], {"brigade": self.area_id, "worker": other})
-        self.assertEqual(by_worker[self.worker(9)]["sources"]["brigade_office"], other)
+        # One office serves the whole area, so every brigade and stock of it moved.
         self.assertEqual(
-            [issue["subject_id"] for issue in report["brigades"]],
-            [self.ids["brigades"][str(self.brigade_of(9))]],
+            by_worker[w10]["sources"],
+            {
+                "brigade": self.area_id,
+                "brigade_office": other,
+                "stock_office": other,
+                "worker": other,
+            },
+        )
+        self.assertEqual(by_worker[self.worker(9)]["sources"]["brigade_office"], other)
+        source_office = self.office_of(9)
+        self.assertEqual(
+            sorted(issue["subject_id"] for issue in report["brigades"]),
+            sorted(
+                self.ids["brigades"][str(b["id"])]
+                for b in self.data["brigades"]
+                if b["office_id"] == source_office
+            ),
         )
         with Session(self.engine) as session:
             self.assertEqual(session.get(Worker, w10).service_area_id, other)

@@ -16,10 +16,10 @@ from tests.support import DatabaseTestCase
 class TicketCommentsApiTests(DatabaseTestCase):
     def setUp(self):
         super().setUp()
-        city = self.save(City(name="Санкт-Петербург"))
-        district = self.save(District(city_id=city.id, name="Невский район"))
+        city = self.save(City(name="Москва"))
+        district = self.save(District(city_id=city.id, name="Кузьминки"))
         self.service_area_id = self.service_area_for_district(district.id)
-        street = self.save(Street(city_id=city.id, name="Тестовая улица"))
+        street = self.save(Street(city_id=city.id, name="улица Юных Ленинцев"))
         building = self.save(
             Building(
                 city_id=city.id,

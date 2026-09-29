@@ -1,4 +1,9 @@
-"""Fill an existing, migrated database: python seed_demo.py [--date YYYY-MM-DD]."""
+"""Fill an existing, migrated database with a Moscow demo day: python seed_demo.py [--date].
+
+The demo covers the three areas of the case («Восток», «Юго-восток», «Югоцентр») with their
+offices, one brigade per area and requests of the day at real Moscow addresses. Requests
+wait for the planner: the seed assigns nobody and builds no routes.
+"""
 
 import argparse
 import sys
@@ -17,13 +22,22 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.db.session import get_engine
+from synthetic_moscow.catalog import (
+    APPLIANCE_BY_KEY,
+    APPLIANCES,
+    REQUIRED_APPLIANCES,
+    SKILLS,
+    WORK_TYPES,
+)
+from synthetic_moscow.geography import AREAS
 
 MOSCOW_TIME = timezone(timedelta(hours=3))
-CITY_NAME = "Санкт-Петербург"
+CITY_NAME = "Москва"
 
 
 @dataclass(frozen=True, kw_only=True)
 class DemoVisit:
+    # The service area of the case; the system shows it as the address district.
     district: str
     street: str
     building: str
@@ -32,13 +46,20 @@ class DemoVisit:
     source_url: str
     title: str
     work_type: str
+    request_type_hd: str
+    description: str
     start_hour: int
     end_hour: int
     duration_minutes: int
+    start_minute: int = 0
+    end_minute: int = 0
     block: str | None = None
     entrance: str | None = None
     floor: int | None = None
     apartment: str | None = None
+    # Equipment taken for the visit: (appliance key of the catalog, quantity).
+    appliances: tuple[tuple[str, int], ...] = ()
+    note: str | None = None
 
     @property
     def address(self) -> str:
@@ -54,145 +75,631 @@ class DemoVisit:
         return ", ".join(parts)
 
 
-# Buildings, districts, blocks and map coordinates checked on 2026-09-13.
-# Entrance/floor/apartment assignments and all jobs are fictional by user agreement.
-# Repeated apartments share the building's map point, not a surveyed entrance position.
+# Houses, blocks, entrances, floors counts and coordinates are real OpenStreetMap objects
+# (© участники OpenStreetMap, ODbL 1.0), checked on 2026-09-29; source_url opens the object.
+# Apartments lie inside the real numbering of the entrance. Requests, clients and people
+# are fictional. The first two visits are neighbours in one entrance, the third one returns
+# to the first apartment.
 DEMO_VISITS = (
     DemoVisit(
-        district="Невский район",
-        street="Искровский проспект",
-        building="4",
-        block="корпус 2",
-        latitude="59.9156",
-        longitude="30.4631",
-        source_url="https://spb.ginfo.ru/ulicy/iskrovskiy_prospekt/4k2/info/",
+        district="Восток",
+        street="Средний Золоторожский переулок",
+        building="9/11",
+        latitude="55.749472",
+        longitude="37.679744",
+        source_url="https://www.openstreetmap.org/way/49906442",
         entrance="1",
-        floor=3,
-        apartment="12",
-        title="[Демо] Настроить Wi-Fi",
-        work_type="Настройка сети",
-        start_hour=9,
-        end_hour=13,
-        duration_minutes=60,
-    ),
-    DemoVisit(
-        district="Невский район",
-        street="Искровский проспект",
-        building="4",
-        block="корпус 2",
-        latitude="59.9156",
-        longitude="30.4631",
-        source_url="https://spb.ginfo.ru/ulicy/iskrovskiy_prospekt/4k2/info/",
-        entrance="1",
-        floor=4,
-        apartment="16",
-        title="[Демо] Подключить соседнюю квартиру",
-        work_type="Настройка сети",
+        floor=1,
+        apartment="4",
+        title="Подключение по конвергентному тарифу",
+        work_type="Подключение клиентов Базовая",
+        request_type_hd="Конвергенция абонента",
+        description=(
+            "Подключение по заявке из салона связи. Интернет 100 Мбит/с, клиент просит "
+            "аккуратную прокладку в кабель-канале."
+        ),
         start_hour=10,
-        end_hour=14,
-        duration_minutes=45,
+        end_hour=12,
+        duration_minutes=70,
+        appliances=(
+            ("patch_utp", 1),
+            ("rj45", 2),
+            ("router_giga", 1),
+            ("utp", 10),
+        ),
+        note="Клиент просит позвонить за 30 минут до приезда.",
     ),
     DemoVisit(
-        district="Невский район",
-        street="Искровский проспект",
-        building="4",
-        block="корпус 2",
-        latitude="59.9156",
-        longitude="30.4631",
-        source_url="https://spb.ginfo.ru/ulicy/iskrovskiy_prospekt/4k2/info/",
+        district="Восток",
+        street="Средний Золоторожский переулок",
+        building="9/11",
+        latitude="55.749472",
+        longitude="37.679744",
+        source_url="https://www.openstreetmap.org/way/49906442",
         entrance="1",
         floor=3,
         apartment="12",
-        title="[Демо] Повторно проверить соединение",
-        work_type="Диагностика сети",
-        start_hour=14,
-        end_hour=18,
-        duration_minutes=30,
-    ),
-    DemoVisit(
-        district="Невский район",
-        street="Искровский проспект",
-        building="3",
-        block="корпус 2",
-        latitude="59.9127",
-        longitude="30.458",
-        source_url="https://spb.ginfo.ru/ulicy/iskrovskiy_prospekt/3k2/info/",
-        entrance="2",
-        floor=5,
-        apartment="56",
-        title="[Демо] Заменить маршрутизатор",
-        work_type="Замена оборудования",
-        start_hour=11,
-        end_hour=16,
-        duration_minutes=60,
-    ),
-    DemoVisit(
-        district="Невский район",
-        street="улица Дыбенко",
-        building="8",
-        block="корпус 2",
-        latitude="59.9015",
-        longitude="30.4548",
-        source_url="https://spb.ginfo.ru/ulicy/ulica_dybenko/8k2/info/",
-        entrance="1",
-        floor=2,
-        apartment="7",
-        title="[Демо] Проверить кабель",
-        work_type="Диагностика сети",
-        start_hour=9,
+        title="ТВ-приставка не загружается",
+        work_type="Локальная заявка/ремонт у клиента",
+        request_type_hd="TVE/ENT. Замена приставки техником",
+        description=(
+            "ТВ-приставка зависает на заставке, сброс не помогает. Заменить приставку и "
+            "активировать."
+        ),
+        start_hour=10,
         end_hour=12,
         duration_minutes=30,
+        appliances=(("tv_box", 1),),
     ),
     DemoVisit(
-        district="Невский район",
-        street="улица Дыбенко",
-        building="27",
-        block="корпус 1",
-        latitude="59.9056",
-        longitude="30.4799",
-        source_url="https://spb.ginfo.ru/ulicy/ulica_dybenko/27k1/info/",
-        entrance="2",
-        floor=3,
-        apartment="48",
-        title="[Демо] Подключить точку доступа",
-        work_type="Настройка сети",
-        start_hour=13,
-        end_hour=18,
-        duration_minutes=90,
-    ),
-    DemoVisit(
-        district="Приморский район",
-        street="Коломяжский проспект",
-        building="34",
-        block="корпус 2",
-        latitude="60.0137",
-        longitude="30.2931",
-        source_url="https://spb.ginfo.ru/ulicy/kolomyazhskiy_prospekt/34k2/info/",
+        district="Восток",
+        street="Средний Золоторожский переулок",
+        building="9/11",
+        latitude="55.749472",
+        longitude="37.679744",
+        source_url="https://www.openstreetmap.org/way/49906442",
         entrance="1",
-        floor=6,
-        apartment="22",
-        title="[Демо] Проверить покрытие Wi-Fi",
-        work_type="Диагностика сети",
+        floor=1,
+        apartment="4",
+        title="Повторный визит: пропадает интернет после подключения",
+        work_type="Локальная заявка/ремонт у клиента",
+        request_type_hd="Разрывы",
+        description=(
+            "Через неделю после подключения клиент жалуется на разрывы. Проверить обжим "
+            "коннектора у роутера и кабель в кабель-канале."
+        ),
         start_hour=14,
-        end_hour=18,
-        duration_minutes=45,
+        end_hour=16,
+        duration_minutes=30,
+        appliances=(
+            ("rj45", 2),
+            ("utp", 8),
+        ),
     ),
     DemoVisit(
-        district="Красногвардейский район",
-        street="проспект Энергетиков",
-        building="54",
-        block="корпус 2",
-        latitude="59.9667",
-        longitude="30.4348",
-        source_url="https://spb.ginfo.ru/ulicy/prospekt_energetikov/54k2/info/",
+        district="Восток",
+        street="улица Авиаконструктора Миля",
+        building="8",
+        block="корпус 1",
+        latitude="55.684793",
+        longitude="37.852539",
+        source_url="https://www.openstreetmap.org/way/859458572",
+        entrance="1",
+        floor=1,
+        apartment="1",
+        title="Конвергенция: интернет и ТВ для абонента мобильной связи",
+        work_type="Подключение клиентов Базовая",
+        request_type_hd="Конвергенция абонента",
+        description=(
+            "Абонент мобильной связи подключает домашний интернет 300 Мбит/с. Проложить "
+            "кабель от этажного щита до квартиры (около 16 м), установить и настроить "
+            "роутер, показать клиенту приложение."
+        ),
+        start_hour=12,
+        end_hour=14,
+        duration_minutes=70,
+        appliances=(
+            ("patch_utp", 1),
+            ("rj45", 2),
+            ("router_giga", 1),
+            ("utp", 10),
+        ),
+        note="Клиент просит бахилы и аккуратную прокладку кабеля.",
+    ),
+    DemoVisit(
+        district="Восток",
+        street="Денисовский переулок",
+        building="8/14",
+        latitude="55.766043",
+        longitude="37.672556",
+        source_url="https://www.openstreetmap.org/way/34319607",
+        entrance="3",
+        floor=2,
+        apartment="47",
+        title="Дозаказ ТВ-приставки для второй комнаты",
+        work_type="Дозаказ оборудования",
+        request_type_hd="Заказ подключения/Дозаказ оборудования",
+        description=("Вторая ТВ-приставка в спальню. Кабель от роутера около 22 м."),
+        start_hour=16,
+        end_hour=18,
+        duration_minutes=20,
+        appliances=(
+            ("rj45", 2),
+            ("tv_box", 1),
+            ("utp", 5),
+        ),
+    ),
+    DemoVisit(
+        district="Восток",
+        street="Перовское шоссе",
+        building="6А",
+        latitude="55.734852",
+        longitude="37.743099",
+        source_url="https://www.openstreetmap.org/way/50584286",
+        entrance="4",
+        title="Авария на ТКД: отключение электропитания",
+        work_type="Аварий на ТКД",
+        request_type_hd="Авария",
+        description=(
+            "На ТКД в слаботочном шкафу на последнем этаже (подъезд 4) пропало "
+            "электропитание, ИБП разряжен. Не работают интернет и ТВ у 25 абонентов. "
+            "Проверить автомат в щите и ИБП, при необходимости заменить блок питания "
+            "коммутатора."
+        ),
+        start_hour=0,
+        end_hour=23,
+        duration_minutes=80,
+        start_minute=1,
+        end_minute=59,
+        appliances=(
+            ("psu", 1),
+            ("ups", 1),
+        ),
+    ),
+    DemoVisit(
+        district="Восток",
+        street="Люблинская улица",
+        building="35",
+        block="корпус 1",
+        latitude="55.697889",
+        longitude="37.734481",
+        source_url="https://www.openstreetmap.org/way/30853951",
+        entrance="5",
+        floor=8,
+        apartment="175",
+        title="Подключение по конвергентному тарифу",
+        work_type="Подключение клиентов Базовая",
+        request_type_hd="Конвергенция абонента",
+        description=(
+            "Подключение по заявке из салона связи. Интернет 1000 Мбит/с, клиент просит "
+            "аккуратную прокладку в кабель-канале."
+        ),
+        start_hour=18,
+        end_hour=20,
+        duration_minutes=70,
+        appliances=(
+            ("patch_utp", 1),
+            ("rj45", 2),
+            ("router_giga", 1),
+            ("utp", 10),
+        ),
+        note="Клиент будет дома только после 17:00.",
+    ),
+    DemoVisit(
+        district="Восток",
+        street="улица Петра Романова",
+        building="3",
+        latitude="55.709392",
+        longitude="37.680769",
+        source_url="https://www.openstreetmap.org/way/63357952",
+        entrance="1",
+        floor=2,
+        apartment="12",
+        title="Пропал интернет",
+        work_type="Локальная заявка/ремонт у клиента",
+        request_type_hd="Нет линка",
+        description=(
+            "Интернет пропал после замены входной двери. Проверить абонентский кабель в "
+            "дверном проёме."
+        ),
+        start_hour=20,
+        end_hour=22,
+        duration_minutes=30,
+        appliances=(("rj45", 2),),
+    ),
+    DemoVisit(
+        district="Юго-восток",
+        street="улица Борисовские Пруды",
+        building="10",
+        block="корпус 4",
+        latitude="55.633877",
+        longitude="37.739860",
+        source_url="https://www.openstreetmap.org/way/40678889",
         entrance="3",
         floor=3,
-        apartment="87",
-        title="[Демо] Проверить скорость соединения",
-        work_type="Диагностика сети",
+        apartment="86",
+        title="Подключение с дозаказом ТВ-приставки",
+        work_type="Подключение клиентов Базовая",
+        request_type_hd="Заказ подключения/Дозаказ оборудования",
+        description=(
+            "Подключение интернета 300 Мбит/с и установка ТВ-приставки 4K. Кабель до ТВ в "
+            "гостиной, около 28 м."
+        ),
         start_hour=10,
-        end_hour=15,
-        duration_minutes=45,
+        end_hour=12,
+        duration_minutes=70,
+        appliances=(
+            ("patch_utp", 2),
+            ("rj45", 2),
+            ("router_giga", 1),
+            ("tv_box", 1),
+            ("utp", 12),
+        ),
+        note="Клиент просит позвонить за 30 минут до приезда.",
+    ),
+    DemoVisit(
+        district="Юго-восток",
+        street="Касимовская улица",
+        building="15",
+        latitude="55.597104",
+        longitude="37.655314",
+        source_url="https://www.openstreetmap.org/way/31668751",
+        entrance="4",
+        floor=3,
+        apartment="154",
+        title="Пропал интернет",
+        work_type="Локальная заявка/ремонт у клиента",
+        request_type_hd="Нет линка",
+        description=(
+            "Интернет пропал после замены входной двери. Проверить абонентский кабель в "
+            "дверном проёме."
+        ),
+        start_hour=10,
+        end_hour=12,
+        duration_minutes=30,
+        appliances=(("rj45", 2),),
+    ),
+    DemoVisit(
+        district="Юго-восток",
+        street="Воронежская улица",
+        building="8",
+        block="корпус 1",
+        latitude="55.608417",
+        longitude="37.725893",
+        source_url="https://www.openstreetmap.org/way/27178127",
+        entrance="1",
+        floor=9,
+        apartment="36",
+        title="Работа с кабелем в квартире",
+        work_type="Локальная заявка/ремонт у клиента",
+        request_type_hd="Работа с кабелем",
+        description=("Кабель перебит мебелью. Заменить участок кабеля от щита до роутера."),
+        start_hour=14,
+        end_hour=16,
+        duration_minutes=30,
+        appliances=(
+            ("rj45", 2),
+            ("utp", 8),
+        ),
+    ),
+    DemoVisit(
+        district="Юго-восток",
+        street="улица Мусы Джалиля",
+        building="10",
+        block="корпус 1",
+        latitude="55.626364",
+        longitude="37.740358",
+        source_url="https://www.openstreetmap.org/way/27644530",
+        entrance="2",
+        floor=9,
+        apartment="82",
+        title="Подключение домашнего интернета к мобильному тарифу",
+        work_type="Подключение клиентов Базовая",
+        request_type_hd="Конвергенция абонента",
+        description=(
+            "Конвергентный тариф: интернет 1000 Мбит/с и ТВ. Установить роутер и "
+            "ТВ-приставку, кабель завести в комнату у окна, около 9 м."
+        ),
+        start_hour=12,
+        end_hour=14,
+        duration_minutes=70,
+        appliances=(
+            ("patch_utp", 1),
+            ("rj45", 2),
+            ("router_giga", 1),
+            ("utp", 10),
+        ),
+        note="Клиент просит бахилы и аккуратную прокладку кабеля.",
+    ),
+    DemoVisit(
+        district="Юго-восток",
+        street="Востряковский проезд",
+        building="15",
+        block="корпус 3",
+        latitude="55.575965",
+        longitude="37.649298",
+        source_url="https://www.openstreetmap.org/way/31667734",
+        entrance="1",
+        floor=6,
+        apartment="21",
+        title="Дозаказ: IP-камера",
+        work_type="Дозаказ оборудования",
+        request_type_hd="Дозаказ оборудования",
+        description=(
+            "Клиент заказал дополнительное оборудование. Доставить, установить и настроить, "
+            "показать работу в приложении."
+        ),
+        start_hour=16,
+        end_hour=18,
+        duration_minutes=20,
+        appliances=(("camera", 1),),
+    ),
+    DemoVisit(
+        district="Юго-восток",
+        street="Борисовский проезд",
+        building="38",
+        block="корпус 1",
+        latitude="55.617241",
+        longitude="37.727303",
+        source_url="https://www.openstreetmap.org/way/27644747",
+        entrance="2",
+        title="Авария: затопление подвала, узел связи обесточен",
+        work_type="Аварий на ТКД",
+        request_type_hd="Авария",
+        description=(
+            "Управляющая компания сообщила о затоплении подвала. ТКД обесточен, без связи "
+            "119 абонентов. Выезд совместно с представителем УК, проверить оборудование на "
+            "влагу."
+        ),
+        start_hour=0,
+        end_hour=23,
+        duration_minutes=80,
+        start_minute=1,
+        end_minute=59,
+        appliances=(
+            ("psu", 1),
+            ("switch8", 1),
+        ),
+    ),
+    DemoVisit(
+        district="Юго-восток",
+        street="Ереванская улица",
+        building="17",
+        block="корпус 1",
+        latitude="55.630734",
+        longitude="37.674840",
+        source_url="https://www.openstreetmap.org/way/31024664",
+        entrance="2",
+        floor=1,
+        apartment="23",
+        title="Подключение по конвергентному тарифу",
+        work_type="Подключение клиентов Базовая",
+        request_type_hd="Конвергенция абонента",
+        description=(
+            "Конвергентный тариф: интернет 1000 Мбит/с и ТВ. Установить роутер и "
+            "ТВ-приставку, кабель завести в комнату у окна, около 18 м."
+        ),
+        start_hour=18,
+        end_hour=20,
+        duration_minutes=70,
+        appliances=(
+            ("patch_utp", 1),
+            ("rj45", 2),
+            ("router_giga", 1),
+            ("utp", 10),
+        ),
+        note="Клиент будет дома только после 17:00.",
+    ),
+    DemoVisit(
+        district="Юго-восток",
+        street="улица Москворечье",
+        building="37",
+        block="корпус 1",
+        latitude="55.645941",
+        longitude="37.661965",
+        source_url="https://www.openstreetmap.org/way/36868606",
+        entrance="2",
+        floor=2,
+        apartment="28",
+        title="Нет интернета: нет линка на порту",
+        work_type="Локальная заявка/ремонт у клиента",
+        request_type_hd="Нет линка",
+        description=(
+            "С утра нет интернета, у соседей по стояку работает. Линк на порту отсутствует, "
+            "вероятно повреждён кабель в квартире после ремонта."
+        ),
+        start_hour=20,
+        end_hour=22,
+        duration_minutes=30,
+        appliances=(("rj45", 2),),
+    ),
+    DemoVisit(
+        district="Югоцентр",
+        street="Ленинский проспект",
+        building="79",
+        latitude="55.684260",
+        longitude="37.541152",
+        source_url="https://www.openstreetmap.org/way/29092200",
+        entrance="2",
+        floor=3,
+        apartment="46",
+        title="Конвергенция: интернет и ТВ для абонента мобильной связи",
+        work_type="Подключение клиентов Базовая",
+        request_type_hd="Конвергенция абонента",
+        description=(
+            "Абонент мобильной связи подключает домашний интернет 1000 Мбит/с. Проложить "
+            "кабель от этажного щита до квартиры (около 26 м), установить и настроить "
+            "роутер, показать клиенту приложение."
+        ),
+        start_hour=10,
+        end_hour=12,
+        duration_minutes=70,
+        appliances=(
+            ("patch_utp", 1),
+            ("rj45", 2),
+            ("router_giga", 1),
+            ("utp", 10),
+        ),
+        note="Клиент просит позвонить за 30 минут до приезда.",
+    ),
+    DemoVisit(
+        district="Югоцентр",
+        street="Одесская улица",
+        building="22",
+        block="корпус 1",
+        latitude="55.652818",
+        longitude="37.587853",
+        source_url="https://www.openstreetmap.org/way/29325263",
+        entrance="6",
+        floor=4,
+        apartment="195",
+        title="Рост ошибок на порту",
+        work_type="Локальная заявка/ремонт у клиента",
+        request_type_hd="Рост ошибок на порту",
+        description=(
+            "Мониторинг: рост CRC-ошибок на порту доступа абонента. Переобжать кабель, при "
+            "необходимости заменить патч-корд на щите."
+        ),
+        start_hour=10,
+        end_hour=12,
+        duration_minutes=30,
+        appliances=(
+            ("patch_utp", 1),
+            ("rj45", 2),
+        ),
+    ),
+    DemoVisit(
+        district="Югоцентр",
+        street="Варшавское шоссе",
+        building="76",
+        block="корпус 2",
+        latitude="55.654347",
+        longitude="37.618026",
+        source_url="https://www.openstreetmap.org/way/36743719",
+        entrance="1",
+        floor=1,
+        apartment="56",
+        title="Перенос кабеля и розетки",
+        work_type="Локальная заявка/ремонт у клиента",
+        request_type_hd="Работа с кабелем",
+        description=("Кабель перебит мебелью. Заменить участок кабеля от щита до роутера."),
+        start_hour=14,
+        end_hour=16,
+        duration_minutes=30,
+        appliances=(
+            ("rj45", 2),
+            ("utp", 8),
+        ),
+    ),
+    DemoVisit(
+        district="Югоцентр",
+        street="Нагорная улица",
+        building="18",
+        block="корпус 1",
+        latitude="55.679611",
+        longitude="37.604769",
+        source_url="https://www.openstreetmap.org/way/32610839",
+        entrance="2",
+        floor=5,
+        apartment="38",
+        title="Подключение с дозаказом ТВ-приставки",
+        work_type="Подключение клиентов Базовая",
+        request_type_hd="Заказ подключения/Дозаказ оборудования",
+        description=(
+            "Клиент заказал интернет и приставку. Установить оборудование, проверить каналы "
+            "и скорость."
+        ),
+        start_hour=12,
+        end_hour=14,
+        duration_minutes=70,
+        appliances=(
+            ("patch_utp", 2),
+            ("rj45", 2),
+            ("router_giga", 1),
+            ("tv_box", 1),
+            ("utp", 12),
+        ),
+        note="Клиент просит бахилы и аккуратную прокладку кабеля.",
+    ),
+    DemoVisit(
+        district="Югоцентр",
+        street="Комсомольский проспект",
+        building="14/1",
+        block="корпус 3",
+        latitude="55.731647",
+        longitude="37.589533",
+        source_url="https://www.openstreetmap.org/way/45468550",
+        entrance="8",
+        floor=3,
+        apartment="158",
+        title="Дозаказ: IP-камера",
+        work_type="Дозаказ оборудования",
+        request_type_hd="Дозаказ оборудования",
+        description=(
+            "Клиент заказал дополнительное оборудование. Доставить, установить и настроить, "
+            "показать работу в приложении."
+        ),
+        start_hour=16,
+        end_hour=18,
+        duration_minutes=20,
+        appliances=(("camera", 1),),
+    ),
+    DemoVisit(
+        district="Югоцентр",
+        street="улица Винокурова",
+        building="6",
+        latitude="55.688478",
+        longitude="37.585025",
+        source_url="https://www.openstreetmap.org/way/35680164",
+        entrance="5",
+        title="Авария: ошибки на магистральном порту ТКД",
+        work_type="Аварий на ТКД",
+        request_type_hd="Авария",
+        description=(
+            "Мониторинг: массовые CRC-ошибки на аплинке коммутатора ТКД на чердаке с 04:54, "
+            "у 23 абонентов разрывы и низкая скорость. Заменить SFP-модуль и оптический "
+            "патч-корд."
+        ),
+        start_hour=0,
+        end_hour=23,
+        duration_minutes=80,
+        start_minute=1,
+        end_minute=59,
+        appliances=(
+            ("patch_sc", 1),
+            ("sfp", 1),
+        ),
+    ),
+    DemoVisit(
+        district="Югоцентр",
+        street="Садовническая набережная",
+        building="80",
+        latitude="55.737357",
+        longitude="37.640309",
+        source_url="https://www.openstreetmap.org/way/539076050",
+        entrance="5",
+        floor=4,
+        apartment="67",
+        title="Подключение домашнего интернета к мобильному тарифу",
+        work_type="Подключение клиентов Базовая",
+        request_type_hd="Конвергенция абонента",
+        description=(
+            "Подключение по заявке из салона связи. Интернет 100 Мбит/с, клиент просит "
+            "аккуратную прокладку в кабель-канале."
+        ),
+        start_hour=18,
+        end_hour=20,
+        duration_minutes=70,
+        appliances=(
+            ("patch_utp", 1),
+            ("rj45", 2),
+            ("router_giga", 1),
+            ("utp", 10),
+        ),
+        note="Клиент будет дома только после 17:00.",
+    ),
+    DemoVisit(
+        district="Югоцентр",
+        street="Затонная улица",
+        building="5",
+        block="корпус 3",
+        latitude="55.680978",
+        longitude="37.685396",
+        source_url="https://www.openstreetmap.org/way/31649083",
+        entrance="4",
+        floor=2,
+        apartment="68",
+        title="Замена ТВ-приставки",
+        work_type="Локальная заявка/ремонт у клиента",
+        request_type_hd="TVE/ENT. Замена приставки техником",
+        description=(
+            "ТВ-приставка зависает на заставке, сброс не помогает. Заменить приставку и "
+            "активировать."
+        ),
+        start_hour=20,
+        end_hour=22,
+        duration_minutes=30,
+        appliances=(("tv_box", 1),),
     ),
 )
 
@@ -204,38 +711,24 @@ class DemoOffice:
     district: str
     street: str
     building: str
+    block: str | None
     latitude: str
     longitude: str
 
 
-DEMO_OFFICES = (
+# The offices of the organizer's day files, one per area.
+DEMO_OFFICES = tuple(
     DemoOffice(
-        name="Офис Восток",
-        city="Москва",
-        district="Восток",
-        street="ул Юных Ленинцев",
-        building="83с 4",
-        latitude="55.702267",
-        longitude="37.773852",
-    ),
-    DemoOffice(
-        name="Офис Юго-Восток",
-        city="Москва",
-        district="Юго-Восток",
-        street="ул Бирюлёвская",
-        building="1с1",
-        latitude="55.601956",
-        longitude="37.664752",
-    ),
-    DemoOffice(
-        name="Офис Югоцентр",
-        city="Москва",
-        district="Югоцентр",
-        street="проезд Симферопольский",
-        building="7",
-        latitude="55.665025",
-        longitude="37.615596",
-    ),
+        name=area.office.name,
+        city=area.office.city,
+        district=area.name,
+        street=area.office.street,
+        building=area.office.number,
+        block=area.office.block,
+        latitude=f"{area.office.latitude:.6f}",
+        longitude=f"{area.office.longitude:.6f}",
+    )
+    for area in AREAS
 )
 
 
@@ -255,13 +748,10 @@ def get_or_create_id(session: Session, find_sql: str, insert_sql: str, parameter
     return session.execute(text(insert_sql), parameters).scalar_one()
 
 
-DEMO_SKILLS = (
-    "Монтаж ВОЛС",
-    "Настройка оборудования",
-    "Аварийно-восстановительные работы",
-    "Подключение абонентов",
-)
+DEMO_SKILLS = SKILLS
+UNIVERSAL = ("Аварийные работы", "Локальные работы", "Работы на подключение и дозаказы")
 
+# Demo passwords work only in a demo database; the Bruno collection relies on them.
 DEMO_USERS = (
     {
         "name": "Алексей",
@@ -278,11 +768,12 @@ DEMO_USERS = (
         "username": "demo_foreman",
         "password": "ForemanSecret123!",
         "role": "foreman",
+        "area": "Восток",
     },
     {
-        "name": "Иван",
-        "surname": "Свободный",
-        "lastname": "Иванович",
+        "name": "Олег",
+        "surname": "Сорокин",
+        "lastname": "Андреевич",
         "username": "demo_foreman_free",
         "password": "ForemanSecret123!",
         "role": "foreman",
@@ -294,25 +785,143 @@ DEMO_USERS = (
         "username": "demo_worker_1",
         "password": "WorkerSecret123!",
         "role": "worker",
-        "workshift_start": time(8, 0),
-        "workshift_end": time(17, 0),
-        "skills": ("Монтаж ВОЛС", "Подключение абонентов"),
+        "area": "Восток",
+        "workshift_start": time(9, 0),
+        "workshift_end": time(18, 0),
+        "schedule_type": "5/2",
+        "transport_type": "public_transport",
+        "skills": (
+            "Работы на подключение и дозаказы",
+            "Локальные работы",
+            "Настройка IPTV и видеонаблюдения",
+        ),
     },
     {
         "name": "Михаил",
         "surname": "Новиков",
-        "lastname": None,
+        "lastname": "Павлович",
         "username": "demo_worker_2",
         "password": "WorkerSecret123!",
         "role": "worker",
+        "area": "Восток",
+        # Night duty answering outages.
         "workshift_start": time(22, 0),
         "workshift_end": time(6, 0),
-        "skills": ("Аварийно-восстановительные работы", "Монтаж ВОЛС"),
+        "schedule_type": "2/2",
+        "transport_type": "car",
+        "skills": (
+            "Аварийные работы",
+            "Локальные работы",
+            "Монтаж и сварка ВОЛС",
+            "Допуск по электробезопасности (III группа)",
+        ),
+    },
+    {
+        "name": "Сергей",
+        "surname": "Воронин",
+        "lastname": "Николаевич",
+        "username": "demo_foreman_2",
+        "password": "ForemanSecret123!",
+        "role": "foreman",
+        "area": "Юго-восток",
+    },
+    {
+        "name": "Андрей",
+        "surname": "Ковалёв",
+        "lastname": "Юрьевич",
+        "username": "demo_foreman_3",
+        "password": "ForemanSecret123!",
+        "role": "foreman",
+        "area": "Югоцентр",
+    },
+    {
+        "name": "Руслан",
+        "surname": "Галиев",
+        "lastname": "Маратович",
+        "username": "demo_worker_3",
+        "password": "WorkerSecret123!",
+        "role": "worker",
+        "area": "Восток",
+        "workshift_start": time(10, 0),
+        "workshift_end": time(22, 0),
+        "schedule_type": "2/2",
+        "transport_type": "car",
+        "skills": UNIVERSAL + ("Монтаж и сварка ВОЛС",),
+    },
+    {
+        "name": "Артём",
+        "surname": "Белов",
+        "lastname": "Олегович",
+        "username": "demo_worker_4",
+        "password": "WorkerSecret123!",
+        "role": "worker",
+        "area": "Юго-восток",
+        "workshift_start": time(10, 0),
+        "workshift_end": time(22, 0),
+        "schedule_type": "2/2",
+        "transport_type": "car",
+        "skills": UNIVERSAL + ("Допуск по электробезопасности (III группа)",),
+    },
+    {
+        "name": "Никита",
+        "surname": "Орлов",
+        "lastname": "Денисович",
+        "username": "demo_worker_5",
+        "password": "WorkerSecret123!",
+        "role": "worker",
+        "area": "Юго-восток",
+        "workshift_start": time(9, 0),
+        "workshift_end": time(18, 0),
+        "schedule_type": "5/2",
+        "transport_type": "public_transport",
+        "skills": ("Работы на подключение и дозаказы", "Настройка IPTV и видеонаблюдения"),
+    },
+    {
+        "name": "Константин",
+        "surname": "Фомин",
+        "lastname": "Вадимович",
+        "username": "demo_worker_6",
+        "password": "WorkerSecret123!",
+        "role": "worker",
+        "area": "Юго-восток",
+        "workshift_start": time(14, 0),
+        "workshift_end": time(22, 0),
+        "schedule_type": "5/2",
+        "transport_type": "walking",
+        "skills": ("Локальные работы",),
+    },
+    {
+        "name": "Павел",
+        "surname": "Зайцев",
+        "lastname": "Игоревич",
+        "username": "demo_worker_7",
+        "password": "WorkerSecret123!",
+        "role": "worker",
+        "area": "Югоцентр",
+        "workshift_start": time(10, 0),
+        "workshift_end": time(22, 0),
+        "schedule_type": "2/2",
+        "transport_type": "car",
+        "skills": UNIVERSAL,
+    },
+    {
+        "name": "Егор",
+        "surname": "Лебедев",
+        "lastname": "Романович",
+        "username": "demo_worker_8",
+        "password": "WorkerSecret123!",
+        "role": "worker",
+        "area": "Югоцентр",
+        "workshift_start": time(9, 0),
+        "workshift_end": time(21, 0),
+        "schedule_type": "2/2",
+        "transport_type": "bicycle",
+        "skills": ("Локальные работы", "Работы на подключение и дозаказы"),
     },
 )
 
 
-def seed_users_and_skills(session: Session) -> None:
+def seed_users_and_skills(session: Session, visit_date: date) -> None:
     for skill_name in DEMO_SKILLS:
         session.execute(
             text("""
@@ -328,57 +937,68 @@ def seed_users_and_skills(session: Session) -> None:
             text("SELECT id FROM users WHERE lower(username) = lower(:username)"),
             {"username": user_info["username"]},
         ).scalar_one_or_none()
-
-        if existing_id is None:
-            user_id = session.execute(
-                text("""
-                    INSERT INTO users (name, surname, lastname, username, password_hash, role)
-                    VALUES (:name, :surname, :lastname, :username, :password_hash, :role)
-                    RETURNING id
-                """),
-                {
-                    "name": user_info["name"],
-                    "surname": user_info["surname"],
-                    "lastname": user_info["lastname"],
-                    "username": user_info["username"],
-                    "password_hash": hash_password(user_info["password"]),
-                    "role": user_info["role"],
-                },
-            ).scalar_one()
-
-            if user_info["role"] == "worker":
-                session.execute(
-                    text("""
-                        INSERT INTO workers (user_id, workshift_start, workshift_end)
-                        VALUES (:user_id, :workshift_start, :workshift_end)
-                    """),
-                    {
-                        "user_id": user_id,
-                        "workshift_start": user_info["workshift_start"],
-                        "workshift_end": user_info["workshift_end"],
-                    },
+        if existing_id is not None:
+            continue
+        user_id = session.execute(
+            text("""
+                INSERT INTO users (name, surname, lastname, username, password_hash, role)
+                VALUES (:name, :surname, :lastname, :username, :password_hash, :role)
+                RETURNING id
+            """),
+            {
+                "name": user_info["name"],
+                "surname": user_info["surname"],
+                "lastname": user_info["lastname"],
+                "username": user_info["username"],
+                "password_hash": hash_password(user_info["password"]),
+                "role": user_info["role"],
+            },
+        ).scalar_one()
+        if user_info["role"] != "worker":
+            continue
+        two_two = user_info["schedule_type"] == "2/2"
+        session.execute(
+            text("""
+                INSERT INTO workers (
+                    user_id, workshift_start, workshift_end, transport_type,
+                    schedule_type, cycle_start_date, workdays_mask
+                ) VALUES (
+                    :user_id, :workshift_start, :workshift_end, :transport_type,
+                    :schedule_type, :cycle_start_date, CAST(:workdays_mask AS JSONB)
                 )
-                for skill_name in user_info["skills"]:
-                    skill_id = session.execute(
-                        text("SELECT id FROM worker_skills WHERE skill = :skill"),
-                        {"skill": skill_name},
-                    ).scalar_one()
-                    session.execute(
-                        text("""
-                            INSERT INTO worker_skill_assignments (worker_id, skill_id)
-                            VALUES (:worker_id, :skill_id)
-                            ON CONFLICT DO NOTHING
-                        """),
-                        {"worker_id": user_id, "skill_id": skill_id},
-                    )
+            """),
+            {
+                "user_id": user_id,
+                "workshift_start": user_info["workshift_start"],
+                "workshift_end": user_info["workshift_end"],
+                "transport_type": user_info["transport_type"],
+                "schedule_type": user_info["schedule_type"],
+                # The demo day is the first working day of a 2/2 cycle.
+                "cycle_start_date": visit_date if two_two else None,
+                "workdays_mask": None if two_two else "[0, 1, 2, 3, 4]",
+            },
+        )
+        for skill_name in user_info["skills"]:
+            skill_id = session.execute(
+                text("SELECT id FROM worker_skills WHERE skill = :skill"),
+                {"skill": skill_name},
+            ).scalar_one()
+            session.execute(
+                text("""
+                    INSERT INTO worker_skill_assignments (worker_id, skill_id)
+                    VALUES (:worker_id, :skill_id)
+                    ON CONFLICT DO NOTHING
+                """),
+                {"worker_id": user_id, "skill_id": skill_id},
+            )
 
 
 def demo_area_office(session: Session, service_area_id, results, *, fallback: int) -> int:
-    """The office of the demo tickets' service area, where the demo brigade works.
+    """The office of a service area, where its demo brigade works.
 
-    The demo engineers serve the area of the demo tickets. Their brigade must belong
-    to the same area, otherwise their profile and brigade would state two areas and the
-    planner would rightly refuse them.
+    The demo engineers serve the area of their requests. Their brigade must belong to the
+    same area, otherwise their profile and brigade would state two areas and the planner
+    would rightly refuse them.
     """
     if service_area_id is None or not results:
         return fallback
@@ -398,20 +1018,10 @@ def demo_area_office(session: Session, service_area_id, results, *, fallback: in
     ).scalar_one()
 
 
-def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
-    """Caller owns the transaction. Existing tickets and filled coordinates are preserved."""
-    # Serialize copies of this script; the lock is released on commit or rollback.
-    session.execute(text("SELECT pg_advisory_xact_lock(20260912, 1)"))
-    seed_users_and_skills(session)
-    city_id = get_or_create_id(
-        session,
-        "SELECT id FROM cities WHERE lower(name) = lower(:name)",
-        "INSERT INTO cities (name) VALUES (:name) RETURNING id",
-        {"name": CITY_NAME},
-    )
-    results = []
-    demo_service_area_id = None
-    for visit in DEMO_VISITS:
+def area_ids(session: Session, city_id: int) -> dict[str, int]:
+    """District of the city -> its service area (the district trigger creates both)."""
+    result = {}
+    for area in AREAS:
         district_row_id = get_or_create_id(
             session,
             """
@@ -419,14 +1029,113 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
             WHERE city_id = :city_id AND lower(name) = lower(:name)
             """,
             "INSERT INTO districts (city_id, name) VALUES (:city_id, :name) RETURNING id",
-            {"city_id": city_id, "name": visit.district},
+            {"city_id": city_id, "name": area.name},
         )
-        service_area_id = session.execute(
+        result[area.name] = session.execute(
             text("SELECT id FROM service_areas WHERE code = :code"),
             {"code": f"district_{district_row_id}"},
         ).scalar_one()
-        if demo_service_area_id is None:
-            demo_service_area_id = service_area_id
+    return result
+
+
+def seed_work_type_requirements(session: Session, observer_id: int) -> None:
+    """The planner needs a rule, skills and equipment for each work type of the case."""
+    for spec in WORK_TYPES:
+        work_type_id = session.execute(
+            text("SELECT id FROM work_types WHERE lower(name) = lower(:name)"),
+            {"name": spec.name},
+        ).scalar_one_or_none()
+        if work_type_id is None:
+            continue
+        session.execute(
+            text("""
+                INSERT INTO work_type_planning_rules
+                    (work_type_id, service_duration_source, configured_by)
+                VALUES (:work_type_id, 'work_norm', :observer_id)
+                ON CONFLICT (work_type_id) DO NOTHING
+            """),
+            {"work_type_id": work_type_id, "observer_id": observer_id},
+        )
+        session.execute(
+            text("""
+                INSERT INTO work_type_required_skills (work_type_id, skill_id)
+                SELECT :work_type_id, id FROM worker_skills WHERE skill = :skill
+                ON CONFLICT DO NOTHING
+            """),
+            {"work_type_id": work_type_id, "skill": spec.skill},
+        )
+        for key, quantity in REQUIRED_APPLIANCES.get(spec.code, ()):
+            session.execute(
+                text("""
+                    INSERT INTO work_type_required_appliances
+                        (work_type_id, appliance_id, quantity)
+                    SELECT :work_type_id, id, :quantity FROM appliances
+                    WHERE lower(name) = lower(:name)
+                    ON CONFLICT DO NOTHING
+                """),
+                {
+                    "work_type_id": work_type_id,
+                    "quantity": quantity,
+                    "name": APPLIANCE_BY_KEY[key].name,
+                },
+            )
+
+
+def seed_appliances(session: Session) -> dict[str, int]:
+    appliance_ids = {}
+    for spec in APPLIANCES:
+        appliance_id = session.execute(
+            text("SELECT id FROM appliances WHERE lower(name) = lower(:name)"),
+            {"name": spec.name},
+        ).scalar_one_or_none()
+        if appliance_id is None:
+            appliance_id = session.execute(
+                text("""
+                    INSERT INTO appliances (name, description, type, unit, is_active)
+                    VALUES (:name, :description, :type, :unit, :is_active)
+                    RETURNING id
+                """),
+                {
+                    "name": spec.name,
+                    "description": spec.description,
+                    "type": spec.type,
+                    "unit": spec.unit,
+                    "is_active": spec.is_active,
+                },
+            ).scalar_one()
+        appliance_ids[spec.key] = appliance_id
+    return appliance_ids
+
+
+def initial_stock(key: str) -> int:
+    spec = APPLIANCE_BY_KEY[key]
+    if spec.unit == "м":
+        return 1000
+    if spec.type == "TOOL":
+        return 4
+    if key in ("rj45", "patch_utp", "patch_sc"):
+        return 200
+    return 25 if spec.is_active else 6
+
+
+def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
+    """Caller owns the transaction. Existing tickets and filled coordinates are preserved."""
+    # Serialize copies of this script; the lock is released on commit or rollback.
+    session.execute(text("SELECT pg_advisory_xact_lock(20260912, 1)"))
+    seed_users_and_skills(session, visit_date)
+    city_id = get_or_create_id(
+        session,
+        "SELECT id FROM cities WHERE lower(name) = lower(:name)",
+        "INSERT INTO cities (name) VALUES (:name) RETURNING id",
+        {"name": CITY_NAME},
+    )
+    areas = area_ids(session, city_id)
+    results = []
+    visit_areas = []
+    for visit in DEMO_VISITS:
+        if visit.district not in areas:
+            areas[visit.district] = area_ids_for_extra_district(session, city_id, visit.district)
+        service_area_id = areas[visit.district]
         street_id = get_or_create_id(
             session,
             """
@@ -574,37 +1283,49 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                     .mappings()
                     .one()
                 )
-            v_start = datetime.combine(visit_date, time(visit.start_hour), MOSCOW_TIME)
+            v_start = datetime.combine(
+                visit_date, time(visit.start_hour, visit.start_minute), MOSCOW_TIME
+            )
+            v_end = datetime.combine(
+                visit_date, time(visit.end_hour, visit.end_minute), MOSCOW_TIME
+            )
+            emergency = wt_row["category"] == "emergency"
+            # Outages come in on the morning of the day, other requests the evening before.
+            received = (
+                datetime.combine(visit_date, time(7, 20), MOSCOW_TIME)
+                if emergency
+                else v_start - timedelta(hours=15)
+            )
             ticket_id = session.execute(
                 text("""
                     INSERT INTO tickets (
-                        location_id, title, description, work_type, work_type_id,
-                        category, priority, received_at,
+                        location_id, service_area_id, title, description, work_type,
+                        work_type_id, category, priority, received_at, sla_deadline_at,
+                        response_deadline_at, request_type_hd, service_duration_source,
                         visit_window_start, visit_window_end, estimated_duration_minutes
                     ) VALUES (
-                        :location_id, :title, :description, :work_type, :work_type_id,
-                        :category, :priority, :received_at,
+                        :location_id, :service_area_id, :title, :description, :work_type,
+                        :work_type_id, :category, :priority, :received_at, :sla_deadline_at,
+                        :response_deadline_at, :request_type_hd, 'work_norm',
                         :visit_window_start, :visit_window_end, :estimated_duration_minutes
                     )
                     RETURNING id
                 """),
                 {
                     "location_id": location_id,
+                    "service_area_id": service_area_id,
                     "title": visit.title,
-                    "description": (
-                        "Учебная заявка: подъезд, этаж, квартира, работа, длительность "
-                        "и окно визита вымышлены. Дом, корпус и координаты взяты из источника. "
-                        "Это не сообщение о реальной неисправности по данному адресу."
-                    ),
+                    "description": visit.description,
                     "work_type": visit.work_type,
                     "work_type_id": wt_row["id"],
                     "category": wt_row["category"],
                     "priority": wt_row["default_priority"],
-                    "received_at": v_start - timedelta(hours=2),
+                    "received_at": received,
+                    "sla_deadline_at": received + timedelta(hours=24) if emergency else None,
+                    "response_deadline_at": (received + timedelta(hours=2) if emergency else None),
+                    "request_type_hd": visit.request_type_hd,
                     "visit_window_start": v_start,
-                    "visit_window_end": datetime.combine(
-                        visit_date, time(visit.end_hour), MOSCOW_TIME
-                    ),
+                    "visit_window_end": v_end,
                     "estimated_duration_minutes": visit.duration_minutes,
                 },
             ).scalar_one()
@@ -617,40 +1338,14 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                 created=created,
             )
         )
-    if demo_service_area_id is not None:
-        session.execute(
-            text("""
-                UPDATE workers
-                SET service_area_id = COALESCE(service_area_id, :service_area_id)
-                WHERE user_id IN (
-                    SELECT id FROM users
-                    WHERE username IN ('demo_worker_1', 'demo_worker_2')
-                )
-            """),
-            {"service_area_id": demo_service_area_id},
-        )
+        visit_areas.append(service_area_id)
+
     observer_id = session.execute(
         text("SELECT id FROM users WHERE username = 'demo_observer'")
     ).scalar_one()
-    worker_ids = list(
-        session.execute(
-            text("""
-                SELECT w.user_id
-                FROM workers AS w
-                JOIN users AS u ON u.id = w.user_id
-                WHERE u.username IN ('demo_worker_1', 'demo_worker_2')
-                ORDER BY u.username
-            """)
-        ).scalars()
-    )
-    for index, result in enumerate(results):
-        worker_id = worker_ids[index % len(worker_ids)]
-        session.execute(
-            text("""
-                UPDATE tickets SET assigned_worker_id = :worker_id WHERE id = :ticket_id
-            """),
-            {"ticket_id": result.ticket_id, "worker_id": worker_id},
-        )
+    for visit, result in zip(DEMO_VISITS, results, strict=True):
+        if visit.note is None:
+            continue
         existing_comment = session.execute(
             text("""
                 SELECT id
@@ -667,76 +1362,55 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                     INSERT INTO ticket_comments (ticket_id, author_id, text)
                     VALUES (:ticket_id, :author_id, :text)
                 """),
-                {
-                    "ticket_id": result.ticket_id,
-                    "author_id": observer_id,
-                    "text": "Демонстрационная заметка наблюдателя к заявке.",
-                },
+                {"ticket_id": result.ticket_id, "author_id": observer_id, "text": visit.note},
             )
 
-    # Seed offices and brigades after buildings are created
-    brigade_office_id = None
-    for i, office_data in enumerate(DEMO_OFFICES):
-        office_city_id = get_or_create_id(
-            session,
-            "SELECT id FROM cities WHERE lower(name) = lower(:name)",
-            "INSERT INTO cities (name) VALUES (:name) RETURNING id",
-            {"name": office_data.city},
-        )
-        district_row_id = get_or_create_id(
-            session,
-            "SELECT id FROM districts WHERE city_id = :city_id AND lower(name) = lower(:name)",
-            "INSERT INTO districts (city_id, name) VALUES (:city_id, :name) RETURNING id",
-            {"city_id": office_city_id, "name": office_data.district},
-        )
-        service_area_id = session.execute(
-            text("SELECT id FROM service_areas WHERE code = :code"),
-            {"code": f"district_{district_row_id}"},
-        ).scalar_one()
+    # Offices after the requests: location 1 stays the first demo request.
+    office_ids = {}
+    for office_data in DEMO_OFFICES:
+        service_area_id = areas[office_data.district]
         street_id = get_or_create_id(
             session,
             "SELECT id FROM streets WHERE city_id = :city_id AND lower(name) = lower(:name)",
             "INSERT INTO streets (city_id, name) VALUES (:city_id, :name) RETURNING id",
-            {"city_id": office_city_id, "name": office_data.street},
+            {"city_id": city_id, "name": office_data.street},
         )
         building_id = get_or_create_id(
             session,
-            "SELECT id FROM buildings WHERE street_id = :street_id AND lower(number) = lower(:number)",  # noqa: E501
-            "INSERT INTO buildings (city_id, street_id, service_area_id, number) VALUES (:city_id, :street_id, :service_area_id, :number) RETURNING id",  # noqa: E501
+            """
+            SELECT id FROM buildings
+            WHERE street_id = :street_id AND lower(number) = lower(:number)
+              AND lower(block) IS NOT DISTINCT FROM lower(CAST(:block AS text))
+            """,
+            """
+            INSERT INTO buildings (city_id, street_id, service_area_id, number, block)
+            VALUES (:city_id, :street_id, :service_area_id, :number, :block) RETURNING id
+            """,
             {
-                "city_id": office_city_id,
+                "city_id": city_id,
                 "street_id": street_id,
                 "service_area_id": service_area_id,
                 "number": office_data.building,
+                "block": office_data.block,
             },
         )
-
-        # Insert location for this office
-        location = session.execute(
-            text(
-                "SELECT id FROM locations WHERE building_id = :building_id AND entrance_id IS NULL AND apartment IS NULL"  # noqa: E501
-            ),
-            {"building_id": building_id},
-        ).scalar_one_or_none()
-
-        if not location:
-            location = session.execute(
-                text(
-                    "INSERT INTO locations (building_id, latitude, longitude) VALUES (:building_id, :latitude, :longitude) RETURNING id"  # noqa: E501
-                ),
-                {
-                    "building_id": building_id,
-                    "latitude": office_data.latitude,
-                    "longitude": office_data.longitude,
-                },
-            ).scalar_one()
-
-        service_area_id = session.execute(
-            text("SELECT id FROM service_areas WHERE code = :code"),
-            {"code": f"district_{district_row_id}"},
-        ).scalar_one_or_none()
-
-        office_id = get_or_create_id(
+        location = get_or_create_id(
+            session,
+            """
+            SELECT id FROM locations
+            WHERE building_id = :building_id AND entrance_id IS NULL AND apartment IS NULL
+            """,
+            """
+            INSERT INTO locations (building_id, latitude, longitude)
+            VALUES (:building_id, :latitude, :longitude) RETURNING id
+            """,
+            {
+                "building_id": building_id,
+                "latitude": office_data.latitude,
+                "longitude": office_data.longitude,
+            },
+        )
+        office_ids[office_data.district] = get_or_create_id(
             session,
             "SELECT id FROM offices WHERE name = :name",
             "INSERT INTO offices (name, location_id, service_area_id) "
@@ -748,150 +1422,113 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
             },
         )
 
-        # Only create one brigade per demo for simplicity
-        if i == 0:
-            foreman_id = session.execute(
-                text("SELECT id FROM users WHERE username = 'demo_foreman'")
-            ).scalar_one_or_none()
-            if foreman_id:
-                brigade_office_id = demo_area_office(
-                    session, demo_service_area_id, results, fallback=office_id
-                )
-                brigade_id = get_or_create_id(
-                    session,
-                    "SELECT id FROM brigades WHERE name = 'Альфа'",
-                    "INSERT INTO brigades (name, foreman_id, office_id) VALUES ('Альфа', :foreman_id, :office_id) RETURNING id",  # noqa: E501
-                    {"foreman_id": foreman_id, "office_id": brigade_office_id},
-                )
-                worker_ids = (
-                    session.execute(text("SELECT id FROM users WHERE role = 'worker'"))
-                    .scalars()
-                    .all()
-                )
-                for w_id in worker_ids:
-                    session.execute(
-                        text(
-                            "INSERT INTO brigade_members (brigade_id, worker_id) VALUES (:b_id, :w_id) ON CONFLICT DO NOTHING"  # noqa: E501
-                        ),
-                        {"b_id": brigade_id, "w_id": w_id},
-                    )
-
-    # Seed appliances and warehouse stock
-    demo_appliances = [
-        ("Wi-Fi роутер Beeline SmartBox GIGA", "Гигабитный Wi-Fi роутер", "CLIENT_ROUTER", "шт"),
-        ("Оптический терминал GPON ONT", "Абонентский терминал", "CLIENT_ROUTER", "шт"),
-        ("Кабель витая пара UTP Cat.5e", "Кабель для абонентской разводки", "CABLE", "м"),
-        ("Оптический патчкорд SC/APC 3м", "Оптический патчкорд", "FIBER", "шт"),
-        ("Обжимной инструмент (Кримпер)", "Инструмент для монтажника", "TOOL", "шт"),
-        ("ТВ-приставка Beeline TV Box", "Медиаплеер 4K", "TV_BOX", "шт"),
-        ("Умная колонка", "Колонка с голосовым помощником", "SPEAKER", "шт"),
-        ("IP-камера Cloud Cam", "Камера домашнего наблюдения", "IP_CAMERA", "шт"),
-    ]
-
-    office_ids = list(session.execute(text("SELECT id FROM offices ORDER BY id")).scalars())
-    appliance_ids = {}
-    for name, desc, a_type, unit in demo_appliances:
-        a_id = session.execute(
-            text("SELECT id FROM appliances WHERE lower(name) = lower(:name)"),
-            {"name": name},
-        ).scalar_one_or_none()
-        if a_id is None:
-            a_id = session.execute(
+    # One brigade per area: its foreman, engineers and the area office.
+    for user_info in DEMO_USERS:
+        if user_info["role"] == "worker":
+            session.execute(
                 text("""
-                    INSERT INTO appliances (name, description, type, unit, is_active)
-                    VALUES (:name, :desc, :type, :unit, TRUE)
-                    RETURNING id
+                    UPDATE workers
+                    SET service_area_id = COALESCE(service_area_id, :service_area_id),
+                        stock_office_id = COALESCE(stock_office_id, :office_id)
+                    WHERE user_id = (SELECT id FROM users WHERE username = :username)
                 """),
-                {"name": name, "desc": desc, "type": a_type, "unit": unit},
-            ).scalar_one()
-        appliance_ids[name] = a_id
+                {
+                    "service_area_id": areas[user_info["area"]],
+                    "office_id": office_ids[user_info["area"]],
+                    "username": user_info["username"],
+                },
+            )
+    for user_info in DEMO_USERS:
+        if user_info["role"] != "foreman" or "area" not in user_info:
+            continue
+        foreman_id = session.execute(
+            text("SELECT id FROM users WHERE username = :username"),
+            {"username": user_info["username"]},
+        ).scalar_one()
+        brigade_id = get_or_create_id(
+            session,
+            "SELECT id FROM brigades WHERE foreman_id = :foreman_id",
+            "INSERT INTO brigades (name, foreman_id, office_id) "
+            "VALUES (:name, :foreman_id, :office_id) RETURNING id",
+            {
+                "name": (
+                    f"Бригада {user_info['surname']} "
+                    f"{user_info['name'][0]}. {user_info['lastname'][0]}."
+                ),
+                "foreman_id": foreman_id,
+                "office_id": demo_area_office(
+                    session,
+                    areas[user_info["area"]],
+                    results,
+                    fallback=office_ids[user_info["area"]],
+                ),
+            },
+        )
+        for member in DEMO_USERS:
+            if member["role"] == "worker" and member["area"] == user_info["area"]:
+                session.execute(
+                    text("""
+                        INSERT INTO brigade_members (brigade_id, worker_id)
+                        SELECT :brigade_id, id FROM users WHERE username = :username
+                        ON CONFLICT DO NOTHING
+                    """),
+                    {"brigade_id": brigade_id, "username": member["username"]},
+                )
 
-        # Populate initial stock in all offices
-        for off_id in office_ids:
-            initial_stock = 1000 if a_type in ("CABLE", "FIBER") else 25
+    appliance_ids = seed_appliances(session)
+    seed_work_type_requirements(session, observer_id)
+    for office_id in office_ids.values():
+        for key, appliance_id in appliance_ids.items():
             session.execute(
                 text("""
                     INSERT INTO appliance_stocks (office_id, appliance_id, stock)
-                    VALUES (:off_id, :app_id, :stock)
+                    VALUES (:office_id, :appliance_id, :stock)
                     ON CONFLICT (office_id, appliance_id) DO NOTHING
                 """),
-                {"off_id": off_id, "app_id": a_id, "stock": initial_stock},
+                {"office_id": office_id, "appliance_id": appliance_id, "stock": initial_stock(key)},
+            )
+    area_offices = {area_id: office_ids[name] for name, area_id in areas.items()}
+    for visit, result, area_id in zip(DEMO_VISITS, results, visit_areas, strict=True):
+        for key, quantity in visit.appliances:
+            session.execute(
+                text("""
+                    INSERT INTO ticket_appliances (ticket_id, appliance_id, office_id, quantity)
+                    VALUES (:ticket_id, :appliance_id, :office_id, :quantity)
+                    ON CONFLICT (ticket_id, appliance_id) DO NOTHING
+                """),
+                {
+                    "ticket_id": result.ticket_id,
+                    "appliance_id": appliance_ids[key],
+                    "office_id": area_offices[area_id],
+                    "quantity": quantity,
+                },
             )
 
-    # Attach equipment to the first demo ticket if exists
-    if results and office_ids:
-        first_ticket_id = results[0].ticket_id
-        first_office_id = brigade_office_id or office_ids[0]
-        router_id = appliance_ids.get("Wi-Fi роутер Beeline SmartBox GIGA")
-        cable_id = appliance_ids.get("Кабель витая пара UTP Cat.5e")
-        tool_id = appliance_ids.get("Обжимной инструмент (Кримпер)")
-
-        for app_id, qty in [(router_id, 1), (cable_id, 20), (tool_id, 1)]:
-            if app_id is not None:
-                session.execute(
-                    text("""
-                        INSERT INTO ticket_appliances (ticket_id, appliance_id, office_id, quantity)
-                        VALUES (:ticket_id, :appliance_id, :office_id, :qty)
-                        ON CONFLICT (ticket_id, appliance_id) DO NOTHING
-                    """),
-                    {
-                        "ticket_id": first_ticket_id,
-                        "appliance_id": app_id,
-                        "office_id": first_office_id,
-                        "qty": qty,
-                    },
-                )
-
-    # Seed push subscriptions
+    # Push tokens of demo accounts for the notification demo.
     session.execute(
         text("""
         INSERT INTO push_subscriptions (user_id, token)
         SELECT id, 'demo_push_token_' || username
         FROM users
+        WHERE username LIKE 'demo\\_%'
         ON CONFLICT (token) DO NOTHING
         """)
     )
-
-    # Seed notification events
-    if results:
-        worker_id = session.execute(
-            text("SELECT id FROM users WHERE username = 'demo_worker_1'")
-        ).scalar_one_or_none()
-        observer_id = session.execute(
-            text("SELECT id FROM users WHERE username = 'demo_observer'")
-        ).scalar_one_or_none()
-
-        if worker_id:
-            exists = session.execute(
-                text(
-                    "SELECT 1 FROM notification_events WHERE recipient_id = :r AND ticket_id = :t AND kind = 'ticket_assigned'"  # noqa: E501
-                ),
-                {"r": worker_id, "t": results[0].ticket_id},
-            ).scalar_one_or_none()
-            if not exists:
-                session.execute(
-                    text(
-                        "INSERT INTO notification_events (recipient_id, ticket_id, kind, data) VALUES (:r, :t, 'ticket_assigned', '{\"address\": \"Демо Адрес\"}')"  # noqa: E501
-                    ),
-                    {"r": worker_id, "t": results[0].ticket_id},
-                )
-
-        if observer_id and len(results) > 1:
-            exists = session.execute(
-                text(
-                    "SELECT 1 FROM notification_events WHERE recipient_id = :r AND ticket_id = :t AND kind = 'ticket_status_changed'"  # noqa: E501
-                ),
-                {"r": observer_id, "t": results[1].ticket_id},
-            ).scalar_one_or_none()
-            if not exists:
-                session.execute(
-                    text(
-                        'INSERT INTO notification_events (recipient_id, ticket_id, kind, data) VALUES (:r, :t, \'ticket_status_changed\', \'{"new_status": "in_progress", "old_status": "open"}\')'  # noqa: E501
-                    ),
-                    {"r": observer_id, "t": results[1].ticket_id},
-                )
-
     return results
+
+
+def area_ids_for_extra_district(session: Session, city_id: int, name: str) -> int:
+    """A visit of a patched demo set may name a district outside the three areas."""
+    district_row_id = get_or_create_id(
+        session,
+        "SELECT id FROM districts WHERE city_id = :city_id AND lower(name) = lower(:name)",
+        "INSERT INTO districts (city_id, name) VALUES (:city_id, :name) RETURNING id",
+        {"city_id": city_id, "name": name},
+    )
+    return session.execute(
+        text("SELECT id FROM service_areas WHERE code = :code"),
+        {"code": f"district_{district_row_id}"},
+    ).scalar_one()
 
 
 def run_seed(engine: Engine, visit_date: date) -> list[SeedResult]:
@@ -910,7 +1547,7 @@ def run_seed(engine: Engine, visit_date: date) -> list[SeedResult]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Заполнить БД демозаявками в Санкт-Петербурге.")
+    parser = argparse.ArgumentParser(description="Заполнить БД демонстрационным днём в Москве.")
     parser.add_argument(
         "--date",
         type=date.fromisoformat,

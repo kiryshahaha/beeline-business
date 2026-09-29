@@ -17,7 +17,6 @@ export const REPORT_STATUS_OPTIONS = [
 export const CITIES_OPTIONS = [
   { value: "", label: "Все города" },
   { value: 1, label: "Москва" },
-  { value: 2, label: "Санкт-Петербург" },
 ];
 
 export const PERIOD_OPTIONS = [

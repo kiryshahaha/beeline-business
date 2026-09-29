@@ -393,7 +393,7 @@ export default function Home() {
     const city =
       currentOffice?.city ||
       activeDistrictObj?.city ||
-      (isOkrug ? "Москва" : undefined);
+      (isOkrug || activeDistrict ? "Москва" : undefined);
 
     if (!district && (lat == null || lon == null)) {
       Promise.resolve().then(() => {

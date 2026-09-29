@@ -14,6 +14,7 @@ class KnowledgeBaseTests(unittest.TestCase):
         self.assertTrue(self.knowledge.chunks)
         for chunk in self.knowledge.chunks:
             self.assertTrue(chunk.text, chunk.path)
+            self.assertNotIn("\\", chunk.path)
             self.assertLessEqual(chunk.roles, {"worker", "foreman", "observer"}, chunk.path)
 
     def test_role_only_sees_its_documents(self):

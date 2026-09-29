@@ -1,11 +1,11 @@
 meta {
-  name: Приморский район
+  name: Участок «Юго-восток»
   type: http
   seq: 4
 }
 
 get {
-  url: {{base_url}}/api/v1/tickets?service_area_id={{primorsky_service_area_id}}
+  url: {{base_url}}/api/v1/tickets?service_area_id={{yugo_vostok_service_area_id}}
   body: none
   auth: bearer
 }
@@ -15,7 +15,7 @@ auth:bearer {
 }
 
 params:query {
-  service_area_id: {{primorsky_service_area_id}}
+  service_area_id: {{yugo_vostok_service_area_id}}
 }
 
 assert {
@@ -25,15 +25,15 @@ assert {
 script:post-response {
   // A ticket of another area for the cross-area checks in 13-routes.
   if (res.getStatus() === 200 && res.getBody().length > 0) {
-    bru.setVar("primorsky_ticket_id", res.getBody()[0].id);
-    bru.setVar("primorsky_location_id", res.getBody()[0].location.id);
+    bru.setVar("yugo_vostok_ticket_id", res.getBody()[0].id);
+    bru.setVar("yugo_vostok_location_id", res.getBody()[0].location.id);
   }
 }
 
 tests {
   test("Каждая заявка соответствует заданным фильтрам", function () {
     res.getBody().forEach(function (ticket) {
-      expect(ticket.location.service_area_id).to.equal(Number(bru.getVar("primorsky_service_area_id")));
+      expect(ticket.location.service_area_id).to.equal(Number(bru.getVar("yugo_vostok_service_area_id")));
     });
   });
 
@@ -43,5 +43,5 @@ tests {
 }
 
 docs {
-  Пример второго района. Проверьте ID по location.service_area_id в ответе списка.
+  Второй участок демобазы — «Юго-восток». Проверьте ID по location.service_area_id в ответе списка.
 }

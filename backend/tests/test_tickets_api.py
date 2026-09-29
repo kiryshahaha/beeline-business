@@ -24,29 +24,29 @@ from tests.support import DatabaseTestCase
 class TicketsApiTests(DatabaseTestCase):
     def setUp(self):
         super().setUp()
-        city = self.save(City(name="Санкт-Петербург"))
+        city = self.save(City(name="Москва"))
         self.city_id = city.id
-        district = self.save(District(city_id=city.id, name="Невский район"))
+        district = self.save(District(city_id=city.id, name="Кузьминки"))
         self.service_area_id = self.service_area_for_district(district.id)
-        street = self.save(Street(city_id=city.id, name="Тестовая улица"))
+        street = self.save(Street(city_id=city.id, name="улица Юных Ленинцев"))
         building = self.save(
             Building(
                 city_id=city.id,
                 street_id=street.id,
                 service_area_id=self.service_area_for_district(district.id),
-                number="12А",
-                block="корпус 2",
+                number="44",
+                block="корпус 1",
             )
         )
-        entrance = self.save(Entrance(building_id=building.id, number="3"))
+        entrance = self.save(Entrance(building_id=building.id, number="1"))
         self.location = self.save(
             Location(
                 building_id=building.id,
                 entrance_id=entrance.id,
-                apartment="24Б",
-                floor=5,
-                latitude=59.94,
-                longitude=30.32,
+                apartment="5",
+                floor=2,
+                latitude=55.700654,
+                longitude=37.759714,
             )
         )
         self.location_id = self.location.id
@@ -145,7 +145,7 @@ class TicketsApiTests(DatabaseTestCase):
     def test_creation_assigns_the_unique_brigade_for_reverse_geocoded_district(self):
         brigade_id = self.add_brigade("Unique")
         geocoder = self.use_reverse_geocoder(
-            ReverseGeocodeResult(city="Санкт-Петербург", district="Невский район")
+            ReverseGeocodeResult(city="Москва", district="Кузьминки")
         )
 
         response = self.create()
@@ -154,8 +154,8 @@ class TicketsApiTests(DatabaseTestCase):
         ticket = response.json()
         self.assertEqual(ticket["service_area_id"], self.service_area_id)
         self.assertEqual(ticket["brigade_id"], brigade_id)
-        self.assertEqual(ticket["district"], "Невский район")
-        self.assertEqual(tuple(map(float, geocoder.coordinates)), (59.94, 30.32))
+        self.assertEqual(ticket["district"], "Кузьминки")
+        self.assertEqual(tuple(map(float, geocoder.coordinates)), (55.700654, 37.759714))
 
     def test_creation_keeps_brigade_empty_when_area_has_multiple_brigades(self):
         first_brigade_id = self.add_brigade("First")
@@ -163,9 +163,7 @@ class TicketsApiTests(DatabaseTestCase):
             select(Office.id).where(Office.service_area_id == self.service_area_id)
         )
         second_brigade_id = self.add_brigade("Second", office_id=office_id)
-        self.use_reverse_geocoder(
-            ReverseGeocodeResult(city="Санкт-Петербург", district="Невский район")
-        )
+        self.use_reverse_geocoder(ReverseGeocodeResult(city="Москва", district="Кузьминки"))
 
         response = self.create()
 
@@ -182,7 +180,7 @@ class TicketsApiTests(DatabaseTestCase):
 
     def test_reverse_lookup_without_a_district_keeps_brigade_unresolved(self):
         self.add_brigade("NoDistrict")
-        self.use_reverse_geocoder(ReverseGeocodeResult(city="Санкт-Петербург", district=None))
+        self.use_reverse_geocoder(ReverseGeocodeResult(city="Москва", district=None))
 
         response = self.create()
 
@@ -263,14 +261,14 @@ class TicketsApiTests(DatabaseTestCase):
         location = created["location"]
         self.assertEqual(location["id"], self.location_id)
         self.assertEqual(location["service_area_id"], self.service_area_id)
-        self.assertEqual(location["district"], "Невский район")
-        self.assertEqual(location["apartment"], "24Б")
-        self.assertEqual(location["latitude"], 59.94)
-        self.assertEqual(location["longitude"], 30.32)
+        self.assertEqual(location["district"], "Кузьминки")
+        self.assertEqual(location["apartment"], "5")
+        self.assertEqual(location["latitude"], 55.700654)
+        self.assertEqual(location["longitude"], 37.759714)
         self.assertEqual(
             location["address"],
-            "Санкт-Петербург, Невский район, Тестовая улица, д. 12А, корпус 2, "
-            "подъезд 3, этаж 5, кв./пом. 24Б",
+            "Москва, Кузьминки, улица Юных Ленинцев, д. 44, корпус 1, "
+            "подъезд 1, этаж 2, кв./пом. 5",
         )
         fetched = self.client.get(response.headers["Location"])
         self.assertEqual(fetched.status_code, 200)
@@ -299,7 +297,7 @@ class TicketsApiTests(DatabaseTestCase):
         response = self.create()
         self.assertEqual(response.status_code, 201, response.text)
         building = self.session.get(Building, self.location.building_id)
-        district = self.save(District(city_id=building.city_id, name="Тестовый район"))
+        district = self.save(District(city_id=building.city_id, name="Текстильщики"))
         building.service_area_id = self.service_area_for_district(district.id)
         service_area_id = self.service_area_for_district(district.id)
         self.session.commit()
@@ -307,11 +305,11 @@ class TicketsApiTests(DatabaseTestCase):
         self.assertEqual(fetched.status_code, 200, fetched.text)
         location = fetched.json()["location"]
         self.assertEqual(location["service_area_id"], service_area_id)
-        self.assertEqual(location["district"], "Тестовый район")
+        self.assertEqual(location["district"], "Текстильщики")
         self.assertEqual(
             location["address"],
-            "Санкт-Петербург, Тестовый район, Тестовая улица, д. 12А, корпус 2, "
-            "подъезд 3, этаж 5, кв./пом. 24Б",
+            "Москва, Текстильщики, улица Юных Ленинцев, д. 44, корпус 1, "
+            "подъезд 1, этаж 2, кв./пом. 5",
         )
 
     def test_sql_like_text_is_returned_unchanged(self):
@@ -536,9 +534,7 @@ class TicketsApiTests(DatabaseTestCase):
             "longitude",
         ):
             self.assertIsNone(location[field])
-        self.assertEqual(
-            location["address"], "Санкт-Петербург, Невский район, Тестовая улица, д. 12А"
-        )
+        self.assertEqual(location["address"], "Москва, Кузьминки, улица Юных Ленинцев, д. 44")
         listed = self.client.get("/api/v1/tickets")
         self.assertEqual(listed.status_code, 200, listed.text)
         self.assertEqual(listed.json(), [response.json()])
@@ -575,9 +571,9 @@ class TicketsApiTests(DatabaseTestCase):
             return self.save(Location(building_id=building.id))
 
         second_location = another_location(self.city_id, "Тестовый район")
-        other_city = self.save(City(name="Другой город"))
+        other_city = self.save(City(name="Домодедово"))
         # The same district name in another city must not affect filtering by ID.
-        other_location = another_location(other_city.id, "Невский район")
+        other_location = another_location(other_city.id, "Кузьминки")
         second_location_id, other_location_id = second_location.id, other_location.id
         other_city_id = other_city.id
         self.session.commit()

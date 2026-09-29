@@ -156,6 +156,17 @@ def _convert_type(value, column):
         result = json.loads(value) if isinstance(value, str) else value
         # Reject NaN/Infinity at any nesting level.
         json.dumps(result, allow_nan=False)
+        if column.name == "workdays_mask":
+            # A 5/2 schedule: weekdays 0-6 as a list, or the older bit mask number.
+            if isinstance(result, bool) or not (
+                isinstance(result, int)
+                or (
+                    isinstance(result, list)
+                    and all(isinstance(d, int) and not isinstance(d, bool) for d in result)
+                )
+            ):
+                raise ValueError("Ожидается список дней недели")
+            return result
         if not isinstance(result, dict) and not (
             column.name == "roster" and isinstance(result, list)
         ):

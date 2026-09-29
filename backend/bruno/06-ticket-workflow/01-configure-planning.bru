@@ -17,7 +17,7 @@ auth:bearer {
 body:json {
   {
     "service_duration_source": "ticket_estimate",
-    "required_skill_ids": [],
+    "required_skill_ids": [2],
     "required_appliances": []
   }
 }
@@ -25,4 +25,11 @@ body:json {
 assert {
   res.status: eq 200
   res.body.configured: eq true
+}
+
+docs {
+  Вид работ 1 новой демобазы — «Подключение клиентов Базовая». Проверка оставляет навык 2
+  «Работы на подключение и дозаказы», снимает обязательный роутер (заявки папки 22-execution
+  создаются без резерва) и берёт длительность из оценки заявки. Эта настройка базы
+  остаётся в силе при импорте пакетов.
 }

@@ -26,6 +26,7 @@ from app.modules.planning import day_plans
 from app.modules.planning import router as api
 from app.modules.users.models import Worker
 from planning_scenarios import NOW, ROUTE_DATE, generate_planning_dataset, preview_request
+from tests.exchange_samples import add_journal_samples
 from tests.planning_fakes import FeasiblePlanner, provider_factory
 from tests.support import CommittedDatabaseTestCase
 
@@ -156,6 +157,8 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         appliance_office_id=None,
         category="emergency",
         window=None,
+        work_type="1",
+        sla_deadline_at="2030-01-15T18:00:00+03:00",
         response_deadline_at=None,
     ):
         window_start, window_end = window or (
@@ -169,12 +172,12 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
                 "service_area_id": self.area_id,
                 "title": title,
                 "description": "Аварийная заявка для проверки остатка смены",
-                "work_type_id": self.receipt["id_map"]["work_types"]["1"],
+                "work_type_id": self.receipt["id_map"]["work_types"][work_type],
                 "category": category,
                 "priority": 1 if category == "emergency" else 3,
                 "received_at": self.now.isoformat(),
                 "response_deadline_at": response_deadline_at,
-                "sla_deadline_at": "2030-01-15T18:00:00+03:00",
+                "sla_deadline_at": sla_deadline_at,
                 "visit_window_start": window_start,
                 "visit_window_end": window_end,
                 "estimated_duration_minutes": 30,
@@ -209,7 +212,15 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
             "Обычная заявка в свободном интервале",
             brigade_id=self.receipt["id_map"]["brigades"]["1"],
             category="repair",
-            window=("2030-01-15T08:00:00+03:00", "2030-01-15T18:00:00+03:00"),
+            # The evening slot after the engineer's last visit: nothing published moves,
+            # not even a sequence number.
+            window=("2030-01-15T20:00:00+03:00", "2030-01-15T22:00:00+03:00"),
+            # An ordinary request has no resolution deadline, unlike an outage.
+            sla_deadline_at=None,
+            # «Локальная заявка»: 30 minutes fit before the end of the shift.
+            work_type=str(
+                next(w["id"] for w in self.data["work_types"] if w["category"] == "repair")
+            ),
         )
 
         response = self.client.post(
@@ -308,8 +319,10 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
             ).revision
 
     def test_legacy_revision_import_resolves_its_service_area(self):
-        source = copy.deepcopy(self.data["day_plan_revisions"][0])
+        # Synthetic packages carry no day plans; a legacy archive row is written by hand.
+        source = add_journal_samples(copy.deepcopy(self.data), seed=900)["day_plan_revisions"][0]
         source["id"] = 900_000
+        source.pop("roster", None)
         source.pop("plan_id", None)
         source.pop("service_area_id")
         source["_legacy_district_id"] = 1
@@ -1373,6 +1386,7 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         preview = response.json()
         self.assertEqual(preview["event"]["category"], "repair")
         self.assertEqual(preview["event"]["outcome"], "insertion_ready", preview["event"])
+        self.assertEqual(preview["event"]["ticket_id"], ticket["id"])
         self.assertEqual(
             datetime.fromisoformat(preview["event"]["received_at"]),
             datetime.fromisoformat(ticket["received_at"]),

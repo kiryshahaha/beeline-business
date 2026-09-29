@@ -38,8 +38,8 @@ dev:
   - {text: "во сколько начинать работу по этой заявке", intent: ticket_time}
   - {text: "Заявку подтвердили?", intent: ticket_status}
   - {text: "моя заявка закрыта?", intent: ticket_status}
-  - {text: "какой статус у заявки на туристской", intent: ticket_status}
-  - {text: "заявка на Школьной завершена?", intent: ticket_status}
+  - {text: "какой статус у заявки на таганской", intent: ticket_status}
+  - {text: "заявка на Люблинской завершена?", intent: ticket_status}
   - {text: "Что взять с собой на эту заявку?", intent: ticket_equipment}
   - {text: "какое оборудование нужно", intent: ticket_equipment}
   - {text: "что мне брать на заявку с оптикой", intent: ticket_equipment}
@@ -79,7 +79,7 @@ dev:
   - {text: "что значит статус в пути", intent: null}
 
 test:
-  - {text: "а чего заявку на комендантском передвинули", intent: why_changed}
+  - {text: "а чего заявку на волгоградском передвинули", intent: why_changed}
   - {text: "почему время по заявке поменялось?", intent: why_changed}
   - {text: "с какой стати заявку сняли с меня", intent: why_changed}
   - {text: "почему отменили заявку", intent: why_changed}
@@ -98,19 +98,19 @@ test:
   - {text: "следующая заявка во сколько", intent: next_ticket}
   - {text: "что после этой заявки", intent: next_ticket}
   - {text: "куда сейчас ехать", intent: next_ticket}
-  - {text: "после туристской куда", intent: next_ticket}
+  - {text: "после таганской куда", intent: next_ticket}
   - {text: "какая сейчас заявка", intent: current_ticket}
   - {text: "на какой я задаче", intent: current_ticket}
   - {text: "когда меня ждет клиент", intent: ticket_time}
   - {text: "к какому времени надо приехать", intent: ticket_time}
   - {text: "во сколько нужно быть по адресу", intent: ticket_time}
   - {text: "в какое время визит", intent: ticket_time}
-  - {text: "заявку на туристской уже приняли?", intent: ticket_status}
+  - {text: "заявку на таганской уже приняли?", intent: ticket_status}
   - {text: "статус заявки 95", intent: ticket_status}
-  - {text: "работу на школьной засчитали?", intent: ticket_status}
+  - {text: "работу на люблинской засчитали?", intent: ticket_status}
   - {text: "что понадобится на заявке", intent: ticket_equipment}
   - {text: "какие материалы нужны на подключение", intent: ticket_equipment}
-  - {text: "какое оборудование брать на комендантский", intent: ticket_equipment}
+  - {text: "какое оборудование брать на волгоградский", intent: ticket_equipment}
   - {text: "что по заявке известно", intent: ticket_notes}
   - {text: "какие заметки по клиенту", intent: ticket_notes}
   - {text: "есть описание заявки?", intent: ticket_notes}

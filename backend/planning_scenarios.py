@@ -1,12 +1,53 @@
-"""Deterministic domain fixtures shared by database tests, Bruno and file generation."""
+"""Deterministic domain fixtures shared by database tests, Bruno and file generation.
+
+Each scenario is one day of the «Восток» area on real Moscow addresses (see
+generate_synthetic.py): six brigades, each serving its own districts, and engineers who
+can do every work type of the case, so only the scenario itself limits the plan.
+"""
 
 from datetime import UTC, date, datetime, time, timedelta
 
-from generate_synthetic import TZ, generate_dataset
+from generate_synthetic import DAY_12, Layout, Shift, generate_package
 
 ROUTE_DATE = date(2030, 1, 15)
 NOW = datetime(2030, 1, 14, tzinfo=UTC)
 SCENARIOS = ("mixed", "duplicate_coordinates", "night", "rejections", "overload", "volume")
+AREA = ("vostok",)
+NIGHT_8 = Shift(time(22), time(6), "2/2", night=True)
+DAY_8 = Shift(time(10), time(18), "5/2")
+LAYOUTS = {
+    # Two-hour windows in turn: every engineer can serve all of his visits.
+    "mixed": Layout(by_worker=True, slots=True, shift=DAY_12, scenarios=False),
+    # Neighbours of one entrance after a building-wide outage: identical coordinates,
+    # every client at home for the whole day.
+    "duplicate_coordinates": Layout(
+        by_worker=True,
+        categories=("repair", "connection", "additional", "repair"),
+        window=(time(10), time(22)),
+        shift=DAY_12,
+        one_entrance=True,
+        scenarios=False,
+    ),
+    # A night duty 22:00-06:00 answering outages reported during the night.
+    "night": Layout(
+        by_worker=True,
+        categories=("emergency",),
+        window=(time(22), time(6)),
+        shift=NIGHT_8,
+        scenarios=False,
+    ),
+    "rejections": Layout(by_worker=True, slots=True, shift=DAY_12, scenarios=False),
+    # Fifty connections for four engineers: the day cannot hold them all.
+    "overload": Layout(
+        by_worker=True,
+        categories=("connection",),
+        window=(time(10), time(18)),
+        shift=DAY_8,
+        scenarios=False,
+    ),
+    "volume": Layout(by_worker=True, slots=True, shift=DAY_12, scenarios=False),
+}
+UNCONFIGURED_WORK = "Монтаж видеодомофона"
 
 
 def generate_planning_dataset(scenario="mixed", *, seed=1900):
@@ -14,98 +55,63 @@ def generate_planning_dataset(scenario="mixed", *, seed=1900):
         raise ValueError("Unknown planning scenario")
     count = 50 if scenario in ("overload", "volume") else 24
     workers = 20 if scenario == "volume" else 4
-    data = generate_dataset(
-        seed=seed, start_date=ROUTE_DATE, tickets=count, workers=workers, days=1
-    )
-    # A day plan belongs to one district. Keep the fixture geographically rich
-    # while placing every location and office in district 1.
-    for building in data["buildings"]:
-        building.update(city_id=1, service_area_id=101, street_id=1)
-    for brigade in data["brigades"]:
-        brigade["division_id"] = 1
-    for skill in data["worker_skills"]:
-        skill["skill"] += f" [planning {seed}]"
-    for name in (
-        "ticket_comments",
-        "notification_events",
-        "routes",
-        # Equipment on hand and source provenance belong to the generic package only.
-        "office_kit_reserves",
-        "worker_appliances",
-        "appliance_movements",
-        "ticket_appliance_states",
-        "appliance_operations",
-        "source_records",
-        "source_addresses",
-        "source_imports",
-    ):
-        data[name] = []
-    night = scenario == "night"
+    data = generate_package(
+        seed=seed,
+        start_date=ROUTE_DATE,
+        tickets=count,
+        workers=workers,
+        days=1,
+        area_codes=AREA,
+        layout=LAYOUTS[scenario],
+    ).tables
+    # The kit of a fixture engineer is exactly his requests: no spare-consumables norm.
+    data["office_kit_reserves"] = []
+    # A fixture engineer may take any visit of his brigade: skills never limit the plan.
+    skill_ids = {row["skill"]: row["id"] for row in data["worker_skills"]}
+    case_skills = {
+        skill_ids[name]
+        for name in ("Локальные работы", "Работы на подключение и дозаказы", "Аварийные работы")
+    }
+    have = {(row["worker_id"], row["skill_id"]) for row in data["worker_skill_assignments"]}
     for worker in data["workers"]:
-        worker["workshift_start"] = time(22 if night else 8)
-        worker["workshift_end"] = time(6 if night else 18)
-        worker["service_area_id"] = 101
-    for location in data["locations"]:
-        index = 0 if scenario == "duplicate_coordinates" else location["id"]
-        location.update(
-            latitude=round(55.75 + index * 0.0001, 6), longitude=round(37.61 + index * 0.0001, 6)
-        )
-    data["worker_skill_assignments"] = [
-        {"worker_id": w["user_id"], "skill_id": s["id"]}
-        for w in data["workers"]
-        for s in data["worker_skills"]
-    ]
-    types = data["work_types"]
-    members = {m["worker_id"]: m["brigade_id"] for m in data["brigade_members"]}
-    data["ticket_appliances"] = []
-    start = datetime.combine(ROUTE_DATE, time(22 if night else 8), TZ)
-    end = start + timedelta(hours=8 if night else 10)
-    for i, ticket in enumerate(data["tickets"]):
-        work_type = types[i % len(types)]
-        worker = data["workers"][i % workers]
-        ticket.update(
-            service_area_id=101,
-            brigade_id=members[worker["user_id"]],
-            status="planned",
-            lifecycle_state="waiting_assignment",
-            revision=1,
-            execution_cycle=1,
-            actual_started_at=None,
-            actual_completed_at=None,
-            cancel_reason=None,
-            last_event_id=None,
-            assigned_worker_id=None,
-            work_type=work_type["name"],
-            work_type_id=work_type["id"],
-            category=work_type.get("category", "repair"),
-            priority=work_type.get("default_priority", 3),
-            received_at=start - timedelta(hours=1),
-            sla_deadline_at=None,
-            required_transport_type=None,
-            title=f"[planning:{scenario}] {i + 1}",
-            visit_window_start=start,
-            visit_window_end=end,
-            estimated_duration_minutes=90 if scenario == "overload" else 20,
-            actual_duration_minutes=None,
-            planned_start_at=None,
-            planned_end_at=None,
-        )
-        data["ticket_appliances"].append(
-            {
-                "ticket_id": ticket["id"],
-                "appliance_id": work_type["id"],
-                "office_id": members[worker["user_id"]],
-                "quantity": 1,
-                "created_at": NOW,
-            }
-        )
+        for skill_id in sorted(case_skills):
+            if (worker["user_id"], skill_id) not in have:
+                data["worker_skill_assignments"].append(
+                    {"worker_id": worker["user_id"], "skill_id": skill_id}
+                )
+    data["worker_skill_assignments"].sort(key=lambda row: (row["worker_id"], row["skill_id"]))
+    if scenario == "night":
+        for ticket in data["tickets"]:
+            ticket["received_at"] = ticket["visit_window_start"]
+            ticket["sla_deadline_at"] = ticket["received_at"] + timedelta(hours=24)
+            ticket["response_deadline_at"] = ticket["received_at"] + timedelta(hours=2)
     if scenario == "rejections":
-        data["tickets"][0]["status"] = "completed"
-        data["tickets"][1]["work_type_id"] = None
-        data["tickets"][1]["work_type"] = "Unconfigured fictional work"
-        data["ticket_appliances"] = [a for a in data["ticket_appliances"] if a["ticket_id"] != 3]
-        data["tickets"][3]["visit_window_start"] = start + timedelta(hours=20)
-        data["tickets"][3]["visit_window_end"] = start + timedelta(hours=22)
+        tickets = data["tickets"]
+        tickets[0].update(
+            status="completed",
+            lifecycle_state="completed",
+            assigned_worker_id=None,
+        )
+        tickets[1].update(
+            work_type_id=None,
+            work_type=UNCONFIGURED_WORK,
+            title="Установка видеодомофона в квартире",
+            description="Клиент просит установить видеодомофон и провести кабель от двери.",
+            request_type_hd="Работа с кабелем",
+        )
+        # The first connection of the day has no router reserved for it.
+        connection = next(t for t in tickets[2:] if t["category"] == "connection")
+        required = {row["appliance_id"] for row in data["work_type_required_appliances"]}
+        data["ticket_appliances"] = [
+            row
+            for row in data["ticket_appliances"]
+            if not (row["ticket_id"] == connection["id"] and row["appliance_id"] in required)
+        ]
+        late = next(
+            t for t in tickets[2:] if t["id"] != connection["id"] and t["category"] != "emergency"
+        )
+        late["visit_window_start"] += timedelta(hours=20)
+        late["visit_window_end"] += timedelta(hours=20)
     return data
 
 
