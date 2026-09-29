@@ -1,0 +1,23 @@
+meta {
+  name: Запретить выбор режима клиентом T4
+  type: http
+  seq: 42
+}
+
+post {
+  url: {{base_url}}/api/v1/planning/areas/{{planning_service_area_id}}/2030-01-15/tickets/{{planning_event_no_slot_ticket_id}}/preview
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"base_day_revision":{{planning_day_revision}},"mode":"emergency"}
+}
+
+assert {
+  res.status: eq 422
+}

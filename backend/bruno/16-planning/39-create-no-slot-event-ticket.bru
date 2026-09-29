@@ -1,0 +1,41 @@
+meta {
+  name: Создать обычную заявку вне смены для T4
+  type: http
+  seq: 39
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "location_id": {{planning_location_id}},
+    "service_area_id": {{planning_service_area_id}},
+    "title": "T4 обычная заявка без слота",
+    "description": "Окно целиком раньше смены",
+    "work_type_id": {{planning_work_type_id}},
+    "category": "repair",
+    "priority": 3,
+    "received_at": "2030-01-15T00:30:00+03:00",
+    "visit_window_start": "2030-01-15T01:00:00+03:00",
+    "visit_window_end": "2030-01-15T01:05:00+03:00",
+    "estimated_duration_minutes": 5
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("planning_event_no_slot_ticket_id", res.getBody().id);
+  }
+}

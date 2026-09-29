@@ -12,17 +12,19 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    padding: 12px;
+    padding: 10px;
     gap: 16px;
-    border-radius: 12px;
+    border-radius: 14px;
     background-color: var(--tertiary);
-    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-color);
+    box-shadow: 0px 8px 24px var(--shadow-color);
+    transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 .indicator {
     position: absolute;
-    top: 12px;
-    left: 12px;
+    top: 10px;
+    left: 10px;
     width: 36px;
     height: 36px;
     background-color: var(--beeline);
@@ -37,25 +39,29 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 8px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    outline: none;
     border-radius: 8px;
     background-color: transparent;
     cursor: pointer;
-    transition: background-color 0.2s ease;
+    transition: background-color 0.2s ease, transform 0.15s ease;
 }
 
 .icon:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: var(--hover-color);
 }
 
-/* .icon.active {
-    /* Background is handled by .indicator
-} */
+.icon:active {
+    transform: scale(0.95);
+}
 
 .iconImage {
     width: 20px;
     height: 20px;
-    background-color: #FFFFFF;
+    background-color: var(--text-secondary);
     mask-size: contain;
     mask-position: center;
     mask-repeat: no-repeat;
@@ -63,6 +69,10 @@
     -webkit-mask-position: center;
     -webkit-mask-repeat: no-repeat;
     transition: background-color 0.2s ease;
+}
+
+.icon:hover .iconImage {
+    background-color: var(--text-primary);
 }
 
 .icon.active .iconImage {

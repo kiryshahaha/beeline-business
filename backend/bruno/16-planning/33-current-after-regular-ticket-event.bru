@@ -1,0 +1,27 @@
+meta {
+  name: Проверить причину ревизии обычной вставки
+  type: http
+  seq: 33
+}
+
+get {
+  url: {{base_url}}/api/v1/planning/areas/{{planning_service_area_id}}/2030-01-15/current
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.reason: eq "ticket_inserted"
+}
+
+tests {
+  test("Опубликованная ревизия содержит новую обычную заявку", () => {
+    expect(res.getBody().event_id).to.equal(Number(bru.getVar("planning_event_regular_event_id")));
+    expect(res.getBody().visits.map((visit) => visit.ticket_id))
+      .to.include(Number(bru.getVar("planning_event_regular_ticket_id")));
+  });
+}

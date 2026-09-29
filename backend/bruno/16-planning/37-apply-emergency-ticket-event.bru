@@ -1,0 +1,32 @@
+meta {
+  name: Применить аварийный replan T4
+  type: http
+  seq: 37
+}
+
+post {
+  url: {{base_url}}/api/v1/planning/plans/{{planning_event_emergency_plan_id}}/apply
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    bru.setVar("planning_day_revision", res.getBody().day_revision);
+  }
+}
+
+tests {
+  test("Аварийное событие применено один раз", () => {
+    expect(res.getBody().already_applied).to.equal(false);
+    expect(res.getBody().day_revision)
+      .to.equal(Number(bru.getVar("planning_event_emergency_from_revision")) + 1);
+  });
+}

@@ -44,6 +44,55 @@ class ReplanRequest(BaseModel):
     allow_partial: bool = Field(default=True, strict=True)
 
 
+class TicketEventPreviewRequest(BaseModel):
+    """The event policy is derived from the persisted ticket; callers supply only a revision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    base_day_revision: PositiveInt32
+
+
+class TicketEventSlotRead(BaseModel):
+    worker_id: PositiveInt32
+    sequence: PositiveInt32
+    arrival_at: AwareDatetime
+    service_start_at: AwareDatetime
+    service_end_at: AwareDatetime
+    service_minutes: int
+
+
+class TicketEventRead(BaseModel):
+    source_event_id: PositiveInt32
+    event_type: Literal["new_ticket"]
+    ticket_id: PositiveInt32
+    category: Literal["emergency", "connection", "repair", "additional"]
+    request_type_hd: str | None
+    received_at: AwareDatetime
+    response_deadline_at: AwareDatetime | None = None
+    outcome: Literal[
+        "insertion_ready",
+        "not_insertable",
+        "emergency_replan_ready",
+        "waiting_safe_point",
+        "emergency_unassigned",
+        "sla_risk",
+        "sla_violation",
+    ]
+    can_apply: bool
+    selected_slot: TicketEventSlotRead | None = None
+    road_contribution: dict[str, int | None] | None = None
+    shifted_ticket_ids: list[PositiveInt32] = Field(default_factory=list)
+    preserved_current_stage: list[dict] = Field(default_factory=list)
+    candidate_reasons: list[dict] = Field(default_factory=list)
+    sla_forecast: EmergencyResponseEstimate | None = None
+    reason: str | None = None
+
+
+class TicketEventPreviewRead(BaseModel):
+    event: TicketEventRead
+    plan: PlanRead | None = None
+
+
 class ExperimentalWindowOverride(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -316,7 +365,10 @@ class ReplanDiff(BaseModel):
     changed: list[VisitChange]
     unchanged_ticket_ids: list[int]
     metrics: dict[str, MetricChange]
+    preempted_tickets: list[dict] = Field(default_factory=list)
+    emergency_sla_forecasts: list[dict] = Field(default_factory=list)
     emergency_response: list[EmergencyResponseEstimate] = Field(default_factory=list)
+    ticket_event: TicketEventRead | None = None
 
 
 class EmergencyResponseEstimate(BaseModel):
@@ -356,6 +408,7 @@ class PlanRead(BaseModel):
     warnings: list[str]
     is_current: bool | None = None
     apply_result: ApplyResult | None = None
+    ticket_event: TicketEventRead | None = None
     workers: list[PlanWorker] | None = None
     replan_diff: ReplanDiff | None = None
 

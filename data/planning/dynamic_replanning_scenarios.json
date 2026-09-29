@@ -61,6 +61,36 @@
       "expected_existing_service_starts_changed": false
     }
   ],
+  "event_policy_cases": [
+    {
+      "id": "regular-new-ticket-uses-slot-insertion",
+      "request_type_hd": "ремонт",
+      "server_category": "repair",
+      "client_mode_field_allowed": false,
+      "expected_outcome": "insertion_ready",
+      "expected_revision_reason": "ticket_inserted",
+      "expected_existing_order_changed": false,
+      "expected_existing_workers_changed": false
+    },
+    {
+      "id": "emergency-new-ticket-uses-remainder-replan",
+      "request_type_hd": "авария",
+      "server_category": "emergency",
+      "client_mode_field_allowed": false,
+      "expected_outcome": "emergency_replan_ready",
+      "expected_revision_reason": "emergency_replan",
+      "expected_current_stage_mutated": false
+    },
+    {
+      "id": "emergency-with-unconfirmed-safe-point-waits",
+      "request_type_hd": "авария",
+      "server_category": "emergency",
+      "client_mode_field_allowed": false,
+      "expected_outcome": "waiting_safe_point",
+      "expected_revision_reason": null,
+      "expected_current_stage_mutated": false
+    }
+  ],
   "response_cases": [
     {
       "id": "arrival-at-60-minutes",

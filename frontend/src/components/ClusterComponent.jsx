@@ -95,8 +95,17 @@ export const ClusterComponent = ({ data, selectedObject, onSelectObject }) => {
     [data],
   );
   const index = useMemo(() => {
+    let customRadius = 60;
+    try {
+      const saved = typeof window !== "undefined" ? localStorage.getItem("beeline_cluster_radius") : null;
+      if (saved) {
+        const num = Number(saved);
+        if (num >= 20 && num <= 150) customRadius = num;
+      }
+    } catch {}
+
     const cluster = new Supercluster({
-      radius: 60,
+      radius: customRadius,
       maxZoom: 16,
       minPoints: 2,
       map: (props) => ({

@@ -1,0 +1,24 @@
+meta {
+  name: Выбрать бригаду заявки без слота T4
+  type: http
+  seq: 40
+}
+
+put {
+  url: {{base_url}}/api/v1/tickets/{{planning_event_no_slot_ticket_id}}/brigade
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"brigade_id":{{planning_brigade_id}}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.brigade_id: eq {{planning_brigade_id}}
+}

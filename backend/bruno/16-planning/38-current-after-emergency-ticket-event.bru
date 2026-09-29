@@ -1,0 +1,27 @@
+meta {
+  name: Проверить причину ревизии аварийного replan
+  type: http
+  seq: 38
+}
+
+get {
+  url: {{base_url}}/api/v1/planning/areas/{{planning_service_area_id}}/2030-01-15/current
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.reason: eq "emergency_replan"
+}
+
+tests {
+  test("Авария включена в текущий остаток дня", () => {
+    expect(res.getBody().event_id).to.equal(Number(bru.getVar("planning_event_emergency_event_id")));
+    expect(res.getBody().visits.map((visit) => visit.ticket_id))
+      .to.include(Number(bru.getVar("planning_event_emergency_ticket_id")));
+  });
+}
