@@ -144,11 +144,9 @@ def find_regular_ticket_slot(
             wid, baseline_state, lifecycle_by_ticket, default_location_id=office_location_id
         )
 
-        min_insertion_index = 0
-        if safe_point["is_frozen"]:
-            # Insertion must be strictly AFTER the frozen in-flight visit
-            frozen_seq = safe_point["frozen_sequence"]
-            min_insertion_index = frozen_seq  # 1-based index corresponds to after frozen visit
+        # Insertion goes strictly after the frozen in-flight visit or the last completed one.
+        min_insertion_index = safe_point["frozen_sequence"]
+        available_at = _parse_iso(worker.get("available_at")) or now
 
         worker_best_slot: SlotCandidate | None = None
         rejection_reasons_worker: list[str] = []
@@ -160,15 +158,14 @@ def find_regular_ticket_slot(
             # Previous stop
             if insert_idx == 0:
                 prev_loc = worker_office_location_id
-                prev_finish_time = max(shift_start, now)
+                prev_finish_time = max(shift_start, now, available_at)
             else:
                 prev_v = route_visits[insert_idx - 1]
-                prev_loc = prev_v.get("location_id", worker_office_location_id)
+                prev_loc = prev_v.get("location_id") or worker_office_location_id
                 prev_finish_time = _parse_iso(prev_v["service_end_at"])
-                if lifecycle_by_ticket.get(prev_v["ticket_id"]) == "completed":
-                    prev_finish_time = max(prev_finish_time, now)
-                elif safe_point["is_frozen"] and insert_idx == min_insertion_index:
-                    prev_finish_time = max(prev_finish_time, now)
+                if insert_idx == min_insertion_index:
+                    # The engineer is here only once the current stage is over.
+                    prev_finish_time = max(prev_finish_time, now, available_at)
 
             # Next stop
             if insert_idx < num_existing:

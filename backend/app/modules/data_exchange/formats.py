@@ -43,9 +43,10 @@ class ExchangeError(ValueError):
         table: str | None = None,
         row: int | None = None,
         column: str | None = None,
+        **details,
     ):
         super().__init__(message)
-        self.detail = {"message": message, "table": table, "row": row, "column": column}
+        self.detail = {"message": message, "table": table, "row": row, "column": column, **details}
 
 
 class ParsedRow(dict):

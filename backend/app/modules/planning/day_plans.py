@@ -101,6 +101,10 @@ def build_replan_state(
             visits[ticket_id] = {**visit, "sequence": offsets.get(worker_id, 0) + visit["sequence"]}
 
     state["visits"] = sorted(visits.values(), key=lambda visit: visit["ticket_id"])
+    # Work in motion was outside the solve; it stays on its route, not among the unassigned.
+    state["unassigned_ticket_ids"] = sorted(
+        set(state.get("unassigned_ticket_ids", [])) - set(visits)
+    )
     state["metrics"] = {
         **(state.get("metrics") or {}),
         "assigned_tickets": len(state["visits"]),

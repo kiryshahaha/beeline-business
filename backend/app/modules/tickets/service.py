@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import math
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -40,6 +41,14 @@ MOSCOW = ZoneInfo("Europe/Moscow")
 
 class LocationNotFoundError(Exception):
     pass
+
+
+class TicketIdempotencyConflictError(Exception):
+    """The key already created a ticket from a different request."""
+
+    def __init__(self, event_id: int):
+        super().__init__(event_id)
+        self.event_id = event_id
 
 
 class WorkTypeNotFoundError(Exception):
@@ -302,7 +311,14 @@ def create_ticket(
     actor_id: int | None = None,
     idempotency_key: str | None = None,
     reverse_geocoder: GeoapifyReverseGeocoder | None = None,
+    replay: bool = False,
 ) -> TicketRead:
+    """Create a ticket and its NEW_TICKET event.
+
+    With `replay` the key belongs to the client: a repeated request returns the ticket
+    it already created, and the same key with another body is a conflict.
+    """
+    request_hash = hashlib.sha256(data.model_dump_json().encode()).hexdigest()
     with session.begin_nested() if session.in_transaction() else session.begin():
         geocode_source = repository.find_ticket_geocode_source(session, data.location_id)
         if geocode_source is None:
@@ -324,6 +340,15 @@ def create_ticket(
                 )
 
         lock_planning_mutation(session)
+        if replay and idempotency_key is not None:
+            existing = execution_repository.find_event_by_key(session, idempotency_key)
+            if existing is not None:
+                if (
+                    existing["event_type"] != WorkEventType.NEW_TICKET.value
+                    or (existing["payload"] or {}).get("request_hash") != request_hash
+                ):
+                    raise TicketIdempotencyConflictError(existing["id"])
+                return get_ticket_unscoped(session, existing["ticket_id"])
         if repository.find_location_id(session, data.location_id) is None:
             raise LocationNotFoundError
         values = data.model_dump()
@@ -425,6 +450,7 @@ def create_ticket(
             idempotency_key=idempotency_key or f"ticket-create:{ticket_id}",
             payload={
                 "source": "ticket_create",
+                "request_hash": request_hash,
                 "request_type_hd": values.get("request_type_hd"),
                 "category": values.get("category"),
                 "received_at": values["received_at"].isoformat()
