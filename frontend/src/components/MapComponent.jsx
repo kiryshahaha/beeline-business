@@ -39,6 +39,7 @@ export default function MapComponent({
   tickets,
   offices,
   workers,
+  allWorkers = [],
   routes = [],
   workerRoute = null,
   locationById,
@@ -131,14 +132,19 @@ export default function MapComponent({
   const activeTicket = useMemo(() => {
     const id = selectedObject?.type === "ticket" ? selectedObject.id : pinnedTicketId;
     if (!id) return null;
-    return tickets.find((t) => t.id === id) || null;
+    return (
+      tickets.find((t) => t.id === id) ||
+      (selectedObject?.type === "ticket" && selectedObject.ticket?.id === id
+        ? selectedObject.ticket
+        : null) ||
+      null
+    );
   }, [selectedObject, pinnedTicketId, tickets]);
 
   const { routeLeg: activeLegRoute, isLoadingRoute } = useTicketRouteLeg(
     activeTicket,
     tickets,
-    workers,
-    offices,
+    allWorkers && allWorkers.length > 0 ? allWorkers : workers,
   );
 
   const activeLegFeature = useMemo(() => {
@@ -254,18 +260,46 @@ export default function MapComponent({
     const items = [];
     if (visibleLayers.tickets) {
       tickets.forEach((ticket) => {
-        if (ticketStatusFilter === "urgent" && !isTicketUrgent(ticket)) return;
-        if (ticketStatusFilter === "in_progress" && ticket.status !== "in_progress") return;
-        if (ticketStatusFilter === "completed" && ticket.status !== "completed") return;
+        const isSelected = selectedObject?.type === "ticket" && selectedObject.id === ticket.id;
+        if (!isSelected) {
+          if (ticketStatusFilter === "urgent" && !isTicketUrgent(ticket)) return;
+          if (ticketStatusFilter === "in_progress" && ticket.status !== "in_progress") return;
+          if (ticketStatusFilter === "completed" && ticket.status !== "completed") return;
+        }
+        const lat = ticket.location?.latitude ?? locationById?.get?.(ticket.location_id)?.latitude;
+        const lng = ticket.location?.longitude ?? locationById?.get?.(ticket.location_id)?.longitude;
         items.push({
           id: ticket.id,
           type: "ticket",
-          latitude: ticket.location?.latitude,
-          longitude: ticket.location?.longitude,
+          latitude: lat,
+          longitude: lng,
           label: `Заявка #${ticket.id}: ${ticket.title}`,
           data: ticket,
         });
       });
+
+      if (
+        selectedObject?.type === "ticket" &&
+        !items.some((item) => item.id === selectedObject.id)
+      ) {
+        const t = selectedObject.ticket || tickets.find((tk) => tk.id === selectedObject.id);
+        const lat = t?.location?.latitude ?? selectedObject.coordinates?.[1] ?? locationById?.get?.(t?.location_id)?.latitude;
+        const lng = t?.location?.longitude ?? selectedObject.coordinates?.[0] ?? locationById?.get?.(t?.location_id)?.longitude;
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          items.push({
+            id: selectedObject.id,
+            type: "ticket",
+            latitude: lat,
+            longitude: lng,
+            label: t?.title ? `Заявка #${selectedObject.id}: ${t.title}` : `Заявка #${selectedObject.id}`,
+            data: t || {
+              id: selectedObject.id,
+              title: `Заявка #${selectedObject.id}`,
+              location: { latitude: lat, longitude: lng },
+            },
+          });
+        }
+      }
     }
     if (visibleLayers.workers) {
       workers.forEach((worker) => items.push({
@@ -290,7 +324,7 @@ export default function MapComponent({
     return items.filter(
       (item) => Number.isFinite(item.longitude) && Number.isFinite(item.latitude),
     );
-  }, [offices, tickets, ticketStatusFilter, visibleLayers, workers]);
+  }, [offices, tickets, ticketStatusFilter, visibleLayers, workers, selectedObject, locationById]);
 
   // 3.1. Подготовка данных для тепловой карты плотности заявок
   const ticketsHeatmapGeoJson = useMemo(() => {
@@ -313,9 +347,32 @@ export default function MapComponent({
     return { type: "FeatureCollection", features };
   }, [tickets, visibleLayers.heatmap]);
 
-  const selectedItem = mapItems.find(
-    (item) => item.type === selectedObject?.type && item.id === selectedObject?.id,
-  );
+  const selectedItem = useMemo(() => {
+    const found = mapItems.find(
+      (item) => item.type === selectedObject?.type && item.id === selectedObject?.id,
+    );
+    if (found) return found;
+    if (selectedObject?.type === "ticket") {
+      const t = selectedObject.ticket || tickets.find((tk) => tk.id === selectedObject.id);
+      const lat = t?.location?.latitude ?? selectedObject.coordinates?.[1] ?? locationById?.get?.(t?.location_id)?.latitude;
+      const lng = t?.location?.longitude ?? selectedObject.coordinates?.[0] ?? locationById?.get?.(t?.location_id)?.longitude;
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        return {
+          id: selectedObject.id,
+          type: "ticket",
+          latitude: lat,
+          longitude: lng,
+          label: t?.title ? `Заявка #${selectedObject.id}: ${t.title}` : `Заявка #${selectedObject.id}`,
+          data: t || {
+            id: selectedObject.id,
+            title: `Заявка #${selectedObject.id}`,
+            location: { latitude: lat, longitude: lng },
+          },
+        };
+      }
+    }
+    return null;
+  }, [mapItems, selectedObject, tickets, locationById]);
 
   const selectedRoute = useMemo(() => {
     if (selectedObject?.type !== "route") return null;
@@ -834,7 +891,7 @@ export default function MapComponent({
       {selectedItem?.type === "ticket" && (
         <TicketPopup
           ticket={selectedItem.data}
-          workers={workers}
+          workers={allWorkers && allWorkers.length > 0 ? allWorkers : workers}
           selectedTicketRoute={selectedTicketRoute}
           activeLegRoute={activeLegRoute}
           isLoadingRoute={isLoadingRoute}

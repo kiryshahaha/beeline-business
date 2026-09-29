@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Popup } from "@vis.gl/react-maplibre";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/apiFetch";
 import styles from "../MapComponent.module.css";
 import routeStyles from "../Routes/Routes.module.css";
@@ -41,8 +41,6 @@ export default function TicketPopup({
     });
   }, [ticket]);
 
-  if (!ticket) return null;
-
   const handleStatusChange = async (newStatus) => {
     if (newStatus === currentStatus || isUpdatingStatus) return;
     setIsUpdatingStatus(true);
@@ -75,7 +73,118 @@ export default function TicketPopup({
     }
   };
 
+  const isClosed = currentStatus === "completed" || currentStatus === "wont_fix";
+  const ticketAreaId = ticket?.service_area_id ?? ticket?.location?.service_area_id;
+  const ticketBrigadeId = ticket?.brigade_id;
+
+  const eligibleWorkers = useMemo(() => {
+    // Предлагаем только инженеров, относящихся к участку / бригаде этой заявки
+    const filtered = workers.filter((w) => {
+      if (ticketBrigadeId && w.brigade_id && Number(w.brigade_id) !== Number(ticketBrigadeId)) {
+        return false;
+      }
+      if (ticketAreaId && w.service_area_id && Number(w.service_area_id) !== Number(ticketAreaId)) {
+        return false;
+      }
+      return true;
+    });
+
+    return filtered.sort((a, b) => {
+      const onlineA = a.worker_profile?.is_on_line ? 1 : 0;
+      const onlineB = b.worker_profile?.is_on_line ? 1 : 0;
+      if (onlineB !== onlineA) return onlineB - onlineA;
+      const nameA = [a.surname, a.name].filter(Boolean).join(" ");
+      const nameB = [b.surname, b.name].filter(Boolean).join(" ");
+      return nameA.localeCompare(nameB, "ru");
+    });
+  }, [workers, ticketAreaId, ticketBrigadeId]);
+
+  const candidateWorkerIds = useMemo(() => {
+    return eligibleWorkers.map((w) => w.id).join(",");
+  }, [eligibleWorkers]);
+
+  // Глубокая валидация движком планирования бэкенда: занятость, пересечение заявок, навыки, склад
+  const { data: eligibilityMap = {}, isLoading: isLoadingEligibility } = useQuery({
+    queryKey: ["ticketEligibleWorkers", ticket?.id, candidateWorkerIds],
+    enabled: !!ticket?.id && eligibleWorkers.length > 0 && !isClosed,
+    queryFn: async () => {
+      const results = {};
+      await Promise.all(
+        eligibleWorkers.map(async (w) => {
+          try {
+            const res = await apiFetch(`/tickets/${ticket.id}/assign/preview`, {
+              method: "POST",
+              body: JSON.stringify({ worker_id: w.id }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              const firstViolation = data.violations?.[0];
+              results[w.id] = {
+                is_eligible: Boolean(data.is_eligible),
+                violations: data.violations || [],
+                reason: firstViolation?.message || (data.is_eligible ? null : "Ограничение планирования"),
+              };
+            } else {
+              const err = await res.json().catch(() => ({}));
+              results[w.id] = {
+                is_eligible: false,
+                reason: err.detail || "Недоступен",
+              };
+            }
+          } catch {
+            results[w.id] = { is_eligible: false, reason: "Ошибка связи" };
+          }
+        })
+      );
+      return results;
+    },
+    staleTime: 15000,
+  });
+
+  const HARD_BLOCKING_CODES = useMemo(() => [
+    "worker_offline",
+    "worker_archived",
+    "worker_unavailable",
+    "working_on_route_date",
+    "service_area_mismatch",
+    "service_area_unknown",
+    "brigade_mismatch",
+    "brigade_resolution_required",
+    "missing_skill",
+    "equipment_not_reserved",
+    "stock_inconsistent",
+    "invalid_worker_role",
+    "required_transport_mismatch",
+  ], []);
+
+  const availableWorkers = useMemo(() => {
+    return eligibleWorkers.filter((w) => {
+      if (assignedWorkerId && Number(w.id) === Number(assignedWorkerId)) return true;
+      if (isLoadingEligibility && Object.keys(eligibilityMap).length === 0) {
+        return false;
+      }
+      const status = eligibilityMap[w.id];
+      if (!status) return true;
+      if (status.is_eligible) return true;
+      // Если мастер в смене и с оборудованием, но занят другими задачами — разрешаем назначить
+      const violations = status.violations || [];
+      const hasHardBlock = violations.some((v) => HARD_BLOCKING_CODES.includes(v.code));
+      return !hasHardBlock;
+    });
+  }, [eligibleWorkers, eligibilityMap, isLoadingEligibility, assignedWorkerId, HARD_BLOCKING_CODES]);
+
+  const unavailableWorkers = useMemo(() => {
+    return eligibleWorkers.filter((w) => {
+      if (assignedWorkerId && Number(w.id) === Number(assignedWorkerId)) return false;
+      const status = eligibilityMap[w.id];
+      if (!status) return false;
+      const violations = status.violations || [];
+      return violations.some((v) => HARD_BLOCKING_CODES.includes(v.code));
+    });
+  }, [eligibleWorkers, eligibilityMap, assignedWorkerId, HARD_BLOCKING_CODES]);
+
   const handleAssigneeChange = async (e) => {
+    if (isClosed) return;
     const rawVal = e.target.value;
     const workerId = rawVal ? Number(rawVal) : null;
     if (workerId === assignedWorkerId || isUpdatingAssignee) return;
@@ -85,7 +194,17 @@ export default function TicketPopup({
     setActionMessage(null);
 
     try {
-      const res = await apiFetch(`/tickets/${ticket.id}/assignees`, {
+      if (workerId) {
+        const selectedWorker = eligibleWorkers.find((w) => w.id === workerId) || workers.find((w) => w.id === workerId);
+        if (selectedWorker?.brigade_id && ticket?.brigade_id !== selectedWorker.brigade_id) {
+          await apiFetch(`/tickets/${ticket.id}/brigade`, {
+            method: "PUT",
+            body: JSON.stringify({ brigade_id: selectedWorker.brigade_id }),
+          }).catch(() => null);
+        }
+      }
+
+      let res = await apiFetch(`/tickets/${ticket.id}/assignees`, {
         method: "PUT",
         body: JSON.stringify({
           worker_id: workerId,
@@ -95,15 +214,49 @@ export default function TicketPopup({
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.detail || "Не удалось назначить исполнителя");
+        const eqViolation = errorData?.detail?.violations?.find((v) => v.code === "equipment_not_reserved");
+        if (eqViolation && eqViolation.ids?.appliance_ids?.length) {
+          const appId = eqViolation.ids.appliance_ids[0];
+          const selectedWorker = workers.find((w) => w.id === workerId);
+          const officeId = selectedWorker?.office_id || 10;
+          await apiFetch(`/tickets/${ticket.id}/appliances`, {
+            method: "POST",
+            body: JSON.stringify({ appliance_id: appId, quantity: 1, office_id: officeId }),
+          }).catch(() => null);
+
+          // Повторяем попытку назначения после выделения оборудования
+          res = await apiFetch(`/tickets/${ticket.id}/assignees`, {
+            method: "PUT",
+            body: JSON.stringify({
+              worker_id: workerId,
+              is_pinned: true,
+            }),
+          });
+        }
+
+        if (!res.ok) {
+          const retryErrData = await res.json().catch(() => errorData);
+          let msg = null;
+          if (retryErrData?.detail?.violations?.length) {
+            msg = retryErrData.detail.violations.map((v) => v.message).filter(Boolean).join(" · ");
+          } else if (typeof retryErrData?.detail === "string") {
+            msg = retryErrData.detail;
+          } else if (retryErrData?.detail?.message) {
+            msg = retryErrData.detail.message;
+          } else if (retryErrData?.message) {
+            msg = retryErrData.message;
+          }
+          throw new Error(msg || "Не удалось назначить исполнителя");
+        }
       }
 
-      const updated = await res.json();
+      await res.json();
       setAssignedWorkerId(workerId || "");
       setActionMessage(workerId ? "Инженер назначен" : "Назначение снято");
       setTimeout(() => setActionMessage(null), 3000);
 
       queryClient.invalidateQueries({ queryKey: ["tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["ticketsList"] });
       queryClient.invalidateQueries({ queryKey: ["routes"] });
       queryClient.invalidateQueries({ queryKey: ["fast-stats"] });
     } catch (err) {
@@ -113,10 +266,19 @@ export default function TicketPopup({
     }
   };
 
+  if (!ticket) return null;
+
+  const popupLongitude = Number(ticket.location?.longitude ?? ticket.longitude);
+  const popupLatitude = Number(ticket.location?.latitude ?? ticket.latitude);
+
+  if (!Number.isFinite(popupLongitude) || !Number.isFinite(popupLatitude)) {
+    return null;
+  }
+
   return (
     <Popup
-      longitude={ticket.location?.longitude}
-      latitude={ticket.location?.latitude}
+      longitude={popupLongitude}
+      latitude={popupLatitude}
       offset={28}
       maxWidth="350px"
       closeButton
@@ -250,19 +412,42 @@ export default function TicketPopup({
                 className={styles.assignSelect}
                 value={assignedWorkerId}
                 onChange={handleAssigneeChange}
-                disabled={isUpdatingAssignee}
+                disabled={isUpdatingAssignee || isClosed || (isLoadingEligibility && Object.keys(eligibilityMap).length === 0)}
               >
                 <option value="">Не назначен (в пуле)</option>
-                {workers.map((w) => {
-                  const name = [w.surname, w.name].filter(Boolean).join(" ") || `Инженер #${w.id}`;
-                  const isOnline = w.worker_profile?.is_on_line;
-                  return (
-                    <option key={w.id} value={w.id}>
-                      {name} {isOnline ? "(на линии)" : "(офлайн)"}
-                    </option>
-                  );
-                })}
+                {isLoadingEligibility && Object.keys(eligibilityMap).length === 0 ? (
+                  <option disabled>⏳ Проверка доступности инженеров...</option>
+                ) : (
+                  availableWorkers.map((w) => {
+                    const fullName = [w.surname, w.name, w.lastname].filter(Boolean).join(" ") || `Инженер #${w.id}`;
+                    const brigadeSuffix = w.brigade_name ? ` · ${w.brigade_name}` : "";
+                    const status = eligibilityMap[w.id];
+                    const subText = status && !status.is_eligible ? " (в смене, есть задачи)" : "";
+                    return (
+                      <option key={w.id} value={w.id}>
+                        {fullName}{brigadeSuffix}{subText}
+                      </option>
+                    );
+                  })
+                )}
               </select>
+              {isClosed && (
+                <div className={styles.assignDisabledNote}>
+                  {currentStatus === "completed"
+                    ? "Заявка выполнена — назначение недоступно"
+                    : "Заявка отменена — назначение недоступно"}
+                </div>
+              )}
+              {isLoadingEligibility && Object.keys(eligibilityMap).length === 0 && (
+                <div className={styles.assignDisabledNote} style={{ color: "#F59E0B" }}>
+                  Проверка графиков и занятости инженеров...
+                </div>
+              )}
+              {!isClosed && !isLoadingEligibility && availableWorkers.length === 0 && (
+                <div className={styles.assignDisabledNote}>
+                  Нет свободных воркеров
+                </div>
+              )}
             </div>
           </div>
 

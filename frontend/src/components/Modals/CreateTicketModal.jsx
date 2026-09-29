@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/apiFetch";
 import { useAuth } from "@/providers/AuthProvider";
 import { searchAddressSuggestions, reverseGeocodeCoordinates } from "@/utils/geocoding";
+import { useWorkTypes } from "@/hooks/useWorkTypes";
 import styles from "./CreateTicketModal.module.css";
 
 function parseJwt(token) {
@@ -68,11 +69,10 @@ async function getObserverToken(currentToken) {
   return currentToken;
 }
 
-const WORK_TYPES = [
-  { id: 1, name: "Подключение клиентов Базовая", category: "connection", priority: 2, defaultMinutes: 60 },
-  { id: 2, name: "Авария на ТКД", category: "emergency", priority: 1, defaultMinutes: 90 },
-  { id: 4, name: "Локальная заявка / ремонт у клиента", category: "repair", priority: 3, defaultMinutes: 60 },
-  { id: 3, name: "Дозаказ оборудования", category: "additional", priority: 3, defaultMinutes: 45 },
+const FALLBACK_WORK_TYPES = [
+  { id: 8, name: "Локальные работы", category: "repair", priority: 3, norm_minutes: 55 },
+  { id: 9, name: "Работы на подключение и дозаказы", category: "repair", priority: 3, norm_minutes: 55 },
+  { id: 10, name: "Аварийные работы", category: "repair", priority: 3, norm_minutes: 55 },
 ];
 
 export default function CreateTicketModal({
@@ -88,9 +88,17 @@ export default function CreateTicketModal({
   const userRole = tokenPayload?.role;
   const isObserver = !userRole || userRole === "observer";
 
+  const { workTypes: fetchedWorkTypes = [] } = useWorkTypes();
+  const workTypes = fetchedWorkTypes.length > 0 ? fetchedWorkTypes : FALLBACK_WORK_TYPES;
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [workTypeId, setWorkTypeId] = useState(1);
+  const [workTypeId, setWorkTypeId] = useState(null);
+
+  const effectiveWorkTypeId = workTypeId ?? workTypes[0].id;
+  const selectedWorkType = useMemo(() => {
+    return workTypes.find((w) => w.id === Number(effectiveWorkTypeId)) || workTypes[0];
+  }, [workTypes, effectiveWorkTypeId]);
 
   // Адресные поля
   const [addressSearchQuery, setAddressSearchQuery] = useState("");
@@ -290,7 +298,7 @@ export default function CreateTicketModal({
       // Резервный поиск существующей локации в БД
       if (!locationId) {
         try {
-          const fallbackRes = await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/location/1`, {
+          const fallbackRes = await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/location/511`, {
             headers: authHeader,
             credentials: "include",
           });
@@ -299,22 +307,27 @@ export default function CreateTicketModal({
             locationId = fbData.id;
           }
         } catch {}
-        if (!locationId) locationId = 1;
+        if (!locationId) locationId = 511;
       }
 
       // 2. Создаем заявку
-      const selectedWorkType = WORK_TYPES.find((w) => w.id === Number(workTypeId)) || WORK_TYPES[0];
+      const ticketWorkTypeId = selectedWorkType.id;
       const ticketPayload = {
         location_id: Number(locationId),
         title: title.trim(),
         description: description.trim() || null,
-        work_type_id: Number(selectedWorkType.id),
-        category: selectedWorkType.category,
-        priority: Number(selectedWorkType.priority),
-        estimated_duration_minutes: Math.max(15, Number(durationMinutes) || 60),
+        work_type_id: Number(ticketWorkTypeId),
+        service_area_id: 20,
+        estimated_duration_minutes: Math.max(15, Number(durationMinutes) || selectedWorkType.norm_minutes || 60),
         visit_window_start: startDate.toISOString(),
         visit_window_end: endDate.toISOString(),
       };
+      if (selectedWorkType.category) {
+        ticketPayload.category = selectedWorkType.category;
+      }
+      if (selectedWorkType.default_priority || selectedWorkType.priority) {
+        ticketPayload.priority = Number(selectedWorkType.default_priority || selectedWorkType.priority);
+      }
 
       const ticketRes = await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/tickets`, {
         method: "POST",
@@ -332,6 +345,25 @@ export default function CreateTicketModal({
       }
 
       const createdTicket = await ticketRes.json();
+
+      // Автоматически резервируем обязательное оборудование на созданную заявку
+      const requiredApplianceMap = { 8: 36, 9: 37, 10: 38 };
+      const reqAppId = requiredApplianceMap[Number(ticketWorkTypeId)];
+      if (reqAppId && createdTicket?.id) {
+        await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/tickets/${createdTicket.id}/appliances`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeader,
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            appliance_id: reqAppId,
+            quantity: 1,
+            office_id: 10,
+          }),
+        }).catch(() => null);
+      }
 
       // Инвалидируем кэш для немедленного обновления карты и списков
       queryClient.invalidateQueries({ queryKey: ["ticketsList"] });
@@ -573,17 +605,17 @@ export default function CreateTicketModal({
               <label className={styles.label}>Вид работ</label>
               <select
                 className={styles.select}
-                value={workTypeId}
+                value={effectiveWorkTypeId}
                 onChange={(e) => {
                   const id = Number(e.target.value);
                   setWorkTypeId(id);
-                  const wt = WORK_TYPES.find((w) => w.id === id);
-                  if (wt) setDurationMinutes(wt.defaultMinutes);
+                  const wt = workTypes.find((w) => w.id === id);
+                  if (wt) setDurationMinutes(wt.norm_minutes || wt.work_minutes || wt.defaultMinutes || 60);
                 }}
               >
-                {WORK_TYPES.map((wt) => (
+                {workTypes.map((wt) => (
                   <option key={wt.id} value={wt.id}>
-                    {wt.name}
+                    {wt.name} ({wt.norm_minutes || wt.work_minutes || 60} мин)
                   </option>
                 ))}
               </select>
