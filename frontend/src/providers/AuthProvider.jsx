@@ -1,28 +1,50 @@
+// frontend/src/providers/AuthProvider.jsx
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { registerTokenSetter, updateToken } from "@/lib/tokenBus";
-import { refreshSession } from "@/lib/apiFetch";
+import { refreshSession, apiFetch } from "@/lib/apiFetch";
+
+function getRoleFromToken(token) {
+  if (!token || typeof token !== "string") return null;
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    const parsed = JSON.parse(jsonPayload);
+    return parsed.role || null;
+  } catch {
+    return null;
+  }
+}
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   // access_token — ТОЛЬКО в памяти, никакого localStorage
   const [token, setToken] = useState(null);
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
 
-  useEffect(() => {
-    if (!loading && !token && pathname !== "/login") {
-      router.push("/login");
-    }
-  }, [loading, token, pathname, router]);
+  const tokenRole = useMemo(() => getRoleFromToken(token), [token]);
+  const role = user?.role || tokenRole || null;
 
   // Регистрируем setToken в шине, чтобы apiFetch мог обновить state после рефреша
   useEffect(() => {
-    registerTokenSetter(setToken);
+    registerTokenSetter((newToken) => {
+      setToken(newToken);
+      if (!newToken) setUser(null);
+    });
   }, []);
 
   const restoreAttempted = React.useRef(false);
@@ -36,6 +58,15 @@ export function AuthProvider({ children }) {
       try {
         const accessToken = await refreshSession();
         setToken(accessToken);
+        try {
+          const res = await apiFetch("/users/me");
+          if (res.ok) {
+            const userData = await res.json();
+            setUser(userData);
+          }
+        } catch {
+          // ignore
+        }
       } catch {
         // Нет сети или нет cookie — пользователь не авторизован
       } finally {
@@ -46,28 +77,67 @@ export function AuthProvider({ children }) {
     restoreSession();
   }, []);
 
-  const login = useCallback((accessToken) => {
-    // refresh_token сервер поставил в httpOnly cookie — нам не нужно его трогать
+  // Маршрутизация по роли и защита путей
+  useEffect(() => {
+    if (loading) return;
+
+    if (!token && pathname !== "/login") {
+      router.push("/login");
+      return;
+    }
+
+    if (token && pathname === "/login") {
+      if (role === "worker") {
+        router.replace("/worker");
+      } else {
+        router.replace("/");
+      }
+      return;
+    }
+
+    if (token && role) {
+      if (role === "worker" && !pathname.startsWith("/worker")) {
+        router.replace("/worker");
+      } else if (role !== "worker" && pathname.startsWith("/worker")) {
+        router.replace("/");
+      }
+    }
+  }, [loading, token, role, pathname, router]);
+
+  const login = useCallback(async (accessToken) => {
     updateToken(accessToken);
+    setToken(accessToken);
+    try {
+      const res = await apiFetch("/users/me");
+      if (res.ok) {
+        const userData = await res.json();
+        setUser(userData);
+      }
+    } catch (e) {
+      console.error("Failed to load user profile on login", e);
+    }
   }, []);
 
   const logout = useCallback(async () => {
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/auth/logout`, {
+      await apiFetch("/auth/logout", {
         method: "POST",
-        credentials: "include",
       });
     } catch {
       // Игнорируем ошибки сети при логауте
     }
     updateToken(null);
-  }, []);
+    setToken(null);
+    setUser(null);
+    router.push("/login");
+  }, [router]);
 
   const isLoginPage = pathname === "/login";
   const ready = !loading && (token || isLoginPage);
+  const isReadOnly = role === "foreman";
 
   return (
-    <AuthContext.Provider value={{ token, login, logout, loading }}>
+    <AuthContext.Provider value={{ token, user, role, isReadOnly, login, logout, loading }}>
       {ready ? children : null}
     </AuthContext.Provider>
   );

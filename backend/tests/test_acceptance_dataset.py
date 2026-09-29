@@ -4,7 +4,7 @@ import csv
 import json
 import unittest
 from collections import Counter
-from datetime import date
+from datetime import date, time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -71,6 +71,20 @@ class AcceptanceDatasetTests(unittest.TestCase):
             loc for loc in tables["locations"] if loc["id"] == home["start_location_id"]
         )
         self.assertEqual(cities[buildings[home_location["building_id"]]["city_id"]], "Кашира")
+
+    def test_emergency_windows_match_s14_cases(self):
+        tickets = {ticket["id"]: ticket for ticket in build_dataset()[0]["tickets"]}
+        early = tickets[43]
+        later = tickets[45]
+
+        self.assertEqual(
+            (early["visit_window_start"].time(), early["visit_window_end"].time()),
+            (time(10), time(12)),
+        )
+        self.assertEqual(
+            (later["visit_window_start"].time(), later["visit_window_end"].time()),
+            (time(12), time(14)),
+        )
 
     def test_negative_hd_cases_match_server_classifier(self):
         with TemporaryDirectory() as temporary:

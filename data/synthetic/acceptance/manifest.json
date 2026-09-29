@@ -14,7 +14,7 @@
     "worker_skills": 6,
     "districts": 3,
     "divisions": 3,
-    "streets": 39,
+    "streets": 40,
     "work_type_planning_rules": 4,
     "buildings": 52,
     "work_type_required_appliances": 1,
@@ -64,8 +64,8 @@
   "addresses": "Реальные дома Москвы, Домодедово, Ступино и Каширы из OpenStreetMap (© участники OpenStreetMap, ODbL 1.0); заявки, люди и квартиры вымышлены.",
   "files": {
     "dataset.zip": {
-      "sha256": "0cf95d476001c96e24703ae4e4221c6541ff6606dc4fc51d05a91b04b616e437",
-      "bytes": 17986,
+      "sha256": "608965ed439bc4ab63ab9378be4c022f7b5cd5066bfae7dccdd5b7ffb808352c",
+      "bytes": 18019,
       "rows": {
         "appliances": 25,
         "cities": 4,
@@ -75,7 +75,7 @@
         "worker_skills": 6,
         "districts": 3,
         "divisions": 3,
-        "streets": 39,
+        "streets": 40,
         "work_type_planning_rules": 4,
         "buildings": 52,
         "work_type_required_appliances": 1,
@@ -108,8 +108,8 @@
       }
     },
     "dataset.xlsx": {
-      "sha256": "10b438844502f9fae4ad2dd64e642547bbe9062267f0207a499644cb59e994c5",
-      "bytes": 53193,
+      "sha256": "d486b231aad3123537685ef7fa3307355cc89577c425c470576d03022c8b6fd7",
+      "bytes": 53233,
       "rows": {
         "appliances": 25,
         "cities": 4,
@@ -119,7 +119,7 @@
         "worker_skills": 6,
         "districts": 3,
         "divisions": 3,
-        "streets": 39,
+        "streets": 40,
         "work_type_planning_rules": 4,
         "buildings": 52,
         "work_type_required_appliances": 1,
@@ -154,8 +154,8 @@
   },
   "auxiliary_files": {
     "scenarios.json": {
-      "sha256": "4c8e4154818d88ec743aed7f632bfd4acf9ae72e052b3c6e67320b3a50a9714f",
-      "bytes": 30229
+      "sha256": "e417697bb7d45b3f26964d183498629685e0b33a7e9a668a1d89cbedeba91bc5",
+      "bytes": 35851
     },
     "road_matrix.json": {
       "sha256": "7d39ac2de409cfccff34dc4a5ac0fc2900b8ee0f69250b94e68626f6721b7247",

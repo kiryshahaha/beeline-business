@@ -9,15 +9,14 @@
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     cursor: pointer;
     overflow: hidden;
-    min-height: 60px;
+    height: 60px;
     max-height: 60px;
-    /* Изначальная высота таблетки */
     box-sizing: border-box;
 }
 
 .container.expanded {
+    height: auto;
     max-height: 50vh;
-    /* border-radius: 28px; */
     cursor: default;
 }
 

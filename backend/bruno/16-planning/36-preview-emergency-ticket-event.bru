@@ -39,6 +39,12 @@ tests {
     ]);
     expect(body.event.sla_forecast.ticket_id)
       .to.equal(Number(bru.getVar("planning_event_emergency_ticket_id")));
+    expect(body.event.selection_reason.code).to.equal("emergency_response_priority");
+    expect(body.event.sla_forecast.response_deadline_at).to.be.a("string");
+    expect(body.event.sla_forecast.response_target_minutes).to.be.oneOf([60, 120]);
+    expect(body.event.sla_forecast.response_timeline_valid).to.equal(true);
+    expect(body.event.sla_forecast.visit_window_start).to.be.a("string");
+    expect(body.event.sla_forecast.visit_window_end).to.be.a("string");
     expect(body.plan.replan_diff.emergency_response)
       .to.be.an("array").that.is.not.empty;
   });

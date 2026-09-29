@@ -187,7 +187,13 @@ class AcceptanceGenerator(Generator):
         if index == 41:
             received = _at(8, 12)
         end = start + timedelta(minutes=15 if index == 41 else 180)
-        building = self.building(brigade_number, index)
+        if index == 42:
+            start, end = _at(10), _at(12)
+        elif index == 44:
+            start, end = _at(12), _at(14)
+        # The remote arrival remains inside area 102 and uses a real regional address.
+        town = "Домодедово" if index == 37 else None
+        building = self.building(brigade_number, index, town)
         entrance, apartment, floor = building.apartment(index * 17 + 3)
         kind = None
         if not emergency:
@@ -206,6 +212,7 @@ class AcceptanceGenerator(Generator):
             start,
             end,
             received,
+            city_id=self.city_ids.get(town, 1),
             kind=kind,
         )
         if emergency:
@@ -230,7 +237,7 @@ class AcceptanceGenerator(Generator):
             idempotency_key=f"acceptance-{SEED}-{ticket['id']}",
             payload={"ticket_id": ticket["id"], "source": "helpdesk"},
         )
-        self.finish(ticket, spec, brigade, "new", "Москва")
+        self.finish(ticket, spec, brigade, "new", town or "Москва")
 
     def finish(self, ticket: dict, spec, brigade, phase: str, city: str):
         self.allocate(ticket, spec, brigade, ticket.pop("_appliances"))
@@ -251,6 +258,8 @@ class AcceptanceGenerator(Generator):
                 "service_area_id": ticket["service_area_id"],
                 "brigade_id": ticket["brigade_id"],
                 "received_at": ticket["received_at"].isoformat(),
+                "visit_window_start": ticket["visit_window_start"].isoformat(),
+                "visit_window_end": ticket["visit_window_end"].isoformat(),
                 "window": [
                     ticket["visit_window_start"].isoformat(),
                     ticket["visit_window_end"].isoformat(),
@@ -276,6 +285,13 @@ def build_dataset() -> tuple[dict, dict]:
         "roster_worker_ids": list(ROSTER),
         "outside_roster_worker_id": OUTSIDE_ROSTER,
         "remote_home_worker_id": REMOTE_HOME_WORKER,
+        "territory_cases": {
+            "nearby_cross_area_ticket_id": 37,
+            "nearby_reference_ticket_id": 2,
+            "nearby_worker_id": 13,
+            "same_area_remote_ticket_id": 38,
+        },
+        "window_cases": {"no_slot_ticket_id": 43, "later_window_ticket_id": 45},
         "initial_plan": (
             "В пакете нет маршрутов и ревизий дня: первый план каждого участка строит "
             "планировщик по заявкам фазы planned и дневному составу (POST "

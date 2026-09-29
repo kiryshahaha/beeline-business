@@ -1,0 +1,467 @@
+.container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-page);
+  display: flex;
+  flex-direction: column;
+}
+
+.loadingContainer {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(255, 200, 0, 0.2);
+  border-top-color: var(--beeline);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Split Layout */
+.splitLayout {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  position: relative;
+}
+
+/* Desktop Sidebar for Stops */
+.desktopSidebar {
+  display: none;
+  width: 380px;
+  height: 100%;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border-color);
+  flex-direction: column;
+  z-index: 5;
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+  transition: width 0.2s ease;
+}
+
+@media (min-width: 900px) {
+  .desktopSidebar {
+    display: flex;
+  }
+}
+
+.sidebarCollapsed {
+  display: none !important;
+}
+
+.sidebarHeader {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebarHeaderTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sidebarTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebarTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stopsCountBadge {
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.collapseSidebarBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.collapseSidebarBtn:hover {
+  color: var(--text-primary);
+  background: var(--hover-color);
+}
+
+.sidebarSub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.stopsList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.noStops {
+  padding: 30px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.stopItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.stopItem:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-color);
+}
+
+.stopCurrent {
+  border-color: var(--beeline);
+  background: rgba(255, 200, 0, 0.06);
+}
+
+.stopSelected {
+  border-color: var(--beeline);
+  box-shadow: 0 0 0 1px var(--beeline);
+}
+
+.stopNumBadge {
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--beeline);
+  color: #000;
+  padding: 3px 8px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.stopContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.stopTopRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stopItemTitle {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stopBadge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.stopAddress {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.stopBottomMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  gap: 8px;
+}
+
+.stopArrival {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.stopArrival strong {
+  color: var(--beeline);
+}
+
+.stopActionLinks {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stopLink {
+  font-size: 11.5px;
+  color: var(--beeline);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.stopLink:hover {
+  text-decoration: underline;
+}
+
+.stopYandexLink {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-decoration: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.stopYandexLink:hover {
+  color: var(--text-primary);
+}
+
+.expandSidebarBtn {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 20;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.15s;
+}
+
+.expandSidebarBtn:hover {
+  background: var(--bg-card-hover);
+}
+
+.mapWrap {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.markerPin {
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+}
+
+.markerPin:hover {
+  transform: scale(1.1);
+  border-color: var(--beeline);
+}
+
+.markerNum {
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.currentPin {
+  background: var(--beeline);
+  color: #000000;
+  border-color: #000000;
+  font-weight: 800;
+}
+
+.nextPin {
+  background: var(--accent-blue);
+  color: #000000;
+  border-color: #000000;
+  font-weight: 800;
+}
+
+.selectedPin {
+  transform: scale(1.15);
+  border-color: var(--beeline);
+  box-shadow: 0 0 0 2px var(--beeline);
+}
+
+.bottomCard {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  right: 20px;
+  max-width: 440px;
+  z-index: 20;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 18px 20px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: slideUp 0.2s ease;
+}
+
+.closeCardBtn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.cardSeqRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cardSeq {
+  font-size: 11px;
+  font-weight: 800;
+  background: var(--beeline);
+  color: #000;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.cardState {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.cardTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cardAddress {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.cardTime {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.cardTime strong {
+  color: var(--beeline);
+}
+
+.cardActionsRow {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.openTicketBtn {
+  flex: 1;
+  background: var(--beeline);
+  color: #000;
+  text-decoration: none;
+  text-align: center;
+  font-weight: 700;
+  font-size: 13.5px;
+  padding: 11px;
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+  transition: opacity 0.15s;
+}
+
+.openTicketBtn:hover {
+  opacity: 0.9;
+}
+
+.yandexRouteBtn {
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 11px 16px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.yandexRouteBtn:hover {
+  background: var(--bg-card-hover);
+  color: var(--beeline);
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

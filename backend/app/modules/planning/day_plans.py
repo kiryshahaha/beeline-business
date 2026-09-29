@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.modules.planning.day_models import DayPlanRevision
 from app.modules.planning.errors import PlanningError
 from app.modules.planning.models import PlanningPlan
+from app.modules.planning.response_sla import response_sla
 from app.modules.users.models import Worker
 
 # Numeric metrics whose change is worth showing next to a revision.
@@ -100,6 +101,10 @@ def build_replan_state(
             visits[ticket_id] = {**visit, "sequence": offsets.get(worker_id, 0) + visit["sequence"]}
 
     state["visits"] = sorted(visits.values(), key=lambda visit: visit["ticket_id"])
+    # Work in motion was outside the solve; it stays on its route, not among the unassigned.
+    state["unassigned_ticket_ids"] = sorted(
+        set(state.get("unassigned_ticket_ids", [])) - set(visits)
+    )
     state["metrics"] = {
         **(state.get("metrics") or {}),
         "assigned_tickets": len(state["visits"]),
@@ -169,29 +174,25 @@ def build_emergency_replan_summary(
         t_meta = meta.get(tid) or {}
         if t_meta.get("category") == "emergency":
             received_str = t_meta.get("received_at")
+            response_deadline_str = t_meta.get("response_deadline_at")
             start_str = now.get("service_start_at")
-            response_minutes = None
-            sla_status = "unknown"
-            if received_str and start_str:
-                received_dt = datetime.fromisoformat(received_str)
-                start_dt = datetime.fromisoformat(start_str)
-                response_minutes = max(0, int((start_dt - received_dt).total_seconds() + 59) // 60)
-                if response_minutes <= 60:
-                    sla_status = "on_time"
-                elif response_minutes <= 120:
-                    sla_status = "acceptable"
-                else:
-                    sla_status = "violated"
+            response = response_sla(received_str, response_deadline_str, start_str)
 
             emergency_sla_forecasts.append(
                 {
                     "ticket_id": tid,
                     "worker_id": now.get("worker_id"),
                     "received_at": received_str,
+                    "response_deadline_at": response_deadline_str,
+                    "visit_window_start": t_meta.get("visit_window_start"),
+                    "visit_window_end": t_meta.get("visit_window_end"),
                     "service_start_at": start_str,
-                    "response_minutes": response_minutes,
-                    "target_minutes": 120,
-                    "sla_status": sla_status,
+                    "response_minutes": response["reaction_to_service_start_minutes"],
+                    "target_minutes": response["response_target_minutes"],
+                    "response_deadline_met": response["response_deadline_met"],
+                    "response_lateness_minutes": response["response_lateness_minutes"],
+                    "response_timeline_valid": response["response_timeline_valid"],
+                    "sla_status": response["response_sla_status"],
                 }
             )
 

@@ -1,15 +1,38 @@
+"use client";
+
 import styles from "./Notifications.module.css";
-import Image from "next/image";
 import { useNotificationsWS } from "@/hooks/useNotificationsWS";
 import { useNotificationsHistory } from "@/hooks/useNotificationsHistory";
 import ExpandableMenu from "@/components/ui/ExpandableMenu/ExpandableMenu";
 import React, { useEffect, useState, useRef, useCallback } from "react";
+
+const NOTIFICATION_LABELS = {
+    ticket_assigned: "Назначена заявка",
+    ticket_status_changed: "Статус заявки изменен",
+    ticket_unassigned: "Снято назначение с заявки",
+    ticket_rescheduled: "Перенесено время заявки",
+    ticket_window_changed: "Изменено окно визита",
+    ticket_completion_confirmed: "Выполнение подтверждено",
+    ticket_completion_rejected: "Выполнение отклонено",
+    ticket_completion_requested: "Запрошено подтверждение завершения",
+    ticket_delay_reported: "Сообщено о задержке выполнения",
+    ticket_problem_reported: "Сообщено о проблеме на объекте",
+    TICKET_ASSIGNED: "Назначена заявка",
+};
+
+const STATUS_TEXT = {
+    planned: "Ожидает",
+    in_progress: "В работе",
+    completed: "Выполнена",
+    wont_fix: "Отменена",
+};
 
 const NotificationsHeader = ({ isOpen, hasUnread, onReadAll }) => {
     return (
         <div className={styles.headerContent}>
             {isOpen && (
                 <button 
+                    type="button"
                     className={styles.readAllBtn}
                     onClick={(e) => {
                         e.stopPropagation();
@@ -48,21 +71,38 @@ const NotificationItem = ({ notif, isRead, markAsRead }) => {
         return () => observer.disconnect();
     }, [isRead, markAsRead, notif.id]);
 
+    const kind = (notif.kind || "").toLowerCase();
+    const kindLabel = NOTIFICATION_LABELS[kind] || NOTIFICATION_LABELS[notif.kind] || "Уведомление по заявке";
+    const statusLabel = notif.data?.status ? (STATUS_TEXT[notif.data.status] || notif.data.status) : null;
+
+    let detailText = "";
+    if (kind === "ticket_problem_reported") {
+        detailText = notif.data?.text ? ` (${notif.data?.type ? notif.data.type + ": " : ""}«${notif.data.text}»)` : "";
+    } else if (kind === "ticket_delay_reported") {
+        detailText = notif.data?.reason ? ` («${notif.data.reason}»)` : "";
+    } else if (notif.data?.note) {
+        detailText = ` («${notif.data.note}»)`;
+    } else if (notif.data?.reason_text || notif.data?.reason) {
+        detailText = ` (${notif.data.reason_text || notif.data.reason})`;
+    }
+
     return (
         <div ref={itemRef} className={`${styles.item} ${!isRead ? styles.unread : ""}`}>
             <div className={styles.title}>
-                {notif.data?.title || "Заявка №" + notif.ticket_id}
+                {notif.data?.title || (notif.ticket_id ? `Заявка #${notif.ticket_id}` : "Событие системы")}
             </div>
             <div className={styles.body}>
-                {notif.kind === "TICKET_ASSIGNED" 
-                    ? "Новая заявка назначена"
-                    : notif.data?.status 
-                        ? `Статус: ${notif.data.status}` 
-                        : "Новая заявка назначена"}
+                {kindLabel}
+                {statusLabel ? ` · Статус: ${statusLabel}` : ""}
+                {detailText}
             </div>
             <div className={styles.time}>
                 {new Date(notif.created_at).toLocaleString('ru-RU', {
-                    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+                    timeZone: "Europe/Moscow",
+                    day: '2-digit',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit'
                 })}
             </div>
         </div>
@@ -71,24 +111,40 @@ const NotificationItem = ({ notif, isRead, markAsRead }) => {
 
 const Notifications = () => {
     const { hasUnread, clearUnread } = useNotificationsWS();
-    const { notifications, isLoading } = useNotificationsHistory();
-    const [readIds, setReadIds] = useState(new Set());
-
-    // When new notifications arrive, we clear the red dot if they all get read
-    // But since the server doesn't track read state, we'll just track locally.
+    const { notifications = [] } = useNotificationsHistory();
+    const [readIds, setReadIds] = useState(() => {
+        if (typeof window === "undefined") return new Set();
+        try {
+            const raw = localStorage.getItem("beeline_read_notification_ids");
+            return raw ? new Set(JSON.parse(raw)) : new Set();
+        } catch {
+            return new Set();
+        }
+    });
 
     const markAsRead = useCallback((id) => {
-        setReadIds(prev => {
+        setReadIds((prev) => {
             if (prev.has(id)) return prev;
             const next = new Set(prev);
             next.add(id);
+            try {
+                localStorage.setItem("beeline_read_notification_ids", JSON.stringify([...next]));
+            } catch {
+                // ignore
+            }
             return next;
         });
     }, []);
 
     const handleReadAll = () => {
-        if (notifications) {
-            setReadIds(new Set(notifications.map(n => n.id)));
+        if (notifications.length > 0) {
+            const allIds = new Set([...readIds, ...notifications.map((n) => n.id)]);
+            setReadIds(allIds);
+            try {
+                localStorage.setItem("beeline_read_notification_ids", JSON.stringify([...allIds]));
+            } catch {
+                // ignore
+            }
         }
         clearUnread();
     };
@@ -105,13 +161,11 @@ const Notifications = () => {
                 />
             )}
         >
-            <div className={styles.list}>
-                {isLoading ? (
-                    <div className={styles.empty}>Загрузка...</div>
-                ) : notifications?.length === 0 ? (
-                    <div className={styles.empty}>Нет уведомлений</div>
+            <div className={styles.content}>
+                {notifications.length === 0 ? (
+                    <div className={styles.empty}>Нет новых уведомлений</div>
                 ) : (
-                    notifications?.map(notif => (
+                    notifications.map((notif) => (
                         <NotificationItem
                             key={notif.id}
                             notif={notif}

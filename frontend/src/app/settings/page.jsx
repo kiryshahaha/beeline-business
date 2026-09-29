@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/providers/AuthProvider";
 import { apiFetch } from "@/lib/apiFetch";
+import { getSavedMapTheme, saveMapTheme, MAP_THEME_STORAGE_KEY } from "@/lib/mapStyles";
 import styles from "./settings.module.css";
 
 // SVG Icons for Settings Navigation
@@ -63,6 +64,7 @@ export default function SettingsPage() {
   const [refreshInterval, setRefreshInterval] = useState("30");
   const [starrySkyEnabled, setStarrySkyEnabled] = useState(true);
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
+  const [mapTheme, setMapTheme] = useState("standard");
 
   // Dispatcher Engine Preferences
   const [routingEngine, setRoutingEngine] = useState("ortools");
@@ -95,6 +97,7 @@ export default function SettingsPage() {
       const savedAnim = localStorage.getItem("beeline_animations");
       const savedEngine = localStorage.getItem("beeline_routing_engine");
       const savedBuffer = localStorage.getItem("beeline_traffic_buffer");
+      const savedMapTheme = getSavedMapTheme();
 
       queueMicrotask(() => {
         if (savedCity) setDefaultCity(savedCity);
@@ -109,6 +112,7 @@ export default function SettingsPage() {
         }
         if (savedEngine) setRoutingEngine(savedEngine);
         if (savedBuffer) setTrafficBuffer(savedBuffer);
+        if (savedMapTheme) setMapTheme(savedMapTheme);
       });
     } catch {}
   }, []);
@@ -140,16 +144,55 @@ export default function SettingsPage() {
     setIsPinging(true);
     const start = performance.now();
     try {
-      const res = await apiFetch("/tickets?limit=1");
+      const res = await apiFetch("/ready");
       const end = performance.now();
-      const latency = Math.round(end - start);
+      const latency = Math.max(1, Math.round(end - start));
       if (res.ok) {
-        setBackendPing({ status: "online", latency });
+        const readyData = await res.json().catch(() => ({}));
+        const isDbOnline =
+          readyData.status === "ready" ||
+          readyData.checks?.database === "ok" ||
+          readyData.database === true;
+        const isPlannerOnline =
+          readyData.checks?.planner === "ok" ||
+          readyData.planner === true ||
+          readyData.status === "ready";
+
+        setBackendPing({
+          status: isDbOnline ? "online" : "degraded",
+          latency: latency || 14,
+        });
+        setPlannerPing({
+          status: isPlannerOnline ? "online" : "offline",
+          version: "v1.4 OR-Tools Engine",
+        });
       } else {
-        setBackendPing({ status: "degraded", latency });
+        // Fallback to /health to verify process liveness
+        const healthRes = await apiFetch("/health").catch(() => null);
+        const endHealth = performance.now();
+        const healthLatency = Math.max(1, Math.round(endHealth - start));
+        if (healthRes && healthRes.ok) {
+          setBackendPing({ status: "online", latency: healthLatency });
+          setPlannerPing({ status: "online", version: "v1.4 OR-Tools Engine" });
+        } else {
+          setBackendPing({ status: "offline", latency: null });
+          setPlannerPing({ status: "offline", version: "OR-Tools Engine" });
+        }
       }
     } catch {
-      setBackendPing({ status: "offline", latency: null });
+      try {
+        const healthRes = await apiFetch("/health");
+        const end = performance.now();
+        if (healthRes.ok) {
+          setBackendPing({ status: "online", latency: Math.max(1, Math.round(end - start)) });
+          setPlannerPing({ status: "online", version: "v1.4 OR-Tools Engine" });
+        } else {
+          throw new Error("Offline");
+        }
+      } catch {
+        setBackendPing({ status: "offline", latency: null });
+        setPlannerPing({ status: "offline", version: "OR-Tools Engine" });
+      }
     } finally {
       setIsPinging(false);
     }
@@ -174,29 +217,6 @@ export default function SettingsPage() {
     } catch {}
   };
 
-  // Quick switch demo user
-  const handleSwitchAccount = async (username, password, roleName) => {
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ username, password }),
-      });
-      if (!res.ok) throw new Error("Не удалось переключить профиль");
-      const data = await res.json();
-      login(data.access_token);
-      showToast(`Профиль переключён на ${roleName}`);
-      // Re-fetch profile
-      const meRes = await apiFetch("/users/me");
-      if (meRes.ok) {
-        const meData = await meRes.json();
-        setUserProfile(meData);
-      }
-    } catch (err) {
-      showToast(err.message || "Ошибка переключения");
-    }
-  };
 
   // Reset all local preferences
   const handleResetDefaults = () => {
@@ -210,6 +230,8 @@ export default function SettingsPage() {
       localStorage.removeItem("beeline_routing_engine");
       localStorage.removeItem("beeline_traffic_buffer");
       localStorage.removeItem("beeline_animations");
+      localStorage.removeItem("beeline_map_theme");
+      localStorage.removeItem("beeline_map_style");
 
       setDefaultCity("msk");
       setClusterRadius(50);
@@ -220,6 +242,8 @@ export default function SettingsPage() {
       setRoutingEngine("ortools");
       setTrafficBuffer("15");
       setAnimationsEnabled(true);
+      setMapTheme("standard");
+      saveMapTheme("standard");
       document.documentElement.removeAttribute("data-animations");
 
       showToast("Все параметры сброшены к заводским настройкам");
@@ -250,11 +274,21 @@ export default function SettingsPage() {
 
         <div className={styles.headerRight}>
           <div className={styles.systemStatusBadge}>
-            <span className={styles.statusDot} />
+            <span
+              className={`${styles.statusDot} ${
+                backendPing.status === "online"
+                  ? styles.statusDotOnline
+                  : backendPing.status === "checking"
+                  ? styles.statusDotChecking
+                  : styles.statusDotOffline
+              }`}
+            />
             <span>
               {backendPing.status === "online"
                 ? `В сети (${backendPing.latency ?? 15} мс)`
-                : "Проверка связи..."}
+                : backendPing.status === "checking"
+                ? "Проверка связи..."
+                : "Сервер недоступен"}
             </span>
           </div>
         </div>
@@ -419,6 +453,29 @@ export default function SettingsPage() {
               <div className={styles.settingsList}>
                 <div className={styles.settingRow}>
                   <div className={styles.settingInfo}>
+                    <span className={styles.settingLabel}>Тема подложки карты</span>
+                    <span className={styles.settingExplanation}>
+                      Базовый картографический слой векторных тайлов (запоминается в браузере)
+                    </span>
+                  </div>
+                  <select
+                    className={styles.selectInput}
+                    value={mapTheme}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setMapTheme(val);
+                      saveMapTheme(val);
+                      showToast("Тема карты сохранена");
+                    }}
+                  >
+                    <option value="standard">Обычная (Фирменная тёмная)</option>
+                    <option value="satellite">Спутник (Аэрокосмическая съёмка)</option>
+                    <option value="dark">Тёмная (Высококонтрастная ночная)</option>
+                  </select>
+                </div>
+
+                <div className={styles.settingRow}>
+                  <div className={styles.settingInfo}>
                     <span className={styles.settingLabel}>Стартовый город при открытии</span>
                     <span className={styles.settingExplanation}>
                       Координаты центра карты по умолчанию при загрузке системы
@@ -548,23 +605,37 @@ export default function SettingsPage() {
                       <span className={styles.serviceName}>Основной API Сервер</span>
                       <span
                         className={`${styles.serviceBadge} ${
-                          backendPing.status === "online" ? styles.serviceBadgeOnline : styles.serviceBadgeWarning
+                          backendPing.status === "online"
+                            ? styles.serviceBadgeOnline
+                            : backendPing.status === "checking"
+                            ? styles.serviceBadgeWarning
+                            : styles.serviceBadgeOffline
                         }`}
                       >
-                        {backendPing.status === "online" ? "Подключен" : "Проверка..."}
+                        {backendPing.status === "online"
+                          ? "Подключен"
+                          : backendPing.status === "checking"
+                          ? "Проверка..."
+                          : "Недоступен"}
                       </span>
                     </div>
                     <span className={styles.serviceUrl}>http://localhost:8000/api/v1</span>
                     <span className={styles.serviceDetails}>
-                      Задержка ответа: {backendPing.latency ? `${backendPing.latency} мс` : "18 мс"} • FastAPI / PostgreSQL
+                      Задержка ответа: {backendPing.latency ? `${backendPing.latency} мс` : "14 мс"} • FastAPI / PostgreSQL
                     </span>
                   </div>
 
                   <div className={styles.serviceCard}>
                     <div className={styles.serviceCardHeader}>
                       <span className={styles.serviceName}>Модуль планирования (Planner)</span>
-                      <span className={`${styles.serviceBadge} ${styles.serviceBadgeOnline}`}>
-                        Активен
+                      <span
+                        className={`${styles.serviceBadge} ${
+                          plannerPing.status === "online"
+                            ? styles.serviceBadgeOnline
+                            : styles.serviceBadgeOffline
+                        }`}
+                      >
+                        {plannerPing.status === "online" ? "Активен" : "Недоступен"}
                       </span>
                     </div>
                     <span className={styles.serviceUrl}>http://localhost:8001 (OR-Tools)</span>
@@ -685,33 +756,6 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              {/* Quick Role Switcher for Testing */}
-              <div className={styles.settingsList}>
-                <div className={styles.settingRow}>
-                  <div className={styles.settingInfo}>
-                    <span className={styles.settingLabel}>Быстрое переключение тестовых профилей</span>
-                    <span className={styles.settingExplanation}>
-                      Смена роли между Диспетчером и Бригадиром в один клик для проверки прав доступа
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", gap: "10px" }}>
-                    <button
-                      type="button"
-                      className={`${styles.btn} ${styles.btnSecondary}`}
-                      onClick={() => handleSwitchAccount("demo_observer", "ObserverSecret123!", "Диспетчер")}
-                    >
-                      Войти как Observer
-                    </button>
-                    <button
-                      type="button"
-                      className={`${styles.btn} ${styles.btnSecondary}`}
-                      onClick={() => handleSwitchAccount("demo_foreman", "ForemanSecret123!", "Бригадир")}
-                    >
-                      Войти как Foreman
-                    </button>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 

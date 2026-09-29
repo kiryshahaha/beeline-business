@@ -1,7 +1,7 @@
 """Unit tests for worker shifts calculation (2/2, 5/2, night shifts, and exceptions)."""
 
 import unittest
-from datetime import date, time
+from datetime import date, time, timedelta
 
 from app.core.workday import MOSCOW
 from app.modules.users.enums import ScheduleType
@@ -9,6 +9,28 @@ from app.modules.users.shifts import get_worker_shift, is_worker_working_on_date
 
 
 class WorkerShiftsCalculationTests(unittest.TestCase):
+    def test_eight_and_twelve_hour_profiles_keep_selected_date_bounds(self):
+        work_date = date(2030, 1, 15)
+        eight_hour = get_worker_shift(
+            work_date,
+            workshift_start=time(8),
+            workshift_end=time(16),
+            schedule_type=ScheduleType.FIVE_TWO,
+        )
+        twelve_hour = get_worker_shift(
+            work_date,
+            workshift_start=time(8),
+            workshift_end=time(20),
+            schedule_type=ScheduleType.FIVE_TWO,
+        )
+
+        self.assertEqual(eight_hour.end - eight_hour.start, timedelta(hours=8))
+        self.assertEqual(twelve_hour.end - twelve_hour.start, timedelta(hours=12))
+        self.assertEqual(eight_hour.start.date(), work_date)
+        self.assertEqual(eight_hour.end.date(), work_date)
+        self.assertEqual(twelve_hour.start.date(), work_date)
+        self.assertEqual(twelve_hour.end.date(), work_date)
+
     def test_five_two_schedule(self):
         # Mon (2026-09-28) to Sun (2026-10-04)
         monday = date(2026, 9, 28)

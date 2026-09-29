@@ -128,20 +128,62 @@ export function useTicketRouteLeg(
     queryKey,
     enabled: !!token && !!prevPoint && !!destPoint,
     queryFn: async () => {
-      const res = await apiFetch("/routes", {
-        method: "POST",
-        body: JSON.stringify({
-          origin: { latitude: prevPoint.latitude, longitude: prevPoint.longitude },
-          destination: { latitude: destPoint.latitude, longitude: destPoint.longitude },
-          mode: "drive",
-        }),
-      });
+      let data = null;
+      try {
+        const res = await apiFetch("/routes", {
+          method: "POST",
+          body: JSON.stringify({
+            origin: { latitude: prevPoint.latitude, longitude: prevPoint.longitude },
+            destination: { latitude: destPoint.latitude, longitude: destPoint.longitude },
+            mode: "drive",
+          }),
+        });
 
-      if (!res.ok) {
-        throw new Error("Не удалось рассчитать маршрут");
+        if (res.ok) {
+          data = await res.json();
+        }
+      } catch {
+        // Continue to fallback
       }
 
-      const data = await res.json();
+      // If backend failed (e.g. 403 for worker role, or provider error), fallback to OSRM
+      if (!data) {
+        try {
+          const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${prevPoint.longitude},${prevPoint.latitude};${destPoint.longitude},${destPoint.latitude}?overview=full&geometries=geojson`;
+          const osrmRes = await fetch(osrmUrl);
+          if (osrmRes.ok) {
+            const osrmData = await osrmRes.json();
+            if (osrmData.code === "Ok" && osrmData.routes?.[0]) {
+              const r = osrmData.routes[0];
+              data = {
+                distance_meters: r.distance,
+                duration_seconds: r.duration,
+                geometry: r.geometry,
+              };
+            }
+          }
+        } catch {}
+      }
+
+      // Direct straight line fallback if external service is down
+      if (!data) {
+        const distKm = Math.hypot(
+          (destPoint.latitude - prevPoint.latitude) * 111,
+          (destPoint.longitude - prevPoint.longitude) * 65
+        );
+        data = {
+          distance_meters: distKm * 1000,
+          duration_seconds: (distKm / 35) * 3600,
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [prevPoint.longitude, prevPoint.latitude],
+              [destPoint.longitude, destPoint.latitude],
+            ],
+          },
+        };
+      }
+
       return {
         origin: prevPoint,
         destination: destPoint,

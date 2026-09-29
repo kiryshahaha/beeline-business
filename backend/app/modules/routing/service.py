@@ -128,12 +128,19 @@ def list_routes(
     route_date: date | None,
     limit: int,
     offset: int,
+    route_date_from: date | None = None,
+    route_date_to: date | None = None,
 ) -> list[RouteRead]:
     query = visible_routes(viewer)
     if worker_id is not None:
         query = query.where(Route.worker_id == worker_id)
     if route_date is not None:
         query = query.where(Route.route_date == route_date)
+    else:
+        if route_date_from is not None:
+            query = query.where(Route.route_date >= route_date_from)
+        if route_date_to is not None:
+            query = query.where(Route.route_date <= route_date_to)
     query = query.order_by(Route.route_date, Route.worker_id, Route.route_number)
     return with_plan_revision(session, list(session.scalars(query.limit(limit).offset(offset))))
 

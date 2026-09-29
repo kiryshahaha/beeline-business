@@ -1,6 +1,6 @@
 """Ticket creation, filtered listing and retrieval by ID."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Response, status
@@ -133,6 +133,18 @@ def list_tickets(
         int | None,
         Query(ge=1, le=2_147_483_647, description="ID целевой бригады заявки."),
     ] = None,
+    target_date: Annotated[
+        date | None,
+        Query(alias="date", description="Фильтр по целевой дате маршрута/визита (МСК)."),
+    ] = None,
+    date_from: Annotated[
+        date | None,
+        Query(description="Начало периода целевой даты (МСК)."),
+    ] = None,
+    date_to: Annotated[
+        date | None,
+        Query(description="Конец периода целевой даты (МСК)."),
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=100, description="Максимум заявок в ответе.")] = 20,
     offset: Annotated[
         int, Query(ge=0, le=2_147_483_647, description="Сколько подходящих заявок пропустить.")
@@ -154,6 +166,9 @@ def list_tickets(
         limit=limit,
         offset=offset,
         brigade_id=brigade_id,
+        target_date=target_date,
+        date_from=date_from,
+        date_to=date_to,
         current_user=current_user,
     )
 
@@ -165,15 +180,28 @@ def create_ticket(
     response: Response,
     current_user: CurrentObserver,
     reverse_geocoder: GeoapifyReverseGeocoder | None = Depends(get_reverse_geocoder),
+    idempotency_key: IdempotencyHeader = None,
 ) -> TicketRead:
-    """Создать заявку на существующее место выполнения из адресного справочника."""
+    """Создать заявку на существующее место выполнения из адресного справочника.
+
+    Повтор с тем же `Idempotency-Key` и тем же телом возвращает уже созданную заявку;
+    тот же ключ с другим телом — 409 `idempotency_conflict`.
+    """
+    key = _idempotency_key(idempotency_key) if idempotency_key is not None else None
     try:
         ticket = service.create_ticket(
             session,
             data,
             actor_id=current_user.id,
             reverse_geocoder=reverse_geocoder,
+            idempotency_key=f"ticket-create:client:{key}" if key else None,
+            replay=key is not None,
         )
+    except service.TicketIdempotencyConflictError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "idempotency_conflict", "event_id": error.event_id},
+        ) from error
     except service.LocationNotFoundError as error:
         raise HTTPException(status_code=422, detail="Место выполнения не найдено") from error
     except service.WorkTypeNotFoundError as error:

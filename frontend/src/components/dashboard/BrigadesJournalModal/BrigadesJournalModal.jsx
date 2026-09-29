@@ -2,96 +2,42 @@
 
 import React, { useState, useEffect } from "react";
 import styles from "./BrigadesJournalModal.module.css";
+import { useBrigadesWorkload } from "@/hooks/useBrigadesWorkload";
+import { useBrigades } from "@/hooks/useBrigades";
 
-const MOCK_JOURNAL_DATA = [
-  {
-    id: 1,
-    name: "Бригада 42-1",
-    foreman: "Иванов Алексей",
-    workersCount: 2,
-    activeTasks: 11,
-    completedToday: 5,
-    status: "overloaded",
-    statusLabel: "Перегружена",
-    statusColor: "#FF3B30",
-    serviceHours: "7.2 ч",
-    travelHours: "1.4 ч",
-    efficiency: "94%",
-  },
-  {
-    id: 2,
-    name: "Бригада 42-2",
-    foreman: "Смирнов Дмитрий",
-    workersCount: 3,
-    activeTasks: 14,
-    completedToday: 8,
-    status: "overloaded",
-    statusLabel: "Перегружена",
-    statusColor: "#FF3B30",
-    serviceHours: "8.1 ч",
-    travelHours: "1.9 ч",
-    efficiency: "98%",
-  },
-  {
-    id: 3,
-    name: "Бригада 42-3",
-    foreman: "Кузнецов Михаил",
-    workersCount: 2,
-    activeTasks: 13,
-    completedToday: 6,
-    status: "overloaded",
-    statusLabel: "Перегружена",
-    statusColor: "#FF3B30",
-    serviceHours: "7.8 ч",
-    travelHours: "1.5 ч",
-    efficiency: "91%",
-  },
-  {
-    id: 4,
-    name: "Бригада 42-4",
-    foreman: "Попов Сергей",
-    workersCount: 2,
-    activeTasks: 14,
-    completedToday: 7,
-    status: "overloaded",
-    statusLabel: "Перегружена",
-    statusColor: "#FF3B30",
-    serviceHours: "7.9 ч",
-    travelHours: "1.6 ч",
-    efficiency: "95%",
-  },
-  {
-    id: 5,
-    name: "Бригада 42-5",
-    foreman: "Васильев Роман",
-    workersCount: 3,
-    activeTasks: 15,
-    completedToday: 9,
-    status: "overloaded",
-    statusLabel: "Перегружена",
-    statusColor: "#FF3B30",
-    serviceHours: "8.4 ч",
-    travelHours: "1.8 ч",
-    efficiency: "96%",
-  },
-  {
-    id: 6,
-    name: "Бригада 42-6",
-    foreman: "Новиков Артем",
-    workersCount: 2,
-    activeTasks: 13,
-    completedToday: 6,
-    status: "overloaded",
-    statusLabel: "Перегружена",
-    statusColor: "#FF3B30",
-    serviceHours: "7.6 ч",
-    travelHours: "1.7 ч",
-    efficiency: "89%",
-  },
-];
+export default function BrigadesJournalModal({
+  isOpen,
+  onClose,
+  date,
+  date_from,
+  date_to,
+  periodLabel,
+  initialSearch = "",
+}) {
+  const [search, setSearch] = useState(initialSearch || "");
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
 
-export default function BrigadesJournalModal({ isOpen, onClose }) {
-  const [search, setSearch] = useState("");
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen);
+    if (isOpen) {
+      setSearch(initialSearch || "");
+    }
+  }
+
+  const { brigades: workloadList = [], isLoading } = useBrigadesWorkload({
+    date,
+    date_from,
+    date_to,
+  });
+  const { brigades = [] } = useBrigades();
+
+  const brigadeForemanMap = React.useMemo(() => {
+    const map = {};
+    brigades.forEach((b) => {
+      map[b.id] = b.foreman_name || "Бригадир";
+    });
+    return map;
+  }, [brigades]);
 
   useEffect(() => {
     if (isOpen) {
@@ -108,7 +54,27 @@ export default function BrigadesJournalModal({ isOpen, onClose }) {
 
   if (!isOpen) return null;
 
-  const filteredBrigades = MOCK_JOURNAL_DATA.filter((b) =>
+  const isPeriod = Boolean(date_from && date_to) || !date;
+
+  const tableData = workloadList.map((item) => {
+    const serviceHours = `${((item.serviceMinutes || 0) / 60).toFixed(1)} ч`;
+    const travelHours = `${((item.travelMinutes || 0) / 60).toFixed(1)} ч`;
+    return {
+      id: item.id,
+      name: item.name,
+      foreman: brigadeForemanMap[item.id] || "Бригадир назначен",
+      workersCount: item.workers || 0,
+      activeTasks: item.activeTasks || 0,
+      completedToday: item.completedToday || 0,
+      status: item.status,
+      statusLabel: item.statusLabel,
+      statusColor: item.color,
+      serviceHours,
+      travelHours,
+    };
+  });
+
+  const filteredBrigades = tableData.filter((b) =>
     b.name.toLowerCase().includes(search.toLowerCase()) ||
     b.foreman.toLowerCase().includes(search.toLowerCase())
   );
@@ -121,10 +87,27 @@ export default function BrigadesJournalModal({ isOpen, onClose }) {
           <div className={styles.titleBlock}>
             <div className={styles.titleRow}>
               <h2 className={styles.title}>Журнал смен и загрузки бригад</h2>
+              {periodLabel && (
+                <span
+                  style={{
+                    background: "rgba(255, 200, 0, 0.15)",
+                    color: "var(--beeline, #ffc800)",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    padding: "2px 8px",
+                    borderRadius: "6px",
+                    border: "1px solid rgba(255, 200, 0, 0.25)",
+                  }}
+                >
+                  {periodLabel}
+                </span>
+              )}
               <span className={styles.badge}>Live</span>
             </div>
             <p className={styles.subtitle}>
-              Оперативная сводка по бригадам, сменам и активным назначениям
+              {isPeriod
+                ? `Среднесуточная сводка по бригадам и сменным назначениям за выбранный период`
+                : "Оперативная сводка по бригадам, сменам и активным назначениям"}
             </p>
           </div>
 
@@ -158,76 +141,78 @@ export default function BrigadesJournalModal({ isOpen, onClose }) {
           </div>
 
           <div className={styles.summaryPill}>
-            Всего активных бригад: <strong style={{ color: "#FFFFFF" }}>{filteredBrigades.length}</strong>
+            Всего бригад в плане: <strong style={{ color: "#FFFFFF" }}>{filteredBrigades.length}</strong>
           </div>
         </div>
 
         {/* Контент: таблица журнала */}
         <div className={styles.content}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th className={styles.th}>Бригада</th>
-                <th className={styles.th}>Бригадир / Состав</th>
-                <th className={styles.th}>В работе</th>
-                <th className={styles.th}>Выполнено</th>
-                <th className={styles.th}>Время в работе</th>
-                <th className={styles.th}>Статус</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredBrigades.map((b) => (
-                <tr key={b.id} className={styles.tr}>
-                  <td className={`${styles.td} ${styles.brigadeNameCell}`}>{b.name}</td>
-                  <td className={styles.td}>
-                    <div>{b.foreman}</div>
-                    <div style={{ fontSize: 11, color: "#8E8E93" }}>{b.workersCount} монтажника</div>
-                  </td>
-                  <td className={styles.td}>
-                    <span style={{ fontWeight: 700, color: "#FFC800" }}>{b.activeTasks}</span> задач
-                  </td>
-                  <td className={styles.td}>
-                    <span style={{ color: "#34C759", fontWeight: 600 }}>{b.completedToday}</span> задач
-                  </td>
-                  <td className={styles.td}>
-                    <div>{b.serviceHours}</div>
-                    <div style={{ fontSize: 11, color: "#8E8E93" }}>+ {b.travelHours} в пути</div>
-                  </td>
-                  <td className={styles.td}>
-                    <span
-                      className={styles.statusBadge}
-                      style={{
-                        backgroundColor: `${b.statusColor}22`,
-                        color: b.statusColor,
-                      }}
-                    >
-                      <span
-                        className={styles.statusDot}
-                        style={{ backgroundColor: b.statusColor }}
-                      />
-                      {b.statusLabel}
-                    </span>
-                  </td>
+          {isLoading && (
+            <div style={{ padding: "40px 20px", textAlign: "center", color: "#8E8E93" }}>
+              Загрузка журнала загрузки бригад...
+            </div>
+          )}
+
+          {!isLoading && filteredBrigades.length === 0 && (
+            <div style={{ padding: "40px 20px", textAlign: "center", color: "#8E8E93" }}>
+              Нет данных о бригадах по текущему фильтру
+            </div>
+          )}
+
+          {!isLoading && filteredBrigades.length > 0 && (
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th className={styles.th}>Бригада</th>
+                  <th className={styles.th}>Бригадир / Состав</th>
+                  <th className={styles.th}>В работе</th>
+                  <th className={styles.th}>Выполнено</th>
+                  <th className={styles.th}>Время в работе</th>
+                  <th className={styles.th}>Статус</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredBrigades.map((b) => (
+                  <tr key={b.id} className={styles.tr}>
+                    <td className={`${styles.td} ${styles.brigadeNameCell}`}>{b.name}</td>
+                    <td className={styles.td}>
+                      <div>{b.foreman}</div>
+                      <div style={{ fontSize: 11, color: "#8E8E93" }}>{b.workersCount} специалистов</div>
+                    </td>
+                    <td className={styles.td}>
+                      <span style={{ fontWeight: 700, color: "#FFC800" }}>{b.activeTasks}</span> задач
+                    </td>
+                    <td className={styles.td}>
+                      <span style={{ color: "#34C759", fontWeight: 600 }}>{b.completedToday}</span> задач
+                    </td>
+                    <td className={styles.td}>
+                      <div>{b.serviceHours}</div>
+                      <div style={{ fontSize: 11, color: "#8E8E93" }}>+ {b.travelHours} в пути</div>
+                    </td>
+                    <td className={styles.td}>
+                      <span
+                        className={styles.statusBadge}
+                        style={{
+                          backgroundColor: `${b.statusColor}22`,
+                          color: b.statusColor,
+                        }}
+                      >
+                        <span
+                          className={styles.statusDot}
+                          style={{ backgroundColor: b.statusColor }}
+                        />
+                        {b.statusLabel}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
         {/* Футер */}
         <div className={styles.footer}>
-          <button
-            type="button"
-            className={styles.exportBtn}
-            onClick={() => alert("Выгрузка журнала сформирована")}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            <span>Экспорт в Excel</span>
-          </button>
           <button
             type="button"
             className={styles.doneBtn}

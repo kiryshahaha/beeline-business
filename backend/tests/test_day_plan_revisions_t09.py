@@ -18,11 +18,13 @@ from app.core.security import create_access_token
 from app.db.models import DayPlanRevision, PlanningPlan, Route, ServiceArea, Ticket, TicketAppliance
 from app.db.session import get_session
 from app.main import app
+from app.modules.brigades.models import Brigade, BrigadeMember
 from app.modules.data_exchange.formats import parse_file, serialize
 from app.modules.data_exchange.service import import_data
 from app.modules.execution.models import WorkEvent
 from app.modules.planning import day_plans
 from app.modules.planning import router as api
+from app.modules.users.models import Worker
 from planning_scenarios import NOW, ROUTE_DATE, generate_planning_dataset, preview_request
 from tests.exchange_samples import add_journal_samples
 from tests.planning_fakes import FeasiblePlanner, provider_factory
@@ -157,6 +159,7 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         window=None,
         work_type="1",
         sla_deadline_at="2030-01-15T18:00:00+03:00",
+        response_deadline_at=None,
     ):
         window_start, window_end = window or (
             "2030-01-15T11:00:00+03:00",
@@ -173,6 +176,7 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
                 "category": category,
                 "priority": 1 if category == "emergency" else 3,
                 "received_at": self.now.isoformat(),
+                "response_deadline_at": response_deadline_at,
                 "sla_deadline_at": sla_deadline_at,
                 "visit_window_start": window_start,
                 "visit_window_end": window_end,
@@ -536,6 +540,265 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         self.assertEqual(plans_after, plans_before)
         self.assertEqual(current_revision, initial["day_revision"])
 
+    def test_window_experiment_reuses_the_same_routing_matrix(self):
+        initial = self.apply(self.preview())
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        ticket_id = current["visits"][0]["ticket_id"]
+        matrix_requests = []
+        base_factory = provider_factory
+
+        def recording_factory():
+            context = base_factory()
+
+            class RecordingContext:
+                async def __aenter__(context_self):
+                    provider = await context.__aenter__()
+                    build_route_matrix = provider.build_route_matrix
+
+                    async def record_matrix(*, sources, targets, mode):
+                        matrix_requests.append(
+                            (
+                                mode,
+                                tuple(tuple(point) for point in sources),
+                                tuple(tuple(point) for point in targets),
+                            )
+                        )
+                        return await build_route_matrix(sources=sources, targets=targets, mode=mode)
+
+                    provider.build_route_matrix = record_matrix
+                    return provider
+
+                async def __aexit__(context_self, exc_type, exc_value, traceback):
+                    return await context.__aexit__(exc_type, exc_value, traceback)
+
+            return RecordingContext()
+
+        app.dependency_overrides[api.get_provider_factory] = lambda: recording_factory
+        response = self.client.post(
+            self.day_url("/window-experiment"),
+            json={
+                "base_day_revision": initial["day_revision"],
+                "allow_partial": True,
+                "windows": [
+                    {
+                        "ticket_id": ticket_id,
+                        "visit_window_start": "2030-01-15T00:00:00+03:00",
+                        "visit_window_end": "2030-01-15T23:59:00+03:00",
+                    }
+                ],
+            },
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(matrix_requests)
+        self.assertEqual(
+            len(matrix_requests),
+            len(set(matrix_requests)),
+            "baseline and experiment must use one captured road matrix",
+        )
+
+    def test_window_experiment_rejects_stale_or_invalid_windows(self):
+        initial = self.apply(self.preview())
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        ticket_id = current["visits"][0]["ticket_id"]
+        with Session(self.engine) as session:
+            ticket = session.get(Ticket, ticket_id)
+            original_start = ticket.visit_window_start
+            original_end = ticket.visit_window_end
+
+        invalid_requests = [
+            (
+                initial["day_revision"],
+                ticket_id,
+                "2030-01-15T11:01:00+03:00",
+                "2030-01-15T17:00:00+03:00",
+                "experimental_window_must_only_expand",
+            ),
+            (
+                initial["day_revision"],
+                ticket_id,
+                "2030-01-15T08:00:00+03:00",
+                "2030-01-16T00:00:00+03:00",
+                "experimental_window_outside_day",
+            ),
+            (
+                initial["day_revision"],
+                2_147_483_647,
+                "2030-01-15T08:00:00+03:00",
+                "2030-01-15T23:59:00+03:00",
+                "experimental_ticket_not_in_day",
+            ),
+            (
+                initial["day_revision"] - 1,
+                ticket_id,
+                "2030-01-15T08:00:00+03:00",
+                "2030-01-15T23:59:00+03:00",
+                "day_revision_stale",
+            ),
+        ]
+        for revision, selected_ticket, start, end, expected_code in invalid_requests:
+            with self.subTest(expected_code=expected_code):
+                response = self.client.post(
+                    self.day_url("/window-experiment"),
+                    json={
+                        "base_day_revision": revision,
+                        "allow_partial": True,
+                        "windows": [
+                            {
+                                "ticket_id": selected_ticket,
+                                "visit_window_start": start,
+                                "visit_window_end": end,
+                            }
+                        ],
+                    },
+                    headers=self.headers,
+                )
+                self.assertIn(response.status_code, (409, 422), response.text)
+                self.assertEqual(response.json()["detail"]["code"], expected_code)
+
+        with Session(self.engine) as session:
+            ticket = session.get(Ticket, ticket_id)
+            self.assertEqual(ticket.visit_window_start, original_start)
+            self.assertEqual(ticket.visit_window_end, original_end)
+
+    def test_replan_transfer_publishes_geojson_for_the_new_worker(self):
+        initial = self.apply(self.preview())
+        before = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        original_visit = before["visits"][0]
+        ticket_id = original_visit["ticket_id"]
+        original_worker_id = original_visit["worker_id"]
+        original_route_id = original_visit["route_id"]
+        original_geojson = self.client.get(
+            f"/api/v1/routes/{original_route_id}/geojson", headers=self.headers
+        ).json()
+
+        with Session(self.engine) as session, session.begin():
+            workers = {
+                worker.user_id: worker
+                for worker in session.scalars(
+                    select(Worker).where(Worker.user_id.in_(self.payload["worker_ids"]))
+                )
+            }
+            brigade_by_worker = {
+                row.worker_id: row.brigade_id
+                for row in session.scalars(
+                    select(BrigadeMember).where(
+                        BrigadeMember.worker_id.in_(self.payload["worker_ids"])
+                    )
+                )
+            }
+            target_worker_id = next(
+                worker_id
+                for worker_id in self.payload["worker_ids"]
+                if worker_id != original_worker_id
+            )
+            target_brigade_id = brigade_by_worker[target_worker_id]
+            target_worker = workers[target_worker_id]
+            target_office_id = (
+                target_worker.stock_office_id or session.get(Brigade, target_brigade_id).office_id
+            )
+            ticket = session.get(Ticket, ticket_id)
+            ticket.brigade_id = target_brigade_id
+            allocations = session.scalars(
+                select(TicketAppliance).where(TicketAppliance.ticket_id == ticket_id)
+            ).all()
+            for allocation in allocations:
+                allocation.office_id = target_office_id
+
+        preview_response = self.client.post(
+            self.day_url("/replan/preview"),
+            json={"base_day_revision": initial["day_revision"], "allow_partial": True},
+            headers=self.headers,
+        )
+        self.assertEqual(preview_response.status_code, 201, preview_response.text)
+        proposal = preview_response.json()
+        transfer = next(
+            item for item in proposal["replan_diff"]["changed"] if item["ticket_id"] == ticket_id
+        )
+        self.assertEqual(
+            transfer["changes"]["worker_id"],
+            {"from": original_worker_id, "to": target_worker_id},
+        )
+
+        self.apply(proposal)
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        moved_visit = next(visit for visit in current["visits"] if visit["ticket_id"] == ticket_id)
+        self.assertEqual(moved_visit["worker_id"], target_worker_id)
+        self.assertNotEqual(moved_visit["route_id"], original_route_id)
+
+        old_route = self.client.get(
+            f"/api/v1/routes/{original_route_id}", headers=self.headers
+        ).json()
+        self.assertFalse(old_route["is_current_plan"])
+        self.assertEqual(
+            self.client.get(
+                f"/api/v1/routes/{original_route_id}/geojson", headers=self.headers
+            ).json(),
+            original_geojson,
+        )
+
+        target_route = self.client.get(
+            f"/api/v1/routes/{moved_visit['route_id']}", headers=self.headers
+        ).json()
+        target_geojson = self.client.get(
+            f"/api/v1/routes/{moved_visit['route_id']}/geojson", headers=self.headers
+        ).json()
+        self.assertEqual(target_route["worker_id"], target_worker_id)
+        self.assertEqual(target_route["day_revision"], current["revision"])
+        self.assertTrue(target_route["is_current_plan"])
+        target_ticket_ids = [
+            feature["properties"].get("ticket_id")
+            for feature in target_geojson["features"]
+            if feature["geometry"]["type"] == "Point"
+            and feature["properties"].get("ticket_id") is not None
+        ]
+        expected_ticket_ids = [
+            visit["ticket_id"]
+            for visit in sorted(current["visits"], key=lambda visit: visit["sequence"])
+            if visit["route_id"] == moved_visit["route_id"]
+        ]
+        self.assertEqual(target_ticket_ids, expected_ticket_ids)
+        self.assertIn(ticket_id, target_ticket_ids)
+
+        original_worker_route_ids = {
+            visit["route_id"]
+            for visit in current["visits"]
+            if visit["worker_id"] == original_worker_id
+        }
+        for route_id in original_worker_route_ids:
+            route_geojson = self.client.get(
+                f"/api/v1/routes/{route_id}/geojson", headers=self.headers
+            ).json()
+            self.assertNotIn(
+                ticket_id,
+                [
+                    feature["properties"].get("ticket_id")
+                    for feature in route_geojson["features"]
+                    if feature["geometry"]["type"] == "Point"
+                ],
+            )
+
+        point_positions = [
+            feature["geometry"]["coordinates"]
+            for feature in sorted(
+                [
+                    feature
+                    for feature in target_geojson["features"]
+                    if feature["geometry"]["type"] == "Point"
+                ],
+                key=lambda feature: feature["properties"]["sequence"],
+            )
+        ]
+        path = next(
+            feature
+            for feature in target_geojson["features"]
+            if feature["geometry"]["type"] == "MultiLineString"
+        )
+        path_positions = [position for line in path["geometry"]["coordinates"] for position in line]
+        self.assertEqual(path_positions[0], point_positions[0])
+        self.assertEqual(path_positions[-1], point_positions[-1])
+
     def test_empty_replan_unassigns_pending_tickets_without_cancelling_them(self):
         initial = self.apply(self.preview())
         with Session(self.engine) as session, session.begin():
@@ -663,7 +926,8 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
     def test_midday_replan_keeps_completed_visit_and_uses_confirmed_location_and_time(self):
         initial = self.apply(self.preview())
         day_state = self.client.get(self.day_url("/current"), headers=self.headers).json()
-        completed_visit = day_state["visits"][0]
+        visits = sorted(day_state["visits"], key=lambda visit: visit["service_start_at"])
+        completed_visit = visits[0]
         ticket_id = completed_visit["ticket_id"]
         worker_id = completed_visit["worker_id"]
         with Session(self.engine) as session:
@@ -712,13 +976,33 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
             "Авария после завершённого выезда",
             brigade_id=self.receipt["id_map"]["brigades"]["1"],
         )
-        preview_response = self.client.post(
-            self.day_url("/replan/preview"),
-            json={"base_day_revision": initial["day_revision"]},
-            headers=self.headers,
+        preview_response = self.event_preview(
+            emergency["id"], base_day_revision=initial["day_revision"]
         )
         self.assertEqual(preview_response.status_code, 201, preview_response.text)
-        proposal = preview_response.json()
+        emergency_preview = preview_response.json()
+        event_result = emergency_preview["event"]
+        proposal = emergency_preview["plan"]
+        self.assertTrue(event_result["can_apply"])
+        self.assertEqual(event_result["selection_reason"]["code"], "emergency_response_priority")
+        self.assertEqual(
+            event_result["selection_reason"]["selected_worker_id"],
+            event_result["selected_slot"]["worker_id"],
+        )
+        self.assertEqual(event_result["sla_forecast"]["response_target_minutes"], 120)
+        self.assertTrue(event_result["sla_forecast"]["response_deadline_met"])
+        self.assertEqual(
+            datetime.fromisoformat(event_result["sla_forecast"]["response_deadline_at"]),
+            datetime.fromisoformat(emergency["response_deadline_at"]),
+        )
+        self.assertEqual(
+            datetime.fromisoformat(event_result["sla_forecast"]["visit_window_start"]),
+            datetime.fromisoformat(emergency["visit_window_start"]),
+        )
+        self.assertEqual(
+            datetime.fromisoformat(event_result["sla_forecast"]["visit_window_end"]),
+            datetime.fromisoformat(emergency["visit_window_end"]),
+        )
         self.assertEqual(proposal["metrics"]["available_workers"], 4)
         self.assertIn(
             emergency["id"],
@@ -737,6 +1021,10 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
                 for visit in route["stops"]
             )
         )
+        self.assertEqual(proposal["replan_diff"]["ticket_event"]["ticket_id"], emergency["id"])
+        self.assertTrue(proposal["replan_diff"]["emergency_sla_forecasts"])
+        before_apply = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        self.assertEqual(before_apply["revision"], initial["day_revision"])
 
         applied = self.apply(proposal)
         current = self.client.get(self.day_url("/current"), headers=self.headers).json()
@@ -1196,6 +1484,8 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         preview = preview_response.json()
         self.assertEqual(preview["event"]["outcome"], "emergency_unassigned")
         self.assertFalse(preview["event"]["can_apply"])
+        self.assertEqual(preview["event"]["sla_forecast"]["response_sla_status"], "unassigned")
+        self.assertFalse(preview["event"]["sla_forecast"]["response_deadline_met"])
         apply_response = self.client.post(
             f"/api/v1/planning/plans/{preview['plan']['plan_id']}/apply",
             headers=self.headers,
@@ -1227,6 +1517,11 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         )
         self.assertEqual(preview["event"]["ticket_id"], ticket["id"])
         self.assertIsNotNone(preview["event"]["sla_forecast"])
+        self.assertEqual(preview["event"]["sla_forecast"]["response_target_minutes"], 120)
+        self.assertIsInstance(preview["event"]["sla_forecast"]["response_deadline_met"], bool)
+        self.assertEqual(
+            preview["event"]["selection_reason"]["code"], "emergency_response_priority"
+        )
 
         applied = self.apply(preview["plan"])
 
@@ -1246,3 +1541,29 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
             self.assertEqual(source_event.event_type.value, "new_ticket")
             self.assertEqual(source_event.ticket_id, ticket["id"])
         self.assertEqual(applied["day_revision"], initial["day_revision"] + 1)
+
+    def test_60_minute_response_target_missed_due_to_customer_window_is_explicit(self):
+        initial = self.apply(self.preview())
+        ticket = self.create_ticket(
+            "Авария с окном позже 60-минутного норматива",
+            response_deadline_at=(self.now + timedelta(minutes=60)).isoformat(),
+            window=("2030-01-15T11:00:00+03:00", "2030-01-15T17:00:00+03:00"),
+        )
+
+        response = self.event_preview(ticket["id"], base_day_revision=initial["day_revision"])
+
+        self.assertEqual(response.status_code, 201, response.text)
+        preview = response.json()
+        self.assertFalse(preview["event"]["can_apply"])
+        self.assertEqual(preview["event"]["outcome"], "emergency_unassigned")
+        forecast = preview["event"]["sla_forecast"]
+        self.assertEqual(forecast["response_target_minutes"], 60)
+        self.assertFalse(forecast["response_deadline_met"])
+        self.assertEqual(forecast["response_sla_status"], "unassigned")
+        self.assertIsNotNone(forecast["unassigned_reason"])
+        self.assertEqual(
+            datetime.fromisoformat(forecast["visit_window_start"]),
+            datetime.fromisoformat(ticket["visit_window_start"]),
+        )
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        self.assertEqual(current["revision"], initial["day_revision"])

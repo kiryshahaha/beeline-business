@@ -1,42 +1,33 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Beeline Business — пользовательские интерфейсы
 
-Описание текущих файлов на русском: [src/README.md](src/README.md).
-Сейчас здесь стартовая страница Next.js, без готового интерфейса диспетчера.
-`package.json` задаёт команды dev/build/start/lint; `package-lock.json` фиксирует
-зависимости; `next.config.mjs` и `eslint.config.mjs` содержат настройки;
-`public/` — статические файлы. CI проверяет `npm ci`, `npm run lint`, `npm run build`.
+Frontend построен на Next.js 16, React 19 и MapLibre. Он предоставляет два отдельных интерфейса для разных ролей и несколько общих рабочих представлений.
 
-## Getting Started
+## Диспетчерское рабочее место
 
-First, run the development server:
+Диспетчер работает с картой заявок и исполнителей, распределением заявок по временной шкале, планированием, аналитикой и рабочими статусами. Роли диспетчера и администратора управляют заявками и планом; у бригадира ограничены операции изменения.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Приложение инженера
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Для роли worker доступно отдельное адаптивное приложение с разделами:
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+- «Мой день»: смена, текущая и следующая заявка, состояние маршрута и список работ на сегодня или завтра.
+- Маршрут и карта собственных остановок.
+- Карточки заявок, комментарии, история изменений и рабочие действия.
+- Оборудование, уведомления, профиль и чат-помощник.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Ролевая маршрутизация не просто меняет название страницы: диспетчер получает инструменты управления командой, инженер — персональный рабочий поток.
 
-## Learn More
+## Чат-помощник
 
-To learn more about Next.js, take a look at the following resources:
+Чат встроен в интерфейс инженера. Backend передаёт помощнику только разрешённый для роли контекст. Вопросы о данных дня могут отвечаться из фактов системы; процедурные вопросы используют ролевую базу знаний и языковую модель. Это помогает сотруднику освоить новый процесс непосредственно во время работы. Assistant/Ollama должен быть включён для доступа к чату; сгенерированные инструкции не заменяют утверждённые правила компании.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Запуск и настройка
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Из каталога frontend установите зависимости и запустите приложение разработки:
 
-## Deploy on Vercel
+    npm ci
+    npm run dev
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+По умолчанию frontend доступен на http://localhost:3000. Базовый адрес backend задаётся через NEXT_PUBLIC_API_URL. Для картографической подложки может потребоваться NEXT_PUBLIC_MAPTILER_API_KEY. Планирование дополнительно зависит от настроек backend, planner и Geoapify; frontend не обращается к оптимизатору напрямую.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Проверки интерфейса выполняются командами npm run lint и npm run build.

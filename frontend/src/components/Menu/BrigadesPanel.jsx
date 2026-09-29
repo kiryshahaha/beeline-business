@@ -170,8 +170,8 @@ export const BrigadesPanel = ({
                             >
                                 <div className={styles.brigadeCardHeader}>
                                     <span className={styles.brigadeName}>{brigade.name}</span>
-                                    <div className={`${styles.brigadeBadge} ${brigade.worker_ids?.length >= 10 ? styles.badgeFull : ''}`}>
-                                        <span className={styles.badgeHighlight}>{brigade.worker_ids?.length || 0}/10</span> назначены
+                                    <div className={styles.brigadeBadge}>
+                                        <span className={styles.badgeHighlight}>{brigade.worker_ids?.length || 0}</span> специалистов
                                     </div>
                                 </div>
                                 <div className={styles.separator}></div>

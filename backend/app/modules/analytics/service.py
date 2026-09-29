@@ -1,7 +1,7 @@
 """Business rules for ticket analytics."""
 
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
@@ -111,15 +111,9 @@ def get_fast_stats(
     return FastStats(**data)
 
 
-def get_brigades_workload(
-    session: Session,
-    *,
-    current_user: UserRead,
-    day: date | None = None,
+def _calculate_single_day_workload(
+    session: Session, *, current_user: UserRead, day: date
 ) -> list[BrigadeWorkloadItem]:
-    """Capacity and load of each visible brigade for one date, from the same worker
-    days the schedule shows: the planner's shift, saved routes and dated absences."""
-    day = day or today()
     visible, brigade_id = _foreman_brigade(session, current_user)
     if not visible:
         return []
@@ -161,6 +155,135 @@ def get_brigades_workload(
             )
         )
     return result
+
+
+def get_brigades_workload(
+    session: Session,
+    *,
+    current_user: UserRead,
+    day: date | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[BrigadeWorkloadItem]:
+    """Capacity and load of each visible brigade for one date or averaged across a date range."""
+    # Если явно передан диапазон date_from и date_to, считаем среднее за период
+    if date_from is not None and date_to is not None:
+        start, end = date_from, date_to
+        if start > end:
+            start, end = end, start
+        if (end - start).days > 31:
+            start = end - timedelta(days=30)
+        days_count = (end - start).days + 1
+        if days_count == 1:
+            return _calculate_single_day_workload(session, current_user=current_user, day=start)
+
+        daily_results: list[list[BrigadeWorkloadItem]] = []
+        cur = start
+        while cur <= end:
+            daily_results.append(
+                _calculate_single_day_workload(session, current_user=current_user, day=cur)
+            )
+            cur += timedelta(days=1)
+
+        aggregated: dict[int, dict] = defaultdict(
+            lambda: {
+                "brigade_name": "",
+                "workers": 0,
+                "available_workers": 0,
+                "tickets": 0,
+                "shift_minutes": 0,
+                "service_minutes": 0,
+                "travel_minutes": 0,
+                "waiting_minutes": 0,
+                "free_minutes": 0,
+                "overtime_minutes": 0,
+                "conflicts": 0,
+                "active_tickets": 0,
+                "completed_today": 0,
+            }
+        )
+
+        for day_items in daily_results:
+            for item in day_items:
+                acc = aggregated[item.brigade_id]
+                acc["brigade_name"] = item.brigade_name
+                acc["workers"] = max(acc["workers"], item.workers)
+                acc["available_workers"] += item.available_workers
+                acc["tickets"] += item.tickets
+                acc["shift_minutes"] += item.shift_minutes
+                acc["service_minutes"] += item.service_minutes
+                acc["travel_minutes"] += item.travel_minutes
+                acc["waiting_minutes"] += item.waiting_minutes
+                acc["free_minutes"] += item.free_minutes
+                acc["overtime_minutes"] += item.overtime_minutes
+                acc["conflicts"] += item.conflicts
+                acc["active_tickets"] += item.active_tickets
+                acc["completed_today"] += item.completed_today
+
+        result = []
+        for brigade_id, acc in aggregated.items():
+            result.append(
+                BrigadeWorkloadItem(
+                    brigade_id=brigade_id,
+                    brigade_name=acc["brigade_name"],
+                    date=end,
+                    workers=acc["workers"],
+                    available_workers=round(acc["available_workers"] / days_count),
+                    tickets=round(acc["tickets"] / days_count),
+                    shift_minutes=round(acc["shift_minutes"] / days_count),
+                    service_minutes=round(acc["service_minutes"] / days_count),
+                    travel_minutes=round(acc["travel_minutes"] / days_count),
+                    waiting_minutes=round(acc["waiting_minutes"] / days_count),
+                    free_minutes=round(acc["free_minutes"] / days_count),
+                    overtime_minutes=round(acc["overtime_minutes"] / days_count),
+                    conflicts=round(acc["conflicts"] / days_count),
+                    active_tickets=round(acc["active_tickets"] / days_count),
+                    completed_today=round(acc["completed_today"] / days_count),
+                )
+            )
+        return result
+
+    # Если передан один конкретный день
+    if day is not None:
+        return _calculate_single_day_workload(session, current_user=current_user, day=day)
+
+    # Если ни date, ни date_from, ни date_to не переданы (дефолт / "Все данные")
+    from sqlalchemy import text
+
+    min_date_row = session.execute(
+        text("""
+            SELECT 
+                LEAST(
+                    (SELECT min(route_date) FROM routes),
+                    (
+                        SELECT min(
+                            (
+                                COALESCE(planned_start_at, visit_window_start)
+                                AT TIME ZONE 'Europe/Moscow'
+                            )::date
+                        )
+                        FROM tickets
+                    )
+                ),
+                GREATEST(
+                    (SELECT max(route_date) FROM routes),
+                    (
+                        SELECT max(
+                            (
+                                COALESCE(planned_start_at, visit_window_start)
+                                AT TIME ZONE 'Europe/Moscow'
+                            )::date
+                        )
+                        FROM tickets
+                    )
+                )
+        """)
+    ).fetchone()
+    if min_date_row and min_date_row[0] and min_date_row[1]:
+        return get_brigades_workload(
+            session, current_user=current_user, date_from=min_date_row[0], date_to=min_date_row[1]
+        )
+    return _calculate_single_day_workload(session, current_user=current_user, day=today())
 
 
 def _person(row: RowMapping, prefix: str) -> ActivityPerson | None:

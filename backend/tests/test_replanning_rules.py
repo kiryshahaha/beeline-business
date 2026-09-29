@@ -463,6 +463,97 @@ class OrdinaryInsertRulesTests(unittest.TestCase):
                 )
                 self.assertEqual(estimate["service_deadline_met"], case["expected_deadline_met"])
 
+    def test_emergency_response_estimate_uses_service_start_and_ticket_deadline(self):
+        estimate = emergency_response_estimates(
+            {
+                "tickets": [
+                    {
+                        "id": 61,
+                        "category": "emergency",
+                        "received_at": "2030-01-15T09:00:00+03:00",
+                        "response_deadline_at": "2030-01-15T10:00:00+03:00",
+                    }
+                ]
+            },
+            {
+                "routes": [
+                    {
+                        "stops": [
+                            {
+                                "ticket_id": 61,
+                                "arrival_at": "2030-01-15T09:30:00+03:00",
+                                "service_start_at": "2030-01-15T10:01:00+03:00",
+                                "service_end_at": "2030-01-15T10:31:00+03:00",
+                            }
+                        ]
+                    }
+                ],
+                "unassigned": [],
+            },
+        )[0]
+
+        self.assertEqual(estimate["reaction_to_service_start_minutes"], 61)
+        self.assertFalse(estimate["response_deadline_met"])
+        self.assertEqual(estimate["response_lateness_minutes"], 1)
+        self.assertFalse(estimate["within_60_minutes_to_service_start"])
+        self.assertTrue(estimate["within_120_minutes_to_service_start"])
+
+    def test_emergency_response_does_not_hide_a_pre_receipt_arrival(self):
+        estimate = emergency_response_estimates(
+            {
+                "tickets": [
+                    {
+                        "id": 62,
+                        "category": "emergency",
+                        "received_at": "2030-01-15T10:00:00+03:00",
+                        "response_deadline_at": "2030-01-15T11:00:00+03:00",
+                    }
+                ]
+            },
+            {
+                "routes": [
+                    {
+                        "stops": [
+                            {
+                                "ticket_id": 62,
+                                "arrival_at": "2030-01-15T09:50:00+03:00",
+                                "service_start_at": "2030-01-15T10:05:00+03:00",
+                                "service_end_at": "2030-01-15T10:35:00+03:00",
+                            }
+                        ]
+                    }
+                ],
+                "unassigned": [],
+            },
+        )[0]
+
+        self.assertEqual(estimate["reaction_to_arrival_minutes"], -10)
+        self.assertEqual(estimate["reaction_to_service_start_minutes"], 5)
+        self.assertTrue(estimate["response_timeline_valid"])
+        self.assertTrue(estimate["response_deadline_met"])
+        self.assertFalse(estimate["within_60_minutes_to_arrival"])
+        self.assertTrue(estimate["within_60_minutes_to_service_start"])
+
+    def test_unassigned_emergency_reports_response_target_as_unmet(self):
+        estimate = emergency_response_estimates(
+            {
+                "tickets": [
+                    {
+                        "id": 63,
+                        "category": "emergency",
+                        "received_at": "2030-01-15T10:00:00+03:00",
+                        "response_deadline_at": "2030-01-15T11:00:00+03:00",
+                    }
+                ]
+            },
+            {"routes": [], "unassigned": [{"ticket_id": 63, "reason": {"code": "no_slot"}}]},
+        )[0]
+
+        self.assertEqual(estimate["status"], "unassigned")
+        self.assertEqual(estimate["response_sla_status"], "unassigned")
+        self.assertFalse(estimate["response_deadline_met"])
+        self.assertEqual(estimate["response_target_minutes"], 60)
+
 
 if __name__ == "__main__":
     unittest.main()

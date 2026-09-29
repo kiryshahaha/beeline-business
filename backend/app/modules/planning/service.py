@@ -4,6 +4,7 @@ import asyncio
 import copy
 import logging
 import time
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from math import ceil
 from uuid import UUID, uuid4
@@ -43,6 +44,7 @@ from app.modules.planning.models import PlanningPlan, PlanningPlanRoute
 from app.modules.planning.policy import execution_policy, policy_snapshot, snapshot_policy
 from app.modules.planning.reasons import legacy_public
 from app.modules.planning.repository import TICKET_LOCAL_DAY, load_snapshot
+from app.modules.planning.response_sla import response_sla
 from app.modules.planning.schemas import PreviewRequest
 from app.modules.planning.slot_finder import find_regular_ticket_slot
 from app.modules.planning.snapshot import fingerprint, normalize
@@ -61,14 +63,17 @@ logger = logging.getLogger(__name__)
 MOSCOW = ZoneInfo("Europe/Moscow")
 
 
+RESCHEDULE_REASONS = {
+    "event_replan": "Маршрут пересчитан из-за изменения условий",
+    "emergency_replan": "Маршрут пересчитан из-за аварийной заявки",
+    "ticket_inserted": "В маршрут добавлена новая заявка",
+}
+
+
 def _notify_rescheduled_tickets(session: Session, revision: DayPlanRevision) -> None:
     """Notify assigned workers when a published service start moves by >= 15 minutes."""
     changes = (revision.diff or {}).get("changed", [])
-    reason_text = (
-        "Маршрут пересчитан из-за изменения условий"
-        if revision.reason == "event_replan"
-        else "Опубликован новый план маршрута"
-    )
+    reason_text = RESCHEDULE_REASONS.get(revision.reason, "Опубликован новый план маршрута")
     for change in changes:
         fields = change.get("changes", {})
         start_change = fields.get("service_start_at")
@@ -90,7 +95,46 @@ def _notify_rescheduled_tickets(session: Session, revision: DayPlanRevision) -> 
                 "from": previous.isoformat(),
                 "to": current.isoformat(),
                 "reason_text": reason_text,
+                # The worker's notice and the dispatcher's day history name one revision.
+                "service_area_id": revision.service_area_id,
+                "route_date": revision.route_date.isoformat(),
+                "day_revision": revision.revision,
             },
+        )
+
+
+def unassigned_reasons_of(plan) -> dict[int, str | None]:
+    # Plans saved before structured reasons keep the code as a plain string.
+    return {
+        item["ticket_id"]: (
+            item["reason"].get("code") if isinstance(item["reason"], dict) else item["reason"]
+        )
+        for item in plan.result_snapshot["public"].get("unassigned", [])
+    }
+
+
+def _notify_dropped_tickets(session, dropped, reasons, revision) -> None:
+    """Tell each engineer which ticket the replan took off his route and why."""
+    for ticket_id, worker_id, title in dropped:
+        if worker_id is None:
+            continue
+        data = {
+            "title": title,
+            "reason_text": "Заявка снята с маршрута при перепланировании",
+            "unassigned_reason": reasons.get(ticket_id),
+        }
+        if revision is not None:
+            data.update(
+                service_area_id=revision.service_area_id,
+                route_date=revision.route_date.isoformat(),
+                day_revision=revision.revision,
+            )
+        ticket_repository.add_notification_events(
+            session,
+            [worker_id],
+            kind=NotificationKind.TICKET_UNASSIGNED,
+            ticket_id=ticket_id,
+            data=data,
         )
 
 
@@ -350,7 +394,7 @@ async def find_regular_ticket_insertion(
     snapshot, ticket_id, settings, provider_factory, clock=utc_now
 ):
     """Run shared eligibility and matrix checks, then choose one immutable route gap."""
-    prepared = prepare(snapshot, clock())
+    prepared = prepare(snapshot, clock(), estimate_active_stage=True)
     ticket = next((item for item in prepared["tickets"] if item["id"] == ticket_id), None)
     if ticket is None:
         rejection = next(
@@ -413,11 +457,17 @@ async def find_regular_ticket_insertion(
                 "available_appliances": {},
                 "shift_start_at": worker["shift_start"],
                 "shift_end_at": worker["shift_end"],
+                # After a current stage the route starts no earlier than its estimated end.
+                "available_at": prepared["epoch"] + timedelta(minutes=worker["window"][0]),
                 "office_location_id": office["location_id"] if office else None,
             }
         )
 
-    visits_by_id = {item["id"]: item for item in raw_tickets.values()}
+    # The ticket of a trip in progress is not replanned, but its place anchors the route.
+    visits_by_id = {
+        **{item["id"]: item for item in snapshot["busy_tickets"]},
+        **raw_tickets,
+    }
     baseline_state = dict(snapshot.get("current_day_state") or {})
     enriched_visits = []
     for visit in baseline_state.get("visits", []):
@@ -448,6 +498,7 @@ async def find_regular_ticket_insertion(
         travel_time_fn=travel_time,
         office_location_id=office_location_id,
         now=clock(),
+        return_to_office=snapshot_policy(snapshot).route_end == "return_to_brigade_office",
     )
     return result, prepared, None
 
@@ -530,11 +581,29 @@ def _pin_existing_visits_for_ordinary_insert(
             continue
         worker_index = workers.get(visit.get("worker_id"))
         if worker_index is None or worker_index not in ticket["allowed"]:
+            # Name the engineer and why the visit cannot stay with him.
+            cause = next(
+                (
+                    item["reason"]
+                    for item in prepared["excluded_workers"]
+                    if item["worker_id"] == visit.get("worker_id")
+                ),
+                None,
+            ) or next(
+                (
+                    item["reason"]
+                    for item in ticket.get("rejected", [])
+                    if item["worker_id"] == visit.get("worker_id")
+                ),
+                None,
+            )
             raise PlanningError(
                 "ordinary_insert_existing_visit_conflict",
                 409,
                 ticket_id=min(new_ticket_ids) if new_ticket_ids else None,
                 conflicting_ticket_id=visit["ticket_id"],
+                worker_id=visit.get("worker_id"),
+                worker_reason=cause,
             )
         proposed_visit = proposed_visits.get(visit["ticket_id"], visit)
         service_start = proposed_visit.get("service_start_at")
@@ -607,8 +676,13 @@ async def preview(
         )
     else:
         snapshot = snapshot_override
-    prepared = prepare(snapshot, clock())
-    ordinary_insert_ids = _ordinary_insert_ticket_ids(snapshot) if request.replan else None
+    prepared = prepare(snapshot, clock(), estimate_active_stage=event_insertion is not None)
+    if event_insertion is not None:
+        # The event names its ticket, even if it was already waiting in the area when an
+        # earlier revision was published.
+        ordinary_insert_ids = {event_insertion.ticket_id}
+    else:
+        ordinary_insert_ids = _ordinary_insert_ticket_ids(snapshot) if request.replan else None
     required_existing_ids = None
     if ordinary_insert_ids is not None:
         required_existing_ids = _pin_existing_visits_for_ordinary_insert(
@@ -826,6 +900,8 @@ async def preview(
                 "category": ticket.get("category"),
                 "received_at": ticket.get("received_at"),
                 "response_deadline_at": ticket.get("response_deadline_at"),
+                "visit_window_start": ticket.get("visit_window_start"),
+                "visit_window_end": ticket.get("visit_window_end"),
             }
             for ticket in snapshot.get("tickets", [])
         }
@@ -839,7 +915,7 @@ async def preview(
 
     if ticket_event is not None:
         public["ticket_event"] = build_ticket_event_result(
-            ticket_event, snapshot, prepared, public, event_insertion
+            ticket_event, snapshot, prepared, public, event_insertion, now=clock()
         )
         if public.get("replan_diff") is not None:
             public["replan_diff"]["ticket_event"] = public["ticket_event"]
@@ -926,15 +1002,14 @@ def emergency_response_estimates(snapshot: dict, public: dict) -> list[dict]:
             else None
         )
         arrival_minutes = (
-            max(0, ceil((arrival - received).total_seconds() / 60))
+            ceil((arrival - received).total_seconds() / 60)
             if arrival is not None and received is not None
             else None
         )
-        service_minutes = (
-            max(0, ceil((service_start - received).total_seconds() / 60))
-            if service_start is not None and received is not None
-            else None
-        )
+        response = response_sla(received, ticket.get("response_deadline_at"), service_start)
+        if stop is None and ticket.get("response_deadline_at") is not None:
+            response["response_deadline_met"] = False
+            response["response_sla_status"] = "unassigned"
         estimates.append(
             {
                 "ticket_id": ticket["id"],
@@ -942,13 +1017,15 @@ def emergency_response_estimates(snapshot: dict, public: dict) -> list[dict]:
                 "arrival_at": arrival,
                 "service_start_at": service_start,
                 "service_end_at": service_end,
+                "visit_window_start": ticket.get("visit_window_start"),
+                "visit_window_end": ticket.get("visit_window_end"),
                 "reaction_to_arrival_minutes": arrival_minutes,
-                "reaction_to_service_start_minutes": service_minutes,
+                **response,
                 "within_60_minutes_to_arrival": (
-                    arrival_minutes <= 60 if arrival_minutes is not None else None
+                    0 <= arrival_minutes <= 60 if arrival_minutes is not None else None
                 ),
                 "within_120_minutes_to_arrival": (
-                    arrival_minutes <= 120 if arrival_minutes is not None else None
+                    0 <= arrival_minutes <= 120 if arrival_minutes is not None else None
                 ),
                 "service_deadline_at": deadline,
                 "service_deadline_met": (
@@ -969,7 +1046,29 @@ def emergency_response_estimates(snapshot: dict, public: dict) -> list[dict]:
     return estimates
 
 
-def build_ticket_event_result(ticket_event, snapshot, prepared, public, event_insertion=None):
+ACTIVE_STAGE_REASONS = {"active_stage_not_completed", "active_work_eta_unknown"}
+
+
+def _engineers_after_current_stage(snapshot, prepared, ticket_id, now) -> list[int]:
+    """Engineers excluded only by their current stage who could take the ticket after it."""
+    busy = {
+        item.get("worker_id")
+        for item in prepared["excluded_workers"]
+        if isinstance(item.get("reason"), dict)
+        and item["reason"].get("code") in ACTIVE_STAGE_REASONS
+    }
+    if not busy or now is None:
+        return []
+    after_stage = prepare(snapshot, now, estimate_active_stage=True)
+    ticket = next((item for item in after_stage["tickets"] if item["id"] == ticket_id), None)
+    if ticket is None:
+        return []
+    return sorted({after_stage["workers"][index]["user_id"] for index in ticket["allowed"]} & busy)
+
+
+def build_ticket_event_result(
+    ticket_event, snapshot, prepared, public, event_insertion=None, *, now=None
+):
     """Build the dispatcher-facing event decision from the proposal and saved baseline."""
     ticket_id = ticket_event["ticket_id"]
     scheduled = {
@@ -987,27 +1086,47 @@ def build_ticket_event_result(ticket_event, snapshot, prepared, public, event_in
     if category == "emergency":
         if stop is None:
             outcome_code = "emergency_unassigned"
-            if not prepared["workers"] and any(
-                item.get("reason", {}).get("code")
-                in {"active_stage_not_completed", "active_work_eta_unknown"}
-                for item in prepared["excluded_workers"]
-            ):
+            # Nobody else can take it now, but an engineer can once the current stage ends:
+            # the route waits for that completion instead of reporting no candidate.
+            if (
+                not prepared["workers"]
+                and any(
+                    item.get("reason", {}).get("code") in ACTIVE_STAGE_REASONS
+                    for item in prepared["excluded_workers"]
+                )
+            ) or _engineers_after_current_stage(snapshot, prepared, ticket_id, now):
                 outcome_code = "waiting_safe_point"
             can_apply = False
         else:
             response_minutes = (forecast or {}).get("reaction_to_service_start_minutes")
-            if (forecast or {}).get("service_deadline_met") is False:
+            response_deadline_met = (forecast or {}).get("response_deadline_met")
+            if response_deadline_met is False:
                 outcome_code = "sla_violation"
-            elif response_minutes is not None and response_minutes > 120:
+            elif (
+                response_deadline_met is None
+                and response_minutes is not None
+                and response_minutes > 120
+            ):
                 outcome_code = "sla_violation"
             elif response_minutes is not None and response_minutes > 60:
                 outcome_code = "sla_risk"
             else:
                 outcome_code = "emergency_replan_ready"
             can_apply = True
+        selection_reason = (
+            {
+                "code": "emergency_response_priority",
+                "selected_worker_id": stop["worker_id"],
+                "selected_sequence": stop["sequence"],
+                "objective_components": public.get("objective_components"),
+            }
+            if stop is not None
+            else None
+        )
     else:
         outcome_code = "insertion_ready"
         can_apply = stop is not None and event_insertion is not None
+        selection_reason = None
 
     selected_slot = None
     road_contribution = None
@@ -1125,6 +1244,7 @@ def build_ticket_event_result(ticket_event, snapshot, prepared, public, event_in
             "shifted_ticket_ids": sorted(changed_ids),
             "preserved_current_stage": frozen,
             "candidate_reasons": candidates,
+            "selection_reason": selection_reason,
             "sla_forecast": forecast,
             "reason": (rejection or {}).get("reason", {}).get("code"),
         }
@@ -1142,6 +1262,60 @@ def _experiment_summary(public: dict) -> dict:
     }
 
 
+class _WindowExperimentProvider:
+    """Capture baseline matrix responses and replay them for the window variant."""
+
+    def __init__(self, provider, matrices, requests, *, replay):
+        self._provider = provider
+        self._matrices = matrices
+        self._requests = requests
+        self._replay = replay
+
+    @property
+    def telemetry(self):
+        return getattr(self._provider, "telemetry", None)
+
+    @telemetry.setter
+    def telemetry(self, value):
+        self._provider.telemetry = value
+
+    def __getattr__(self, name):
+        return getattr(self._provider, name)
+
+    async def build_route_matrix(self, *, sources, targets, mode):
+        key = (
+            mode,
+            tuple(tuple(point) for point in sources),
+            tuple(tuple(point) for point in targets),
+        )
+        self._requests.add(key)
+        if self._replay:
+            matrix = self._matrices.get(key)
+            if matrix is None:
+                raise PlanningError("window_experiment_matrix_mismatch", 500)
+            telemetry = self.telemetry
+            if telemetry is not None:
+                telemetry.record_operation(
+                    "matrix", mode, cells=len(sources) * len(targets), source="matrix_replay"
+                )
+                telemetry.record_cache_hit("matrix")
+            return copy.deepcopy(matrix)
+        matrix = await self._provider.build_route_matrix(
+            sources=sources, targets=targets, mode=mode
+        )
+        self._matrices[key] = copy.deepcopy(matrix)
+        return matrix
+
+
+def _window_experiment_provider_factory(provider_factory, matrices, requests, *, replay):
+    @asynccontextmanager
+    async def open_provider():
+        async with provider_factory() as provider:
+            yield _WindowExperimentProvider(provider, matrices, requests, replay=replay)
+
+    return open_provider
+
+
 async def compare_window_experiment(
     engine,
     request,
@@ -1157,12 +1331,17 @@ async def compare_window_experiment(
     """Run two non-persisted calculations over the same captured input snapshot."""
     scenario_snapshot = snapshot_with_experimental_windows(snapshot, windows, request.route_date)
     original_tickets = {ticket["id"]: ticket for ticket in snapshot["tickets"]}
+    matrix_responses = {}
+    baseline_matrix_requests = set()
+    experiment_matrix_requests = set()
     baseline = await preview(
         engine,
         request,
         actor,
         settings,
-        provider_factory,
+        _window_experiment_provider_factory(
+            provider_factory, matrix_responses, baseline_matrix_requests, replay=False
+        ),
         planner,
         clock,
         snapshot_override=snapshot,
@@ -1173,12 +1352,16 @@ async def compare_window_experiment(
         request,
         actor,
         settings,
-        provider_factory,
+        _window_experiment_provider_factory(
+            provider_factory, matrix_responses, experiment_matrix_requests, replay=True
+        ),
         planner,
         clock,
         snapshot_override=scenario_snapshot,
         persist=False,
     )
+    if baseline_matrix_requests != experiment_matrix_requests:
+        raise PlanningError("window_experiment_matrix_mismatch", 500)
     return {
         "experimental": True,
         "applied": False,
@@ -1339,7 +1522,12 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                 ),
             )
         else:
-            prepared = prepare(current, apply_at)
+            prepared = prepare(
+                current,
+                apply_at,
+                estimate_active_stage=bool(ticket_event)
+                and ticket_event["category"] != "emergency",
+            )
             selected = {r["worker_id"] for r in plan.result_snapshot["route_creates"]}
             if selected & {w["worker_id"] for w in prepared["excluded_workers"]}:
                 plan.state = "stale"
@@ -1402,12 +1590,10 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                     )
                 )
             session.flush()
+            dropped = []
             if request.replan:
                 assigned_ids = set(ticket_ids)
-                unassigned_reasons = {
-                    item["ticket_id"]: item["reason"].get("code")
-                    for item in plan.result_snapshot["public"].get("unassigned", [])
-                }
+                unassigned_reasons = unassigned_reasons_of(plan)
                 from app.modules.execution import service as execution_service
                 from app.modules.execution.enums import TicketLifecycleState, WorkEventType
                 from app.modules.execution.schemas import ExecutionCommand
@@ -1419,6 +1605,7 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                         TicketLifecycleState.DISPATCHED,
                     }:
                         continue
+                    dropped.append((ticket.id, ticket.assigned_worker_id, ticket.title))
                     command = ExecutionCommand.model_construct(
                         expected_revision=ticket.revision,
                         occurred_at=clock(),
@@ -1517,6 +1704,8 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                 }
                 session.flush()
                 _notify_rescheduled_tickets(session, revision_row)
+            if dropped:
+                _notify_dropped_tickets(session, dropped, unassigned_reasons_of(plan), revision_row)
             applied_fingerprint = fingerprint(
                 load_snapshot(
                     session, request, policy_snapshot=recorded_policy(plan.input_snapshot)

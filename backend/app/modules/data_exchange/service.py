@@ -21,6 +21,7 @@ from app.modules.data_exchange.formats import (
 )
 from app.modules.data_exchange.models import DataImport
 from app.modules.data_exchange.registry import TABLES, columns_for
+from app.modules.planning.assignment_check import assignment_violations
 from app.modules.routing.schemas import RouteGeoJSON, StopFeature
 
 
@@ -243,6 +244,28 @@ def _validate_business_rules(session: Session, tables: dict, ids: dict, inserted
             select(TABLES["workers"].c.user_id).where(TABLES["workers"].c.user_id == user["id"])
         ):
             raise ExchangeError("Для worker требуется профиль workers в том же пакете", "users")
+    # Work handed to an engineer and not started yet obeys the rules of solve and manual
+    # assignment; the whole package is refused, nothing of it is kept. Started or finished
+    # work is a record of what happened and is imported as it is.
+    source_ids = {new: old for old, new in ids.get("tickets", {}).items()}
+    active = [
+        (ticket["id"], ticket["assigned_worker_id"])
+        for ticket in inserted.get("tickets", [])
+        if ticket["assigned_worker_id"] is not None
+        and ticket["status"] == "planned"
+        and ticket["lifecycle_state"] in {"assigned", "dispatched"}
+    ]
+    violations = assignment_violations(session, active) if active else []
+    if violations:
+        raise ExchangeError(
+            "Назначение нарушает правила планирования; пакет отменён",
+            "tickets",
+            code="assignment_rejected",
+            violations=[
+                {**item, "ticket_id": source_ids.get(item["ticket_id"], item["ticket_id"])}
+                for item in violations
+            ],
+        )
     # Lock stock rows in the same order in all imports before checking reservations.
     pairs = sorted(
         {(row["office_id"], row["appliance_id"]) for row in inserted.get("ticket_appliances", [])}

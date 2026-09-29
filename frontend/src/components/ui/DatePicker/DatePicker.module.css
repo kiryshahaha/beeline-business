@@ -1,0 +1,374 @@
+.datePickerWrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
+  font-family: inherit;
+  z-index: 40;
+  height: 36px;
+}
+
+.triggerGroup {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  background: rgba(22, 22, 26, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  padding: 0 4px;
+  box-sizing: border-box;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.triggerGroup:hover {
+  border-color: rgba(255, 200, 0, 0.35);
+  background: rgba(28, 28, 34, 0.95);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.stepBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s ease;
+}
+
+.stepBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--beeline, #ffc800);
+}
+
+.mainTriggerBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  border: none;
+  padding: 0 8px;
+  height: 100%;
+  cursor: pointer;
+  color: #f1f5f9;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  transition: color 0.15s ease;
+  white-space: nowrap;
+}
+
+.mainTriggerBtn:hover {
+  color: var(--beeline, #ffc800);
+}
+
+.calendarIcon {
+  color: var(--beeline, #ffc800);
+  display: flex;
+  align-items: center;
+}
+
+.triggerLabel {
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+.rangeBadge {
+  background: rgba(255, 200, 0, 0.18);
+  color: var(--beeline, #ffc800);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 200, 0, 0.3);
+}
+
+.chevron {
+  color: rgba(255, 255, 255, 0.45);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+  color: var(--beeline, #ffc800);
+}
+
+/* Выпадающая панель календаря */
+.dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 310px;
+  background: rgba(20, 20, 24, 0.96);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 2px 10px rgba(0, 0, 0, 0.3);
+  padding: 14px;
+  box-sizing: border-box;
+  animation: fadeInDown 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 100;
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Селектор режимов: День / Период / Все */
+.modeTabs {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1fr;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 3px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.modeTab {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 0;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.modeTab:hover {
+  color: #ffffff;
+}
+
+.modeTabActive {
+  background: var(--beeline, #ffc800);
+  color: #111111 !important;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+/* Шапка месяца */
+.monthHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding: 0 4px;
+}
+
+.monthTitle {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  text-transform: capitalize;
+}
+
+.monthNavBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.monthNavBtn:hover {
+  background: rgba(255, 200, 0, 0.2);
+  border-color: rgba(255, 200, 0, 0.4);
+  color: var(--beeline, #ffc800);
+}
+
+/* Пресеты */
+.presetsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.presetChip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.presetChip:hover {
+  background: rgba(255, 200, 0, 0.15);
+  border-color: rgba(255, 200, 0, 0.35);
+  color: var(--beeline, #ffc800);
+}
+
+/* Сетка дней недели */
+.weekdaysGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.weekdayLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 4px 0;
+}
+
+.weekendLabel {
+  color: rgba(255, 120, 120, 0.6);
+}
+
+/* Сетка дней */
+.daysGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  row-gap: 3px;
+}
+
+.dayCell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+}
+
+.dayButton {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  z-index: 2;
+  transition: all 0.12s ease;
+  padding: 0;
+}
+
+.dayButton:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.otherMonthDay .dayButton {
+  color: rgba(255, 255, 255, 0.22);
+}
+
+.todayDay .dayButton {
+  border-color: var(--beeline, #ffc800);
+  font-weight: 700;
+}
+
+/* Выделение одного дня или концов периода */
+.selectedDay .dayButton {
+  background: var(--beeline, #ffc800) !important;
+  color: #111111 !important;
+  font-weight: 800;
+  box-shadow: 0 2px 8px rgba(255, 200, 0, 0.45);
+}
+
+/* Дорожка выделения диапазона (Range track) */
+.rangeBetween::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  right: 0;
+  background: rgba(255, 200, 0, 0.18);
+  z-index: 1;
+}
+
+.rangeStart::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 50%;
+  right: 0;
+  background: rgba(255, 200, 0, 0.18);
+  z-index: 1;
+}
+
+.rangeEnd::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  right: 50%;
+  background: rgba(255, 200, 0, 0.18);
+  z-index: 1;
+}
+
+/* Футер */
+.footer {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.footerInfo {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.footerClearBtn {
+  background: transparent;
+  border: none;
+  color: var(--beeline, #ffc800);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.footerClearBtn:hover {
+  background: rgba(255, 200, 0, 0.15);
+}

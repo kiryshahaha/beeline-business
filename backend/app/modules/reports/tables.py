@@ -14,6 +14,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
 from openpyxl.cell.cell import ERROR_CODES
+from openpyxl.utils import get_column_letter
 
 from app.core.spreadsheet import (
     XLSX_MAX_CELL_UNITS,
@@ -46,6 +47,8 @@ class Table:
     name: str
     columns: Sequence[str]
     rows: Iterable[Sequence[Any]]
+    delimiter: str = ","
+    column_widths: dict[int, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -116,7 +119,8 @@ def _xlsx_row(sheet, table: Table, values: Sequence[Any]) -> list[Any]:
 
 def write_csv(file: IO[bytes], table: Table) -> None:
     text = io.TextIOWrapper(file, encoding="utf-8-sig", newline="")
-    writer = csv.writer(text, lineterminator="\r\n")
+    delimiter = getattr(table, "delimiter", ";")
+    writer = csv.writer(text, delimiter=delimiter, lineterminator="\r\n")
     writer.writerow(table.columns)
     for values in table.rows:
         writer.writerow([csv_cell(value) for value in values])
@@ -142,6 +146,10 @@ def write_xlsx(file: IO[bytes], tables: Iterable[Table]) -> None:
     try:
         for table in tables:
             sheet = workbook.create_sheet(table.name)
+            sheet.freeze_panes = "A2"
+            widths = getattr(table, "column_widths", None) or {}
+            for col_idx, width in widths.items():
+                sheet.column_dimensions[get_column_letter(col_idx + 1)].width = width
             sheet.append(list(table.columns))
             for values in table.rows:
                 sheet.append(_xlsx_row(sheet, table, values))

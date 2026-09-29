@@ -28,8 +28,32 @@ def by_id(mapping: dict | None, key):
     return mapping.get(key, mapping.get(str(key)))
 
 
-def worker_replan_anchor(day_state, active_ticket, now, *, default_location_id):
-    """Return the confirmed or promised point and time from which the remainder can start."""
+def active_stage_end(active_ticket: dict, now: datetime) -> datetime:
+    """The earliest end of a trip or service that execution has not reported yet.
+
+    Started service lasts at least its estimate from the actual start; an engineer still
+    travelling has the whole service ahead. The published end stays a lower bound.
+    """
+    duration = timedelta(minutes=active_ticket.get("estimated_duration_minutes") or 0)
+    ends = [now]
+    if active_ticket.get("planned_end_at"):
+        ends.append(dt(active_ticket["planned_end_at"]))
+    if active_ticket.get("lifecycle_state") == "in_progress":
+        started = active_ticket.get("actual_started_at")
+        ends.append((dt(started) if started else now) + duration)
+    else:
+        ends.append(now + duration)
+    return max(ends)
+
+
+def worker_replan_anchor(
+    day_state, active_ticket, now, *, default_location_id, estimate_active_stage=False
+):
+    """Return the confirmed or promised point and time from which the remainder can start.
+
+    An emergency waits for the completion event of the current stage. An ordinary insertion
+    may go after that stage, from its place and not before its earliest end.
+    """
     current_ticket_id = day_state.get("current_ticket_id") if day_state else None
     expected = day_state.get("expected_available_at") if day_state else None
     if expected is not None:
@@ -37,6 +61,15 @@ def worker_replan_anchor(day_state, active_ticket, now, *, default_location_id):
 
     if current_ticket_id is not None:
         lifecycle_state = (active_ticket or {}).get("lifecycle_state")
+        if lifecycle_state in {"en_route", "in_progress"} and estimate_active_stage:
+            stage_end = active_stage_end(active_ticket, now)
+            return {
+                "location_id": day_state.get("current_destination_id")
+                or active_ticket.get("location_id")
+                or day_state.get("last_location_id"),
+                "available_at": max(stage_end, expected) if expected is not None else stage_end,
+                "reason": None,
+            }
         if lifecycle_state in {"en_route", "in_progress"}:
             # The current trip or service is a frozen stage. Do not use its ETA as
             # a route start until execution records completion at a known location.
@@ -129,7 +162,7 @@ def candidate_reason(
     return None
 
 
-def prepare(snapshot: dict, now: datetime) -> dict:
+def prepare(snapshot: dict, now: datetime, *, estimate_active_stage: bool = False) -> dict:
     policy = snapshot_policy(snapshot)
     request = snapshot["request"]
     replan = bool(request.get("replan"))
@@ -152,6 +185,8 @@ def prepare(snapshot: dict, now: datetime) -> dict:
     archived = set(snapshot.get("archived_worker_ids", []))
     day_states = {x["worker_id"]: x for x in snapshot.get("worker_day_states", [])}
     busy = {x["id"]: x for x in snapshot["busy_tickets"]}
+    # A replan request lists the current in-progress ticket among its tickets, not as busy.
+    requested = {x["id"]: x for x in snapshot["tickets"]}
     area_id = snapshot.get("service_area_id")
     resolved_worker_areas = snapshot.get("worker_service_areas")
     workers, excluded_workers = [], []
@@ -182,11 +217,13 @@ def prepare(snapshot: dict, now: datetime) -> dict:
         )
         anchor = None
         if replan:
+            current_ticket_id = day_state.get("current_ticket_id") if day_state else None
             anchor = worker_replan_anchor(
                 day_state,
-                busy.get(day_state.get("current_ticket_id")) if day_state else None,
+                busy.get(current_ticket_id) or requested.get(current_ticket_id),
                 now,
                 default_location_id=default_location_id,
+                estimate_active_stage=estimate_active_stage,
             )
         if anchor and anchor["reason"] is None:
             start_location_id = anchor["location_id"]
