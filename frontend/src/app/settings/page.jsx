@@ -87,34 +87,29 @@ export default function SettingsPage() {
   useEffect(() => {
     try {
       const savedCity = localStorage.getItem("beeline_default_city");
-      if (savedCity) setDefaultCity(savedCity);
-
       const savedCluster = localStorage.getItem("beeline_cluster_radius");
-      if (savedCluster) setClusterRadius(Number(savedCluster));
-
       const savedBoundaries = localStorage.getItem("beeline_show_boundaries");
-      if (savedBoundaries !== null) setShowBoundaries(savedBoundaries === "true");
-
       const savedAutoFocus = localStorage.getItem("beeline_auto_focus");
-      if (savedAutoFocus !== null) setAutoFocus(savedAutoFocus === "true");
-
       const savedRefresh = localStorage.getItem("beeline_refresh_interval");
-      if (savedRefresh) setRefreshInterval(savedRefresh);
-
       const savedStars = localStorage.getItem("beeline_starry_sky");
-      if (savedStars !== null) setStarrySkyEnabled(savedStars === "true");
-
       const savedAnim = localStorage.getItem("beeline_animations");
-      if (savedAnim !== null) {
-        setAnimationsEnabled(savedAnim === "true");
-        document.documentElement.setAttribute("data-animations", savedAnim);
-      }
-
       const savedEngine = localStorage.getItem("beeline_routing_engine");
-      if (savedEngine) setRoutingEngine(savedEngine);
-
       const savedBuffer = localStorage.getItem("beeline_traffic_buffer");
-      if (savedBuffer) setTrafficBuffer(savedBuffer);
+
+      queueMicrotask(() => {
+        if (savedCity) setDefaultCity(savedCity);
+        if (savedCluster) setClusterRadius(Number(savedCluster));
+        if (savedBoundaries !== null) setShowBoundaries(savedBoundaries === "true");
+        if (savedAutoFocus !== null) setAutoFocus(savedAutoFocus === "true");
+        if (savedRefresh) setRefreshInterval(savedRefresh);
+        if (savedStars !== null) setStarrySkyEnabled(savedStars === "true");
+        if (savedAnim !== null) {
+          setAnimationsEnabled(savedAnim === "true");
+          document.documentElement.setAttribute("data-animations", savedAnim);
+        }
+        if (savedEngine) setRoutingEngine(savedEngine);
+        if (savedBuffer) setTrafficBuffer(savedBuffer);
+      });
     } catch {}
   }, []);
 
@@ -161,7 +156,13 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    checkServicesHealth();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) checkServicesHealth();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [checkServicesHealth]);
 
   // Preference updates with persistence

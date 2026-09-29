@@ -19,7 +19,9 @@ export function ThemeProvider({ children }) {
       localStorage.removeItem("beeline_theme");
     } catch {}
     document.documentElement.setAttribute("data-theme", "dark");
-    setMounted(true);
+    queueMicrotask(() => {
+      setMounted(true);
+    });
   }, []);
 
   const setTheme = useCallback(() => {}, []);

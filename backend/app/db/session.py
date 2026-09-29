@@ -13,7 +13,7 @@ from app.core.config import get_settings
 def get_engine() -> Engine:
     url = str(get_settings().database_url)
     if url.startswith("postgresql://"):
-        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+        url = "postgresql+psycopg://" + url[len("postgresql://") :]
     return create_engine(url, pool_pre_ping=True)
 
 

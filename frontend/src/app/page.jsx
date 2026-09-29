@@ -148,7 +148,9 @@ export default function Home() {
     try {
       const savedBoundaries = localStorage.getItem("beeline_show_boundaries");
       if (savedBoundaries !== null) {
-        setShowDistrictBoundary(savedBoundaries === "true");
+        queueMicrotask(() => {
+          setShowDistrictBoundary(savedBoundaries === "true");
+        });
       }
     } catch {}
   }, []);
