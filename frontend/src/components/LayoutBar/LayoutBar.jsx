@@ -5,9 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import styles from "./LayoutBar.module.css";
 
 const icons = [
-  { id: "map", src: "/icons/icon-map.svg", alt: "Map", href: "/" },
-  { id: "list", src: "/icons/icon-list.svg", alt: "Dashboard", href: "/dashboard" },
-  { id: "settings", src: "/icons/icon-settings.svg", alt: "Settings", href: "/settings" },
+  { id: "map", src: "/icons/icon-map.svg", alt: "Карта", href: "/" },
+  { id: "list", src: "/icons/icon-list.svg", alt: "Заявки", href: "/dashboard" },
+  { id: "settings", src: "/icons/icon-settings.svg", alt: "Настройки", href: "/settings" },
 ];
 
 const LayoutBar = () => {
@@ -22,15 +22,20 @@ const LayoutBar = () => {
   return (
     <div className={styles.wrapper}>
       <div className={styles.container}>
-        <div 
-          className={styles.indicator} 
-          style={{ transform: `translateY(${safeIndex * 52}px)` }} 
-        />
+        {activeIndex !== -1 && (
+          <div 
+            className={styles.indicator} 
+            style={{ transform: `translateY(${safeIndex * 52}px)` }} 
+          />
+        )}
         {icons.map((icon) => (
-          <div
+          <button
             key={icon.id}
+            type="button"
             className={`${styles.icon} ${pathname === icon.href ? styles.active : ""}`}
             onClick={() => router.push(icon.href)}
+            title={icon.alt}
+            aria-label={icon.alt}
           >
             <div
               className={styles.iconImage}
@@ -38,9 +43,8 @@ const LayoutBar = () => {
                 maskImage: `url(${icon.src})`,
                 WebkitMaskImage: `url(${icon.src})`,
               }}
-              title={icon.alt}
             />
-          </div>
+          </button>
         ))}
       </div>
     </div>

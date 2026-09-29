@@ -25,6 +25,42 @@
     box-sizing: border-box;
 }
 
+.searchIcon {
+    width: 16px;
+    height: 16px;
+    background-color: var(--text-muted);
+    mask-image: url("/icons/icon-search.svg");
+    mask-size: contain;
+    mask-position: center;
+    mask-repeat: no-repeat;
+    -webkit-mask-image: url("/icons/icon-search.svg");
+    -webkit-mask-size: contain;
+    -webkit-mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    flex-shrink: 0;
+    transition: background-color 0.2s ease;
+}
+
+.searchHeader:focus-within .searchIcon {
+    background-color: var(--text-primary);
+}
+
+.filterIcon {
+    width: 17px;
+    height: 15px;
+    background-color: var(--text-primary);
+    mask-image: url("/icons/filters.svg");
+    mask-size: contain;
+    mask-position: center;
+    mask-repeat: no-repeat;
+    -webkit-mask-image: url("/icons/filters.svg");
+    -webkit-mask-size: contain;
+    -webkit-mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    flex-shrink: 0;
+    transition: background-color 0.2s ease;
+}
+
 .icon {
     flex-shrink: 0;
 }
@@ -33,20 +69,20 @@
     background: transparent;
     border: none;
     outline: none;
-    color: var(--foreground);
+    color: var(--text-primary);
     width: 100%;
     font-size: 13px;
 }
 
 .input::placeholder {
-    color: #FFFFFF;
+    color: var(--text-muted);
 }
 
 .clearButton {
     background: transparent;
     border: none;
     cursor: pointer;
-    color: #8E8E93;
+    color: var(--text-muted);
     padding: 2px 4px;
     display: flex;
     align-items: center;
@@ -57,38 +93,39 @@
 }
 
 .clearButton:hover {
-    color: #FFFFFF;
-    background-color: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    background-color: var(--hover-color);
 }
-
-
 
 .filterPill {
     width: 100%;
-    padding: 10px;
+    padding: 9px 12px;
     border-radius: 20px;
-    border: none;
-    background-color: #767680;
-    color: var(--foreground);
+    border: 1px solid var(--border-subtle);
+    background-color: var(--bg-card-subtle);
+    color: var(--text-secondary);
     font-size: 12px;
-    /* font-weight: 500; */
+    font-weight: 500;
     cursor: pointer;
     transition: background-color 0.2s ease, color 0.2s ease;
     text-align: center;
     outline: none;
-    border: 2px solid var(--stroke);
 }
 
 .filterPill:hover {
-    background-color: rgba(142, 142, 147, 0.25);
+    background-color: var(--hover-color);
+    color: var(--text-primary);
 }
 
 .filterPill.active {
     background-color: var(--beeline);
-    color: #000000;
+    color: #111111;
+    font-weight: 700;
+    border-color: rgba(0, 0, 0, 0.15);
 }
+
 .filterPill.active:hover {
-    background-color: #E5B400; /* slightly darker yellow on hover */
+    background-color: var(--beeline-hover);
 }
 
 .iconContainer {
@@ -177,7 +214,7 @@
 }
 
 .suggestionItem:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: var(--hover-color);
 }
 
 .suggestionItem:last-of-type {

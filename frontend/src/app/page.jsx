@@ -8,6 +8,7 @@ import Notifications from "@/components/Notifications/Notifications";
 import Layers from "@/components/Layers/Layers";
 import Menu from "@/components/Menu/Menu";
 import CreateTicketModal from "@/components/Modals/CreateTicketModal";
+import StarrySky from "@/components/StarrySky/StarrySky";
 import { useTickets } from "@/hooks/useTickets";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOffices } from "@/hooks/useOffices";
@@ -141,6 +142,16 @@ export default function Home() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createModalCoords, setCreateModalCoords] = useState(null);
   const [isPinPickMode, setIsPinPickMode] = useState(false);
+
+  // Восстановление настроек карты из localStorage
+  useEffect(() => {
+    try {
+      const savedBoundaries = localStorage.getItem("beeline_show_boundaries");
+      if (savedBoundaries !== null) {
+        setShowDistrictBoundary(savedBoundaries === "true");
+      }
+    } catch {}
+  }, []);
 
   const locationIds = [...new Set([
     ...offices.map((item) => item.location_id),
@@ -816,8 +827,11 @@ export default function Home() {
         height: "100dvh",
         overflow: "hidden",
         overscrollBehavior: "none",
+        backgroundColor: "#0c0d12",
       }}
     >
+      {/* Космическое звёздное небо на фоне карты */}
+      <StarrySky />
       {/* Баннер режима выбора точки на карте */}
       {isPinPickMode && (
         <div
@@ -904,33 +918,34 @@ export default function Home() {
                 setIsCreateModalOpen(true);
               }}
               style={{
-                height: "38px",
-                padding: "0 14px",
-                borderRadius: "10px",
-                background: "#2C2C2E",
-                border: "1px solid rgba(255, 255, 255, 0.12)",
-                color: "#FFC800",
-                fontSize: "12px",
+                height: "32px",
+                padding: "0 13px",
+                borderRadius: "12px",
+                background: "var(--beeline)",
+                border: "1px solid rgba(0, 0, 0, 0.12)",
+                color: "#111111",
+                fontSize: "12.5px",
                 fontWeight: 700,
                 display: "inline-flex",
                 alignItems: "center",
-                gap: "6px",
+                gap: "5px",
                 cursor: "pointer",
-                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.35)",
+                boxShadow: "var(--shadow-sm)",
                 transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
                 whiteSpace: "nowrap",
+                userSelect: "none",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#38383C";
-                e.currentTarget.style.borderColor = "rgba(255, 200, 0, 0.35)";
+                e.currentTarget.style.background = "var(--beeline-hover)";
+                e.currentTarget.style.transform = "translateY(-1px)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = "#2C2C2E";
-                e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.12)";
+                e.currentTarget.style.background = "var(--beeline)";
+                e.currentTarget.style.transform = "none";
               }}
               title="Создать новую заявку на обслуживание"
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#111111" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
               </svg>

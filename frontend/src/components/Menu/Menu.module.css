@@ -75,7 +75,7 @@
 .iconMask {
     width: 24px;
     height: 24px;
-    background-color: #FFFFFF;
+    background-color: var(--text-primary);
     mask-size: contain;
     mask-position: center;
     mask-repeat: no-repeat;
@@ -235,15 +235,15 @@
 .brigadeName {
     font-weight: 500;
     font-size: 15px;
-    color: #FFFFFF;
+    color: var(--text-primary);
 }
 
 .brigadeBadge {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: var(--badge-bg);
     padding: 4px 8px;
     border-radius: 12px;
     font-size: 12px;
-    color: #AAAAAA;
+    color: var(--text-secondary);
 }
 
 .badgeHighlight {
@@ -258,7 +258,7 @@
 
 .brigadeOffice {
     font-size: 13px;
-    color: #AAAAAA;
+    color: var(--text-secondary);
 }
 
 .brigadesSearchContainer {
@@ -269,22 +269,23 @@
 .brigadesSearch {
     display: flex;
     align-items: center;
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: var(--bg-card-subtle);
     border-radius: 8px;
     padding: 8px 12px;
+    border: 1px solid var(--border-subtle);
 }
 
 .searchInput {
     flex: 1;
     background: transparent;
     border: none;
-    color: #FFFFFF;
+    color: var(--text-primary);
     outline: none;
     font-size: 14px;
 }
 
 .searchInput::placeholder {
-    color: #888888;
+    color: var(--text-muted);
 }
 
 .searchDivider {
@@ -313,7 +314,7 @@
 .filterIconMask {
     width: 20px;
     height: 20px;
-    background-color: #FFFFFF;
+    background-color: var(--text-primary);
     mask-size: contain;
     mask-position: center;
     mask-repeat: no-repeat;
@@ -332,11 +333,11 @@
     bottom: calc(100% + 8px);
     right: 0;
     width: 200px;
-    background-color: #2A2A2A;
-    border: 1px solid var(--stroke);
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 8px 0;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--shadow-md);
     z-index: 100;
     max-height: 200px;
     overflow-y: auto;
@@ -345,23 +346,23 @@
 .filterMenuHeader {
     padding: 4px 12px 8px;
     font-size: 12px;
-    color: #888888;
+    color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--border-subtle);
     /* margin-bottom: 4px; */
 }
 
 .filterItem {
     padding: 8px 12px;
     font-size: 14px;
-    color: #FFFFFF;
+    color: var(--text-primary);
     cursor: pointer;
     transition: background-color 0.2s;
 }
 
 .filterItem:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: var(--hover-color);
 }
 
 .filterItem.active {
@@ -407,19 +408,19 @@
 .detailsTitle {
     font-size: 16px;
     font-weight: 600;
-    color: #FFFFFF;
+    color: var(--text-primary);
 }
 
 .detailsSubheader {
     font-size: 14px;
-    color: #888888;
+    color: var(--text-secondary);
     margin-bottom: 17px;
     /* padding-bottom: 16px; */
 }
 
 .workerCard {
-    background-color: #2A2A2A;
-    border: 1px solid transparent;
+    background-color: var(--bg-card-subtle);
+    border: 1px solid var(--border-subtle);
     border-radius: 12px;
     padding: 16px;
     display: flex;
@@ -430,12 +431,12 @@
 }
 
 .workerCard:hover {
-    background-color: #323232;
+    background-color: var(--hover-color);
 }
 
 .activeWorkerCard {
     border-color: var(--beeline);
-    background-color: #333333;
+    background-color: var(--hover-color);
     box-shadow: 0 0 0 1px var(--beeline), 0 4px 16px rgba(255, 200, 0, 0.15);
 }
 
@@ -458,8 +459,9 @@
     height: 40px;
     flex-shrink: 0;
     border-radius: 50%;
-    background-color: #1A1A1A;
-    color: #FFFFFF;
+    background-color: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -469,15 +471,14 @@
 
 .workerName {
     font-size: 13px;
-    color: #FFFFFF;
-    font-weight: 500;
-    margin-bottom: 4px;
+    color: var(--text-primary);
     font-weight: 600;
+    margin-bottom: 4px;
 }
 
 .workerRole {
     font-size: 11px;
-    color: #888888;
+    color: var(--text-muted);
 }
 
 .workerStatus {
@@ -485,7 +486,7 @@
     border-radius: 6px;
     font-size: 14px;
     font-weight: 500;
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: var(--badge-bg);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -509,17 +510,17 @@
     display: flex;
     justify-content: space-between;
     font-size: 14px;
-    color: #888888;
+    color: var(--text-secondary);
 }
 
 .workloadText b {
-    color: #FFFFFF;
+    color: var(--text-primary);
     font-weight: 600;
 }
 
 .workloadBarBg {
     height: 6px;
-    background-color: #FFFFFF;
+    background-color: var(--border-color);
     border-radius: 3px;
     width: 100%;
 }
@@ -565,6 +566,7 @@
 
 .monitoringCard {
     background-color: var(--tertiary);
+    border: 1px solid var(--border-color);
     border-radius: 12px;
     padding: 16px;
     display: flex;
@@ -575,7 +577,7 @@
 .monitoringTitle {
     font-size: 13px;
     font-weight: 700;
-    color: rgba(235,235,245, 0.7);
+    color: var(--text-secondary);
     letter-spacing: 0.5px;
 }
 
@@ -600,7 +602,7 @@
 
 .monitoringName {
     font-size: 15px;
-    color: #FFFFFF;
+    color: var(--text-primary);
 }
 
 .brigadesCountBadge {

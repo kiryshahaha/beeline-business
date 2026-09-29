@@ -19,8 +19,8 @@ const NotificationsHeader = ({ isOpen, hasUnread, onReadAll }) => {
                     Прочитать всё
                 </button>
             )}
-            <div className={styles.iconWrapper}>
-                <Image src="/icons/bell.svg" alt="Уведомления" width={20} height={20} />
+            <div className={styles.iconWrapper} title="Уведомления">
+                <div className={styles.bellIcon} aria-label="Уведомления" />
                 {hasUnread && <div className={styles.unreadBadge} />}
             </div>
         </div>

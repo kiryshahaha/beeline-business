@@ -114,13 +114,7 @@ const Search = ({
         className={`${styles.searchContainer} ${showSuggestions ? styles.expanded : ''}`}
       >
         <div className={styles.searchHeader}>
-          <Image
-            src="/icons/icon-search.svg"
-            alt="Search icon"
-            width={16}
-            height={16}
-            className={styles.icon}
-          />
+          <div className={styles.searchIcon} aria-label="Поиск" />
           <input
             type="text"
             placeholder="Поиск заявки, бригады или сотрудника..."
@@ -178,14 +172,8 @@ const Search = ({
       <ExpandableMenu
         renderHeader={({ isOpen }) => (
           <>
-            <div className={styles.iconContainer}>
-              <Image
-                src="/icons/filters.svg"
-                alt="Filter icon"
-                width={20}
-                height={16}
-                className={styles.icon}
-              />
+            <div className={styles.iconContainer} title="Фильтры">
+              <div className={styles.filterIcon} aria-label="Фильтры" />
             </div>
             <span 
               className={`${styles.label} ${isOpen ? styles.labelOpen : ''}`}
