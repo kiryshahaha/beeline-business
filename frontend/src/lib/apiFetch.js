@@ -5,6 +5,8 @@ const raw =
   process.env.NEXT_PUBLIC_ENDPOINT ||
   "http://localhost:8000";
 
+export const API_ROOT = raw.replace(/\/api\/v1\/?$/, "").replace(/\/+$/, "");
+
 export const API_BASE = raw.endsWith("/api/v1")
   ? raw.replace(/\/+$/, "")
   : `${raw.replace(/\/+$/, "")}/api/v1`;
@@ -50,7 +52,13 @@ export async function apiFetch(path, options = {}) {
   };
 
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const url = `${API_BASE}${normalizedPath}`;
+  // Root endpoints (like /ready, /health) are served on API_ROOT
+  const isRootEndpoint =
+    normalizedPath === "/ready" ||
+    normalizedPath === "/health" ||
+    normalizedPath === "/docs" ||
+    normalizedPath === "/openapi.json";
+  const url = `${isRootEndpoint ? API_ROOT : API_BASE}${normalizedPath}`;
 
   let res = await fetch(url, {
     ...options,

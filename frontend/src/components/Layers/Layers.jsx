@@ -132,12 +132,17 @@ export default function Layers({
 
   return (
     <ExpandableMenu
+      direction="up"
       className={styles.menu}
       baseSize={46}
-      renderHeader={() => (
-        <div className={styles.trigger} style={{ position: "relative" }} title="Слои карты">
+      renderHeader={({ isOpen }) => (
+        <div
+          className={`${styles.trigger} ${isOpen ? styles.triggerOpen : ""}`}
+          style={{ position: "relative" }}
+          title={isOpen ? "Свернуть" : "Слои карты"}
+        >
           <div className={styles.triggerIcon} aria-label="Слои" />
-          {hasActiveFocus && <span className={styles.activeBadgeDot} />}
+          {hasActiveFocus && !isOpen && <span className={styles.activeBadgeDot} />}
         </div>
       )}
     >

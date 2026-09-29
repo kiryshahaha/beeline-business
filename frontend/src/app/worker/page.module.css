@@ -1,0 +1,536 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 16px;
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .container {
+    padding: 24px 32px;
+    gap: 24px;
+  }
+}
+
+.topControlCard {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+@media (min-width: 900px) {
+  .topControlCard {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px;
+  }
+}
+
+.topControlLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+@media (min-width: 600px) {
+  .topControlLeft {
+    flex-direction: row;
+    align-items: center;
+    gap: 24px;
+  }
+}
+
+.dateToggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 3px;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.dateBtn {
+  background: none;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  transition: all 0.15s ease;
+}
+
+.dateBtn:hover {
+  color: var(--text-primary);
+}
+
+.dateBtnActive {
+  background: var(--beeline);
+  color: #000000;
+  font-weight: 700;
+}
+
+.dateSub {
+  font-size: 10px;
+  opacity: 0.8;
+  font-weight: 500;
+}
+
+.dateBtnActive .dateSub {
+  color: #000000;
+  opacity: 0.9;
+}
+
+.workerMetaInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.workerName {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.2px;
+}
+
+.workerMetaTags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.metaBadge {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-subtle);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.refreshBadge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--beeline);
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-subtle);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.summaryBar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+@media (min-width: 600px) {
+  .summaryBar {
+    display: flex;
+    gap: 10px;
+  }
+}
+
+.summaryPill {
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 70px;
+}
+
+.summaryLabel {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.summaryValue {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.pillCompleted .summaryValue {
+  color: var(--success);
+}
+
+.pillReview .summaryValue {
+  color: var(--warning);
+}
+
+.pillRemaining .summaryValue {
+  color: var(--beeline);
+}
+
+/* Adaptive 2-Column Grid on Tablet/Desktop */
+.layoutGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+@media (min-width: 960px) {
+  .layoutGrid {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+}
+
+.leftCol {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.rightCol {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sectionHeaderTitle {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.shiftCard {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 14px 18px;
+  box-shadow: var(--shadow-sm);
+}
+
+.shiftRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shiftBadge {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--success);
+  background: var(--success-bg);
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.shiftTime {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.dayOffBanner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dayOffIcon {
+  font-size: 20px;
+}
+
+.dayOffText {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.tomorrowNotice {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: var(--shadow-sm);
+}
+
+.tomorrowHeader {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--beeline);
+  letter-spacing: 0.5px;
+}
+
+.tomorrowDate {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.tomorrowSub {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.unavailableBanner {
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  border-radius: 16px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.unavailIcon {
+  font-size: 20px;
+}
+
+.unavailContent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.unavailTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.unavailReason {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.planStatus {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+
+.planStatus strong {
+  color: var(--text-secondary);
+}
+
+.planPending {
+  color: var(--text-muted);
+}
+
+.currentSection,
+.nextSection {
+  display: flex;
+  flex-direction: column;
+}
+
+.ticketsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.planWarningNote {
+  font-size: 11px;
+  color: var(--warning);
+  background: var(--warning-bg);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.ticketList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.emptyState {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.emptyIcon {
+  font-size: 32px;
+}
+
+.emptyTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.emptySub {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  max-width: 320px;
+  line-height: 1.4;
+}
+
+.emptyDayNotice {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.removedSection {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.removedHeader {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.removedList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.removedItem {
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.removedTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.removedReason {
+  font-size: 11.5px;
+  color: var(--danger);
+}
+
+.removedTime {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.errorBox {
+  background: var(--bg-card);
+  border: 1px solid var(--danger);
+  border-radius: 16px;
+  padding: 32px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.errorIcon {
+  font-size: 32px;
+}
+
+.errorTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.errorMsg {
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.retryBtn {
+  margin-top: 8px;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.retryBtn:hover {
+  background: var(--bg-card-hover);
+}
+
+.skeletonDateBar {
+  height: 60px;
+  background: var(--bg-card);
+  border-radius: 16px;
+  border: 1px solid var(--border-subtle);
+}
+
+.skeletonCard {
+  height: 200px;
+  background: var(--bg-card);
+  border-radius: 16px;
+  border: 1px solid var(--border-subtle);
+}

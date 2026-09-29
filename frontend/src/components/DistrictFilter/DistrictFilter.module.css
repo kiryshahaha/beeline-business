@@ -12,35 +12,39 @@
   gap: 8px;
   height: 36px;
   min-height: 36px;
-  padding: 0 12px;
-  background-color: var(--tertiary);
-  border: 2px solid var(--stroke);
+  padding: 0 13px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
-  color: var(--foreground);
+  color: var(--text-primary);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
   user-select: none;
   box-sizing: border-box;
 }
 
 .triggerButton:hover {
-  background-color: var(--hover-color);
-  border-color: var(--border-color);
+  background-color: var(--bg-card-hover);
+  border-color: rgba(255, 200, 0, 0.45);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
 .triggerButton.active {
   background-color: rgba(255, 200, 0, 0.16);
   border-color: var(--border-active);
-  color: var(--text-primary);
+  color: var(--beeline);
   box-shadow: 0 0 0 1px rgba(255, 200, 0, 0.25);
 }
 
 .triggerButton.active:hover {
   background-color: rgba(255, 200, 0, 0.24);
   border-color: var(--border-active);
+  color: #ffffff;
 }
 
 .icon {
@@ -108,11 +112,11 @@
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 200, 0, 0.35) rgba(255, 255, 255, 0.05);
-  background-color: var(--tertiary);
-  border: 2px solid var(--stroke);
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 6px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.4);
   z-index: 1000;
   display: flex;
   flex-direction: column;
@@ -147,25 +151,28 @@
   width: 100%;
   padding: 8px 10px;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 8px;
   color: var(--text-primary);
   font-size: 13px;
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: all 0.15s ease;
   box-sizing: border-box;
 }
 
 .dropdownItem:hover {
-  background-color: var(--hover-color);
-  color: var(--text-primary);
+  background-color: var(--bg-card-hover);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .dropdownItem.selected {
   background-color: rgba(255, 200, 0, 0.16);
-  color: #FFC800;
-  font-weight: 550;
+  color: var(--beeline);
+  font-weight: 600;
+  border-color: rgba(255, 200, 0, 0.35);
 }
 
 .itemLeft {

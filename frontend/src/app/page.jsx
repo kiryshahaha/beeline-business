@@ -96,12 +96,16 @@ export default function Home() {
   const { users, usersData } = useUsers({ role: "worker" });
   const { brigades = [] } = useBrigades();
   const { serviceAreas = [] } = useServiceAreas();
-  const { routes, routesData } = useRoutes({
+  const { routes: queriedRoutes = [], routesData } = useRoutes({
     route_date: dateFilter.mode === "single" ? (dateFilter.date || undefined) : undefined,
     date_from: dateFilter.mode === "range" ? (dateFilter.from || undefined) : undefined,
     date_to: dateFilter.mode === "range" ? (dateFilter.to || undefined) : undefined,
     limit: 100,
   });
+  const { routes: allDbRoutes = [] } = useRoutes({
+    limit: 100,
+  });
+  const routes = queriedRoutes.length > 0 ? queriedRoutes : allDbRoutes;
   const [selectedObject, setSelectedObject] = useState(null);
   const [visibleLayers, setVisibleLayers] = useState({
     tickets: true,

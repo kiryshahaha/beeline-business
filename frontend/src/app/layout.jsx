@@ -17,10 +17,12 @@ const geistMono = Geist_Mono({
 export const metadata = {
   title: "Билайн Бизнес — Панель управления выездными бригадами",
   description: "Интеллектуальная система планирования маршрутов и диспетчеризации сервисных инженеров",
+  manifest: "/manifest.json",
 };
 
 
 import { ThemeProvider } from "@/providers/ThemeProvider";
+import DevAccountSwitcher from "@/components/DevAccountSwitcher/DevAccountSwitcher";
 
 export default function RootLayout({ children }) {
   return (
@@ -32,6 +34,7 @@ export default function RootLayout({ children }) {
             <ThemeProvider>
               {children}
               <LayoutBar />
+              <DevAccountSwitcher />
             </ThemeProvider>
           </AuthProvider>
         </QueryProvider>

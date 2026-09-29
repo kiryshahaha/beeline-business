@@ -90,6 +90,21 @@
   animation: pulseDot 2s infinite ease-in-out;
 }
 
+.statusDotOnline {
+  background-color: var(--success);
+  box-shadow: 0 0 8px var(--success);
+}
+
+.statusDotChecking {
+  background-color: var(--warning);
+  box-shadow: 0 0 8px var(--warning);
+}
+
+.statusDotOffline {
+  background-color: var(--danger);
+  box-shadow: 0 0 8px var(--danger);
+}
+
 @keyframes pulseDot {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.5; transform: scale(0.9); }
@@ -569,6 +584,11 @@
 .serviceBadgeWarning {
   background-color: var(--warning-bg);
   color: var(--warning);
+}
+
+.serviceBadgeOffline {
+  background-color: var(--danger-bg);
+  color: var(--danger);
 }
 
 .serviceUrl {

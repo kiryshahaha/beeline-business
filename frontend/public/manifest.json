@@ -1,0 +1,21 @@
+{
+  "name": "Билайн Бизнес — Исполнитель",
+  "short_name": "Исполнитель",
+  "description": "Мобильное рабочее место сервисного инженера Билайн Бизнес",
+  "start_url": "/worker",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#090d16",
+  "icons": [
+    {
+      "src": "/icons/icon-map.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/icons/icon-map.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

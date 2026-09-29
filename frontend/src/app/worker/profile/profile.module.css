@@ -1,0 +1,352 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  max-width: 1040px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.leftCol,
+.rightCol {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (min-width: 860px) {
+  .container {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 24px;
+    padding: 24px 32px;
+    align-items: start;
+  }
+}
+
+.profileCard {
+  background: var(--bg-card, #1c1c1e);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 20px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.35));
+}
+
+.avatarCircle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--beeline);
+  color: #000;
+  font-size: 20px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.profileNames {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fullName {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--text-primary, #ffffff);
+}
+
+.roleTag {
+  font-size: 12px;
+  color: var(--text-muted, rgba(255, 255, 255, 0.45));
+  font-weight: 500;
+}
+
+.infoCard {
+  background: var(--bg-card, #1c1c1e);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 18px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.35));
+}
+
+.attributesGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+@media (min-width: 600px) {
+  .attributesGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.infoItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-card-subtle, #242427);
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.infoItemFull {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-card-subtle, #242427);
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.infoLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted, rgba(255, 255, 255, 0.45));
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.infoValue {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #ffffff);
+}
+
+.infoSub {
+  font-size: 12px;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.72));
+}
+
+.skillsSection {
+  background: var(--bg-card, #1c1c1e);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 18px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.35));
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary, #ffffff);
+}
+
+.skillsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.skillPill {
+  background: var(--badge-bg, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  color: var(--text-secondary, rgba(255, 255, 255, 0.72));
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 10px;
+}
+
+.calendarCard {
+  background: var(--bg-card, #1c1c1e);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 18px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.35));
+}
+
+.calendarHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.calendarIcon {
+  font-size: 24px;
+}
+
+.calendarTitleWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.calendarTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary, #ffffff);
+}
+
+.calendarSub {
+  font-size: 12px;
+  color: var(--text-muted, rgba(255, 255, 255, 0.45));
+  line-height: 1.35;
+}
+
+.errorAlert {
+  background: var(--danger-bg, rgba(255, 69, 58, 0.15));
+  border: 1px solid var(--danger, #ff453a);
+  color: var(--danger, #ff453a);
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+
+.calendarStatusRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.statusLabel {
+  color: var(--text-muted, rgba(255, 255, 255, 0.45));
+}
+
+.statusActive {
+  color: var(--success, #34d399);
+  font-weight: 600;
+}
+
+.statusInactive {
+  color: var(--text-muted, rgba(255, 255, 255, 0.45));
+}
+
+.issuedBox {
+  background: var(--bg-page, #141416);
+  border: 1px solid rgba(255, 200, 0, 0.35);
+  border-radius: 14px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.issuedWarning {
+  font-size: 12px;
+  color: var(--warning, #fbbf24);
+  line-height: 1.35;
+}
+
+.urlCopyRow {
+  display: flex;
+  gap: 8px;
+}
+
+.urlInput {
+  flex: 1;
+  background: var(--bg-input, #2c2c2e);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  padding: 8px 12px;
+  color: var(--text-primary, #ffffff);
+  font-size: 12px;
+  font-family: monospace;
+  outline: none;
+}
+
+.copyBtn {
+  background: var(--beeline, #ffc800);
+  color: #000;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.copyBtn:hover {
+  background: var(--beeline-hover, #e5b400);
+}
+
+.calendarActions {
+  display: flex;
+  gap: 10px;
+}
+
+.issueBtn {
+  flex: 1;
+  background: var(--bg-card-subtle, #242427);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  color: var(--beeline, #ffc800);
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.issueBtn:hover {
+  background: var(--bg-card-hover, #252528);
+}
+
+.revokeBtn {
+  background: var(--danger-bg, rgba(255, 69, 58, 0.15));
+  border: 1px solid var(--danger, #ff453a);
+  color: var(--danger, #ff453a);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.revokeBtn:hover {
+  background: rgba(255, 69, 58, 0.25);
+}
+
+.logoutSection {
+  margin-top: 4px;
+}
+
+.logoutBtn {
+  width: 100%;
+  background: var(--danger-bg, rgba(255, 69, 58, 0.15));
+  border: 1px solid var(--danger, #ff453a);
+  color: var(--danger, #ff453a);
+  border-radius: 14px;
+  padding: 14px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.logoutBtn:hover {
+  background: rgba(255, 69, 58, 0.25);
+}
+
+.logoutBtn:active {
+  transform: scale(0.98);
+}

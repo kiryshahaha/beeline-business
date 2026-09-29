@@ -186,8 +186,8 @@ export default function MapComponent({
               ([lng, lat]) => lng >= minLng && lng <= maxLng && lat >= minLat && lat <= maxLat
             );
           }
-          // Не спамим нерелевантными тестовыми маршрутами из базы данных
-          return false;
+          // Когда включен слой «Маршруты», отображаем все доступные маршруты на карте
+          return true;
         })
         .map((r) => {
           const isSelected = selectedRouteId === r.id;
