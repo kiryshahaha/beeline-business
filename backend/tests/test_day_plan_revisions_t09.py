@@ -1099,7 +1099,10 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         self.assertEqual(preview["event"]["category"], "repair")
         self.assertEqual(preview["event"]["outcome"], "insertion_ready", preview["event"])
         self.assertEqual(preview["event"]["ticket_id"], ticket["id"])
-        self.assertEqual(preview["event"]["received_at"], ticket["received_at"])
+        self.assertEqual(
+            datetime.fromisoformat(preview["event"]["received_at"]),
+            datetime.fromisoformat(ticket["received_at"]),
+        )
         self.assertEqual(
             preview["plan"]["replan_diff"]["ticket_event"]["source_event_id"],
             preview["event"]["source_event_id"],

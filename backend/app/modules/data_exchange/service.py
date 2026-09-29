@@ -336,8 +336,8 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                 inserted = {}
                 # Work types whose planning rule this package itself inserts.
                 new_rules = set()
-                # Rows this package inserted: a second copy inside one package is an error.
-                created = {}
+                # Track reused rows too: a package may reference each catalogue entry once.
+                seen_references = {}
                 table_order = list(TABLES)
                 district_index = table_order.index("districts")
                 service_area_index = table_order.index("service_areas")
@@ -418,6 +418,8 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                                 .one_or_none()
                             )
                             if existing is not None:
+                                if existing["id"] in seen_references.get(name, ()):
+                                    raise ValueError("Запись справочника повторяется в пакете")
                                 if any(
                                     existing[k] != values[k]
                                     for k in ("travel_minutes", "work_minutes", "documents_minutes")
@@ -425,14 +427,16 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                                     raise ValueError("Existing work type has different norms")
                                 ids[name][source_id] = existing["id"]
                                 inserted[name].append(dict(existing))
+                                seen_references.setdefault(name, set()).add(existing["id"])
                                 continue
                         if name in REFERENCE_KEYS:
                             existing = _existing_reference(session, name, values)
                             if existing is not None:
-                                if existing["id"] in created.get(name, ()):
+                                if existing["id"] in seen_references.get(name, ()):
                                     raise ValueError("Запись справочника повторяется в пакете")
                                 ids[name][source_id] = existing["id"]
                                 inserted[name].append(dict(existing))
+                                seen_references.setdefault(name, set()).add(existing["id"])
                                 continue
                         if name in (
                             "work_type_planning_rules",
@@ -562,7 +566,7 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                         )
                         inserted[name].append(record)
                         if "id" in record:
-                            created.setdefault(name, set()).add(record["id"])
+                            seen_references.setdefault(name, set()).add(record["id"])
                         if source_id is not None:
                             ids[name][source_id] = record["id"]
                         elif name == "work_type_planning_rules":

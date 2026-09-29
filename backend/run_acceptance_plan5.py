@@ -7,7 +7,8 @@ import subprocess
 import sys
 import time
 from contextlib import ExitStack
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as time_of_day
 from pathlib import Path
 
 import httpx
@@ -54,6 +55,34 @@ def _request(client, method, path, expected, **kwargs):
     if response.status_code != expected:
         raise AssertionError(f"{method} {path}: {response.status_code} {body}")
     return body
+
+
+def assert_visits_within_shifts(day):
+    """Verify published visits against the admitted roster, including overnight shifts."""
+    route_date = date.fromisoformat(day["route_date"])
+    moscow = timezone(timedelta(hours=3))
+    shifts = {}
+    for worker in day["roster"]:
+        if not worker["workshift_start"] or not worker["workshift_end"]:
+            raise AssertionError(f"Worker {worker['worker_id']} has no published shift")
+        start = datetime.combine(
+            route_date, time_of_day.fromisoformat(worker["workshift_start"]), moscow
+        )
+        end = datetime.combine(
+            route_date, time_of_day.fromisoformat(worker["workshift_end"]), moscow
+        )
+        if end <= start:
+            end += timedelta(days=1)
+        shifts[worker["worker_id"]] = start, end
+    for visit in day["visits"]:
+        if visit["worker_id"] not in shifts:
+            raise AssertionError(f"Ticket {visit['ticket_id']} is assigned outside the roster")
+        start, end = shifts[visit["worker_id"]]
+        arrival = datetime.fromisoformat(visit["arrival_at"])
+        service_start = datetime.fromisoformat(visit["service_start_at"])
+        service_end = datetime.fromisoformat(visit["service_end_at"])
+        if not start <= arrival <= service_start < service_end <= end:
+            raise AssertionError(f"Visit of ticket {visit['ticket_id']} left its worker shift")
 
 
 def main():
@@ -151,6 +180,7 @@ def main():
                 )
                 if current["revision"] != 1 or len(current["visits"]) != len(morning):
                     raise AssertionError(f"Initial plan of area {source} was not published")
+                assert_visits_within_shifts(current)
                 initial[source] = current
                 report["steps"].append(
                     {
@@ -242,6 +272,7 @@ def main():
                     raise AssertionError(f"Regular apply changed worker {worker_id} stop order")
             if current["roster"] != initial[101]["roster"] or current["revision"] != 2:
                 raise AssertionError("Regular apply changed roster or revision count")
+            assert_visits_within_shifts(current)
             replay = _request(client, "POST", f"/api/v1/planning/plans/{plan_id}/apply", 200)
             if not replay["already_applied"]:
                 raise AssertionError("Repeated apply created another logical result")
@@ -256,6 +287,7 @@ def main():
                         for key in ("worker_id", "sequence", "service_start_at", "service_end_at")
                     },
                     "shifted_within_windows": moved,
+                    "all_visits_within_shifts": True,
                     "already_applied_on_replay": replay["already_applied"],
                 }
             )
@@ -315,6 +347,7 @@ def main():
                 raise AssertionError("Emergency apply did not publish exactly one revision")
             if emergency_current["roster"] != initial[103]["roster"]:
                 raise AssertionError("Emergency replan changed the published roster")
+            assert_visits_within_shifts(emergency_current)
             if emergency_id not in {v["ticket_id"] for v in emergency_current["visits"]}:
                 raise AssertionError("Emergency is absent from the published route")
             emergency_replay = _request(
