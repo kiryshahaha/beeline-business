@@ -375,7 +375,7 @@ def outside_horizon(window_start, window_end, day_start, horizon_end, day):
         f"Окно визита {clock(window_start, day)}–{clock(window_end, day)} не пересекается"
         f" с днём расчёта: с {clock(day_start, day)} до конца последней смены"
         f" {clock(horizon_end, day)}",
-        constraint="visit_window=service_start_in_window",
+        constraint="visit_window=whole_service",
         observed={"window_start": iso(window_start), "window_end": iso(window_end)},
         required={"from": iso(day_start), "to": iso(horizon_end)},
     )
@@ -537,7 +537,7 @@ def window_outside_shift(window_start, window_end, shift_start, shift_end, day):
         "time",
         f"Окно {clock(window_start, day)}–{clock(window_end, day)} не пересекается"
         f" со сменой {clock(shift_start, day)}–{clock(shift_end, day)}",
-        constraint="visit_window=service_start_in_window",
+        constraint="visit_window=whole_service",
         observed={"shift_start": iso(shift_start), "shift_end": iso(shift_end)},
         required={"window_start": iso(window_start), "window_end": iso(window_end)},
     )
@@ -582,7 +582,7 @@ def arrival_after_window(arrival, window_end, day):
         "time",
         f"Даже при выезде в начале смены сразу к заявке инженер прибудет в {clock(arrival, day)},"
         f" позже конца окна {clock(window_end, day)}",
-        constraint="visit_window=service_start_in_window",
+        constraint="visit_window=whole_service",
         observed={"earliest_arrival": iso(arrival)},
         required={"window_end": iso(window_end)},
     )
@@ -723,7 +723,7 @@ def window_factor(start, window_start, window_end, waiting, day):
         "time",
         f"Начало в {clock(start, day)} внутри окна {clock(window_start, day)}–"
         f"{clock(window_end, day)}{wait}",
-        constraint="visit_window=service_start_in_window",
+        constraint="visit_window=whole_service",
         observed={"service_start_at": iso(start), "waiting_minutes": waiting},
         required={"window_start": iso(window_start), "window_end": iso(window_end)},
     )

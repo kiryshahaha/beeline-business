@@ -7,6 +7,7 @@
 | Набор | Заявки | Исполнители | Дней | Снимки маршрутов | Форматы |
 | --- | ---: | ---: | ---: | ---: | --- |
 | [standard](standard/manifest.json) | 1 500 | 120 | 7 | 896 | dataset.zip (CSV), dataset.xlsx |
+| [acceptance](acceptance/README.md) | 48 | 13, из них 12 в дневном составе | 1 | 12 | dataset.zip (CSV), dataset.xlsx |
 | [large](large/manifest.json) | 10 000 | 240 | 14 | 3 472 | dataset.zip (CSV), dataset.xlsx |
 | [Bruno fixtures](../../backend/bruno/fixtures/manifest.json) | 24 | 4 | 1 | 8 | оба формата |
 

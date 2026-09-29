@@ -151,6 +151,26 @@ class SlotFinderTests(unittest.TestCase):
         self.assertEqual(res.status, "not_insertable")
         self.assertEqual(res.candidate_reasons[10]["code"], "no_feasible_slot")
 
+    def test_service_must_finish_inside_customer_window(self):
+        ticket = {
+            "id": 99,
+            "location_id": 100,
+            "estimated_duration_minutes": 30,
+            "visit_window_start": "2026-09-30T11:00:00+03:00",
+            "visit_window_end": "2026-09-30T11:15:00+03:00",
+        }
+        result = find_regular_ticket_slot(
+            ticket=ticket,
+            candidate_workers=[self.worker_1],
+            baseline_state={"visits": []},
+            lifecycle_by_ticket={},
+            travel_time_fn=self.travel_fn,
+            office_location_id=100,
+            now=self.now,
+        )
+        self.assertEqual(result.status, "not_insertable")
+        self.assertEqual(result.candidate_reasons[10]["code"], "no_feasible_slot")
+
     def test_safe_point_prevents_inserting_before_in_progress_stop(self):
         baseline = {
             "visits": [

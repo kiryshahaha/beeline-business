@@ -50,19 +50,17 @@ class _ExecutionRules(BaseModel):
     def start_window(
         self, start: datetime, end: datetime, epoch: datetime, duration: int, horizon: int
     ) -> list[int]:
-        """Return the allowed service-start interval [lower, upper] in minutes from epoch.
+        """Return inclusive allowed service-start minutes relative to epoch.
 
-        Semantics (service_start_in_window):
-          lower = ceil(window_start)  rounded UP to preserve feasibility
-          upper = floor(window_end)   rounded DOWN to preserve feasibility
-        Duration is NOT subtracted from upper here; instead eligibility.py checks
-        that service_start + duration <= shift_end for each worker candidate.
-        Rounding direction is intentional: lower up keeps the window inclusive,
-        upper down keeps it inclusive on the end — both guarantee the solver
-        cannot schedule outside the client's promised window.
+        Existing snapshots retain their recorded start-only rule. New snapshots
+        require completion inside the customer window.
         """
         lower = max(0, math.ceil((start - epoch).total_seconds() / 60))
-        upper = min(horizon, math.floor((end - epoch).total_seconds() / 60))
+        upper = min(
+            horizon,
+            math.floor((end - epoch).total_seconds() / 60)
+            - (duration if self.visit_window == "whole_service" else 0),
+        )
         return [lower, upper]
 
 
@@ -94,6 +92,7 @@ class ExecutionPolicy(_ExecutionRules):
     """
 
     policy_version: Literal[2] = 2
+    visit_window: Literal["service_start_in_window", "whole_service"] = "whole_service"
     # Version 1 recorded these two before T03 and T02 enforced them in eligibility.
     territory: Literal["service_area_then_allocation_office"] = (
         "service_area_then_allocation_office"
@@ -133,7 +132,7 @@ POLICIES = {1: ExecutionPolicyV1, 2: ExecutionPolicy}
 def execution_policy(settings=None) -> ExecutionPolicy:
     open_end = getattr(settings, "planning_open_end", True) if settings else True
     return ExecutionPolicy(
-        visit_window="service_start_in_window",
+        visit_window="whole_service",
         route_end="open_end" if open_end else "return_to_brigade_office",
         search_time_limit_seconds=settings.planning_solve_time_limit_seconds if settings else 5,
     )

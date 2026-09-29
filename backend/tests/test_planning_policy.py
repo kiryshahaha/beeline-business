@@ -200,37 +200,27 @@ class PlanningPolicyTests(unittest.TestCase):
             SolveRequest.model_validate({"policy_version": 1})
         self.assertIn(("policy_version",), {e["loc"] for e in error.exception.errors()})
 
-    def test_service_start_in_window_does_not_subtract_duration_from_upper(self):
-        """F01 regression: a ticket with window 10:00-12:00 and 150 min duration
-        must NOT be excluded. service_start ∈ [window_start, window_end]; only
-        service_end (start+duration) is checked against shift_end."""
+    def test_current_policy_requires_whole_service_within_window(self):
         from datetime import datetime
 
         policy = execution_policy()
-        self.assertEqual(policy.visit_window, "service_start_in_window")
-        epoch = datetime(2026, 9, 23, 0, 0, tzinfo=UTC)
-        window_start = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
-        window_end = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
-        lower, upper = policy.start_window(window_start, window_end, epoch, 150, 1440)
-        # lower = 600, upper = 720 (no subtraction of duration)
-        self.assertEqual(lower, 600)
-        self.assertEqual(upper, 720)
-        # window is feasible: lower <= upper
-        self.assertLessEqual(lower, upper)
+        self.assertEqual(policy.visit_window, "whole_service")
+        epoch = datetime(2030, 1, 15, 0, 0, tzinfo=UTC)
+        start = datetime(2030, 1, 15, 10, 0, tzinfo=UTC)
+        end = datetime(2030, 1, 15, 12, 0, tzinfo=UTC)
+        self.assertEqual(policy.start_window(start, end, epoch, 30, 1440), [600, 690])
+        self.assertEqual(policy.start_window(start, end, epoch, 150, 1440), [600, 570])
 
-    def test_whole_service_legacy_window_contracts_upper_by_duration(self):
-        """Backwards-compatible: whole_service from old snapshots still subtracts duration."""
+    def test_recorded_start_only_policy_retains_its_original_window(self):
         from datetime import datetime
 
-        # Simulate a pre-T01 snapshot that stored whole_service
-        policy = ExecutionPolicy(visit_window="whole_service")
-        epoch = datetime(2026, 9, 23, 0, 0, tzinfo=UTC)
-        window_start = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
-        window_end = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
-        # Note: start_window does NOT know about visit_window value — it always
-        # uses service_start_in_window semantics now. The old "whole_service" label
-        # was a documentation difference, not a code branch.
-        # Verify that the new semantics apply to all policies (including old ones).
-        lower, upper = policy.start_window(window_start, window_end, epoch, 150, 1440)
-        self.assertEqual(lower, 600)
-        self.assertEqual(upper, 720)
+        recorded = ExecutionPolicy(visit_window="service_start_in_window")
+        policy = snapshot_policy(policy_snapshot(recorded))
+        epoch = datetime(2030, 1, 15, 0, 0, tzinfo=UTC)
+        start = datetime(2030, 1, 15, 10, 0, tzinfo=UTC)
+        end = datetime(2030, 1, 15, 12, 0, tzinfo=UTC)
+        self.assertEqual(policy.start_window(start, end, epoch, 150, 1440), [600, 720])
+
+
+if __name__ == "__main__":
+    unittest.main()
