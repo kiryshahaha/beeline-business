@@ -180,15 +180,28 @@ def create_ticket(
     response: Response,
     current_user: CurrentObserver,
     reverse_geocoder: GeoapifyReverseGeocoder | None = Depends(get_reverse_geocoder),
+    idempotency_key: IdempotencyHeader = None,
 ) -> TicketRead:
-    """Создать заявку на существующее место выполнения из адресного справочника."""
+    """Создать заявку на существующее место выполнения из адресного справочника.
+
+    Повтор с тем же `Idempotency-Key` и тем же телом возвращает уже созданную заявку;
+    тот же ключ с другим телом — 409 `idempotency_conflict`.
+    """
+    key = _idempotency_key(idempotency_key) if idempotency_key is not None else None
     try:
         ticket = service.create_ticket(
             session,
             data,
             actor_id=current_user.id,
             reverse_geocoder=reverse_geocoder,
+            idempotency_key=f"ticket-create:client:{key}" if key else None,
+            replay=key is not None,
         )
+    except service.TicketIdempotencyConflictError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "idempotency_conflict", "event_id": error.event_id},
+        ) from error
     except service.LocationNotFoundError as error:
         raise HTTPException(status_code=422, detail="Место выполнения не найдено") from error
     except service.WorkTypeNotFoundError as error:

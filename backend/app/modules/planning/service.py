@@ -63,14 +63,17 @@ logger = logging.getLogger(__name__)
 MOSCOW = ZoneInfo("Europe/Moscow")
 
 
+RESCHEDULE_REASONS = {
+    "event_replan": "Маршрут пересчитан из-за изменения условий",
+    "emergency_replan": "Маршрут пересчитан из-за аварийной заявки",
+    "ticket_inserted": "В маршрут добавлена новая заявка",
+}
+
+
 def _notify_rescheduled_tickets(session: Session, revision: DayPlanRevision) -> None:
     """Notify assigned workers when a published service start moves by >= 15 minutes."""
     changes = (revision.diff or {}).get("changed", [])
-    reason_text = (
-        "Маршрут пересчитан из-за изменения условий"
-        if revision.reason == "event_replan"
-        else "Опубликован новый план маршрута"
-    )
+    reason_text = RESCHEDULE_REASONS.get(revision.reason, "Опубликован новый план маршрута")
     for change in changes:
         fields = change.get("changes", {})
         start_change = fields.get("service_start_at")
@@ -92,7 +95,46 @@ def _notify_rescheduled_tickets(session: Session, revision: DayPlanRevision) -> 
                 "from": previous.isoformat(),
                 "to": current.isoformat(),
                 "reason_text": reason_text,
+                # The worker's notice and the dispatcher's day history name one revision.
+                "service_area_id": revision.service_area_id,
+                "route_date": revision.route_date.isoformat(),
+                "day_revision": revision.revision,
             },
+        )
+
+
+def unassigned_reasons_of(plan) -> dict[int, str | None]:
+    # Plans saved before structured reasons keep the code as a plain string.
+    return {
+        item["ticket_id"]: (
+            item["reason"].get("code") if isinstance(item["reason"], dict) else item["reason"]
+        )
+        for item in plan.result_snapshot["public"].get("unassigned", [])
+    }
+
+
+def _notify_dropped_tickets(session, dropped, reasons, revision) -> None:
+    """Tell each engineer which ticket the replan took off his route and why."""
+    for ticket_id, worker_id, title in dropped:
+        if worker_id is None:
+            continue
+        data = {
+            "title": title,
+            "reason_text": "Заявка снята с маршрута при перепланировании",
+            "unassigned_reason": reasons.get(ticket_id),
+        }
+        if revision is not None:
+            data.update(
+                service_area_id=revision.service_area_id,
+                route_date=revision.route_date.isoformat(),
+                day_revision=revision.revision,
+            )
+        ticket_repository.add_notification_events(
+            session,
+            [worker_id],
+            kind=NotificationKind.TICKET_UNASSIGNED,
+            ticket_id=ticket_id,
+            data=data,
         )
 
 
@@ -352,7 +394,7 @@ async def find_regular_ticket_insertion(
     snapshot, ticket_id, settings, provider_factory, clock=utc_now
 ):
     """Run shared eligibility and matrix checks, then choose one immutable route gap."""
-    prepared = prepare(snapshot, clock())
+    prepared = prepare(snapshot, clock(), estimate_active_stage=True)
     ticket = next((item for item in prepared["tickets"] if item["id"] == ticket_id), None)
     if ticket is None:
         rejection = next(
@@ -415,11 +457,17 @@ async def find_regular_ticket_insertion(
                 "available_appliances": {},
                 "shift_start_at": worker["shift_start"],
                 "shift_end_at": worker["shift_end"],
+                # After a current stage the route starts no earlier than its estimated end.
+                "available_at": prepared["epoch"] + timedelta(minutes=worker["window"][0]),
                 "office_location_id": office["location_id"] if office else None,
             }
         )
 
-    visits_by_id = {item["id"]: item for item in raw_tickets.values()}
+    # The ticket of a trip in progress is not replanned, but its place anchors the route.
+    visits_by_id = {
+        **{item["id"]: item for item in snapshot["busy_tickets"]},
+        **raw_tickets,
+    }
     baseline_state = dict(snapshot.get("current_day_state") or {})
     enriched_visits = []
     for visit in baseline_state.get("visits", []):
@@ -533,11 +581,29 @@ def _pin_existing_visits_for_ordinary_insert(
             continue
         worker_index = workers.get(visit.get("worker_id"))
         if worker_index is None or worker_index not in ticket["allowed"]:
+            # Name the engineer and why the visit cannot stay with him.
+            cause = next(
+                (
+                    item["reason"]
+                    for item in prepared["excluded_workers"]
+                    if item["worker_id"] == visit.get("worker_id")
+                ),
+                None,
+            ) or next(
+                (
+                    item["reason"]
+                    for item in ticket.get("rejected", [])
+                    if item["worker_id"] == visit.get("worker_id")
+                ),
+                None,
+            )
             raise PlanningError(
                 "ordinary_insert_existing_visit_conflict",
                 409,
                 ticket_id=min(new_ticket_ids) if new_ticket_ids else None,
                 conflicting_ticket_id=visit["ticket_id"],
+                worker_id=visit.get("worker_id"),
+                worker_reason=cause,
             )
         proposed_visit = proposed_visits.get(visit["ticket_id"], visit)
         service_start = proposed_visit.get("service_start_at")
@@ -610,8 +676,13 @@ async def preview(
         )
     else:
         snapshot = snapshot_override
-    prepared = prepare(snapshot, clock())
-    ordinary_insert_ids = _ordinary_insert_ticket_ids(snapshot) if request.replan else None
+    prepared = prepare(snapshot, clock(), estimate_active_stage=event_insertion is not None)
+    if event_insertion is not None:
+        # The event names its ticket, even if it was already waiting in the area when an
+        # earlier revision was published.
+        ordinary_insert_ids = {event_insertion.ticket_id}
+    else:
+        ordinary_insert_ids = _ordinary_insert_ticket_ids(snapshot) if request.replan else None
     required_existing_ids = None
     if ordinary_insert_ids is not None:
         required_existing_ids = _pin_existing_visits_for_ordinary_insert(
@@ -844,7 +915,7 @@ async def preview(
 
     if ticket_event is not None:
         public["ticket_event"] = build_ticket_event_result(
-            ticket_event, snapshot, prepared, public, event_insertion
+            ticket_event, snapshot, prepared, public, event_insertion, now=clock()
         )
         if public.get("replan_diff") is not None:
             public["replan_diff"]["ticket_event"] = public["ticket_event"]
@@ -975,7 +1046,29 @@ def emergency_response_estimates(snapshot: dict, public: dict) -> list[dict]:
     return estimates
 
 
-def build_ticket_event_result(ticket_event, snapshot, prepared, public, event_insertion=None):
+ACTIVE_STAGE_REASONS = {"active_stage_not_completed", "active_work_eta_unknown"}
+
+
+def _engineers_after_current_stage(snapshot, prepared, ticket_id, now) -> list[int]:
+    """Engineers excluded only by their current stage who could take the ticket after it."""
+    busy = {
+        item.get("worker_id")
+        for item in prepared["excluded_workers"]
+        if isinstance(item.get("reason"), dict)
+        and item["reason"].get("code") in ACTIVE_STAGE_REASONS
+    }
+    if not busy or now is None:
+        return []
+    after_stage = prepare(snapshot, now, estimate_active_stage=True)
+    ticket = next((item for item in after_stage["tickets"] if item["id"] == ticket_id), None)
+    if ticket is None:
+        return []
+    return sorted({after_stage["workers"][index]["user_id"] for index in ticket["allowed"]} & busy)
+
+
+def build_ticket_event_result(
+    ticket_event, snapshot, prepared, public, event_insertion=None, *, now=None
+):
     """Build the dispatcher-facing event decision from the proposal and saved baseline."""
     ticket_id = ticket_event["ticket_id"]
     scheduled = {
@@ -993,11 +1086,15 @@ def build_ticket_event_result(ticket_event, snapshot, prepared, public, event_in
     if category == "emergency":
         if stop is None:
             outcome_code = "emergency_unassigned"
-            if not prepared["workers"] and any(
-                item.get("reason", {}).get("code")
-                in {"active_stage_not_completed", "active_work_eta_unknown"}
-                for item in prepared["excluded_workers"]
-            ):
+            # Nobody else can take it now, but an engineer can once the current stage ends:
+            # the route waits for that completion instead of reporting no candidate.
+            if (
+                not prepared["workers"]
+                and any(
+                    item.get("reason", {}).get("code") in ACTIVE_STAGE_REASONS
+                    for item in prepared["excluded_workers"]
+                )
+            ) or _engineers_after_current_stage(snapshot, prepared, ticket_id, now):
                 outcome_code = "waiting_safe_point"
             can_apply = False
         else:
@@ -1425,7 +1522,12 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                 ),
             )
         else:
-            prepared = prepare(current, apply_at)
+            prepared = prepare(
+                current,
+                apply_at,
+                estimate_active_stage=bool(ticket_event)
+                and ticket_event["category"] != "emergency",
+            )
             selected = {r["worker_id"] for r in plan.result_snapshot["route_creates"]}
             if selected & {w["worker_id"] for w in prepared["excluded_workers"]}:
                 plan.state = "stale"
@@ -1488,12 +1590,10 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                     )
                 )
             session.flush()
+            dropped = []
             if request.replan:
                 assigned_ids = set(ticket_ids)
-                unassigned_reasons = {
-                    item["ticket_id"]: item["reason"].get("code")
-                    for item in plan.result_snapshot["public"].get("unassigned", [])
-                }
+                unassigned_reasons = unassigned_reasons_of(plan)
                 from app.modules.execution import service as execution_service
                 from app.modules.execution.enums import TicketLifecycleState, WorkEventType
                 from app.modules.execution.schemas import ExecutionCommand
@@ -1505,6 +1605,7 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                         TicketLifecycleState.DISPATCHED,
                     }:
                         continue
+                    dropped.append((ticket.id, ticket.assigned_worker_id, ticket.title))
                     command = ExecutionCommand.model_construct(
                         expected_revision=ticket.revision,
                         occurred_at=clock(),
@@ -1603,6 +1704,8 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                 }
                 session.flush()
                 _notify_rescheduled_tickets(session, revision_row)
+            if dropped:
+                _notify_dropped_tickets(session, dropped, unassigned_reasons_of(plan), revision_row)
             applied_fingerprint = fingerprint(
                 load_snapshot(
                     session, request, policy_snapshot=recorded_policy(plan.input_snapshot)

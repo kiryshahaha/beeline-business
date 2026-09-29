@@ -16,6 +16,7 @@ import httpx
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
+from acceptance_intraday import run as run_intraday
 from app.core.security import hash_password
 from app.modules.data_exchange.formats import parse_file
 from app.modules.data_exchange.service import import_data
@@ -837,6 +838,7 @@ def main():
                     "published_revision": unchanged_102["revision"],
                 }
             )
+            run_intraday(client, base, isolated, ids, tables, report)
     (args.report_dir / "result.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
