@@ -3,6 +3,7 @@ import Supercluster from "supercluster";
 import { useMemo } from "react";
 import { useMapView } from "@/hooks/useMapView";
 import { ClusterPoint } from "./ClusterPoint";
+import { isTicketUrgent } from "@/utils/ticketUtils";
 
 export const ClusterComponent = ({ data, selectedObject, onSelectObject }) => {
   const { current: map } = useMap();
@@ -12,13 +13,7 @@ export const ClusterComponent = ({ data, selectedObject, onSelectObject }) => {
     () => data
       .filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude))
       .map((item) => {
-        const isUrgent =
-          item.type === "ticket" &&
-          Boolean(
-            item.data?.priority === 1 ||
-            item.data?.category === "emergency" ||
-            (item.data?.status === "planned" && !item.data?.assigned_worker_id),
-          );
+        const isUrgent = item.type === "ticket" && isTicketUrgent(item.data);
 
         let title = item.label;
         let address = "";
@@ -101,7 +96,7 @@ export const ClusterComponent = ({ data, selectedObject, onSelectObject }) => {
   );
   const index = useMemo(() => {
     const cluster = new Supercluster({
-      radius: 45,
+      radius: 60,
       maxZoom: 16,
       minPoints: 2,
       map: (props) => ({
@@ -121,7 +116,7 @@ export const ClusterComponent = ({ data, selectedObject, onSelectObject }) => {
     return cluster;
   }, [features]);
   const clusters = useMemo(
-    () => index.getClusters(bbox, Math.floor(zoom)),
+    () => index.getClusters(bbox, Math.round(zoom)),
     [bbox, index, zoom],
   );
   const overlapOffsets = useMemo(() => {

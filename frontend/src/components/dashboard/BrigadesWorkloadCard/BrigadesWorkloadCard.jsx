@@ -4,8 +4,12 @@ import React from "react";
 import styles from "./BrigadesWorkloadCard.module.css";
 import { useBrigadesWorkload } from "@/hooks/useBrigadesWorkload";
 
-export default function BrigadesWorkloadCard({ onOpenJournal, onUploadClick }) {
-  const { brigades, totalActiveTasks, formattedUpdatedAt, isLoading } = useBrigadesWorkload();
+export default function BrigadesWorkloadCard({
+  onOpenJournal,
+  onUploadClick,
+  date,
+}) {
+  const { brigades, totalActiveTasks, formattedUpdatedAt, isLoading } = useBrigadesWorkload({ date });
 
   const hasBrigades = brigades && brigades.length > 0;
 
@@ -49,74 +53,86 @@ export default function BrigadesWorkloadCard({ onOpenJournal, onUploadClick }) {
         </div>
       </div>
 
-      {/* Шкала и список бригад */}
-      <div className={styles.workloadList}>
-        {/* Ось шкалы */}
-        <div className={styles.scaleRow}>
-          <div></div>
-          <div className={styles.scaleAxis}>
-            <span className={`${styles.scaleMark} ${styles.scaleMarkStart}`}>0</span>
-            <span className={styles.scaleMark} style={{ left: "33.3%" }}>4</span>
-            <span className={styles.scaleMark} style={{ left: "66.7%" }}>8 - норма</span>
-            <span className={`${styles.scaleMark} ${styles.scaleMarkEnd}`}>12 задач</span>
+      {/* Вертикальный график загрузки бригад */}
+      <div className={styles.chartContainer}>
+        {/* Горизонтальные уровни шкалы с пунктирными линиями */}
+        <div className={styles.yAxisGuide}>
+          <div className={styles.guideLineRow}>
+            <span className={styles.guideLabel}>100% (12+ з.)</span>
+            <div className={styles.guideLine} />
           </div>
-          <div></div>
+          <div className={styles.guideLineRow}>
+            <span className={`${styles.guideLabel} ${styles.guideLabelNorm}`}>67% (8 з. норма)</span>
+            <div className={`${styles.guideLine} ${styles.guideLineNorm}`} />
+          </div>
+          <div className={styles.guideLineRow}>
+            <span className={styles.guideLabel}>33% (4 з.)</span>
+            <div className={styles.guideLine} />
+          </div>
+          <div className={styles.guideLineRow}>
+            <span className={styles.guideLabel}>0%</span>
+            <div className={styles.guideLine} />
+          </div>
         </div>
 
-        {/* Список строк */}
-        {isLoading ? (
-          [1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className={styles.brigadeRow}>
-              <div className={styles.brigadeInfo}>
-                <div className={`${styles.skeleton} ${styles.skeletonName}`} />
-                <div className={`${styles.skeleton} ${styles.skeletonSub}`} style={{ marginTop: 4 }} />
+        {/* Столбцы бригад */}
+        <div className={styles.columnsWrapper}>
+          {isLoading ? (
+            [1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className={styles.columnItem}>
+                <div className={`${styles.skeleton} ${styles.skeletonTopVal}`} />
+                <div className={styles.colTrack}>
+                  <div className={`${styles.skeleton} ${styles.skeletonCol}`} />
+                </div>
+                <div className={`${styles.skeleton} ${styles.skeletonColLabel}`} />
+                <div className={`${styles.skeleton} ${styles.skeletonColSub}`} />
               </div>
-              <div className={`${styles.skeleton} ${styles.skeletonBar}`} />
-              <div className={styles.skeleton} style={{ width: 28, height: 14 }} />
-            </div>
-          ))
-        ) : hasBrigades ? (
-          brigades.map((brigade) => (
-            <div key={brigade.id} className={styles.brigadeRow}>
-              <div className={styles.brigadeInfo}>
-                <span className={styles.brigadeName}>{brigade.name}</span>
-                <span className={styles.brigadeTasks}>
-                  {brigade.activeTasks} активных задач
+            ))
+          ) : hasBrigades ? (
+            brigades.map((brigade) => (
+              <div key={brigade.id} className={styles.columnItem}>
+                {/* Значение в процентах сверху над столбцом */}
+                <span className={styles.colPercent} style={{ color: brigade.color }}>
+                  {brigade.percent}%
                 </span>
-              </div>
 
-              <div className={styles.progressTrack}>
-                <div
-                  className={styles.progressBar}
-                  style={{
-                    width: `${Math.min(100, brigade.percent)}%`,
-                    backgroundColor: brigade.color,
-                  }}
-                />
-              </div>
+                {/* Вертикальный трек и столбец */}
+                <div className={styles.colTrack} title={`${brigade.name}: ${brigade.activeTasks} активных задач (${brigade.percent}%)`}>
+                  <div
+                    className={styles.colBar}
+                    style={{
+                      height: `${Math.min(100, Math.max(8, brigade.percent))}%`,
+                      backgroundColor: brigade.color,
+                    }}
+                  />
+                </div>
 
-              <span
-                className={styles.percentText}
-                style={{ color: brigade.color }}
-              >
-                {brigade.percent}%
-              </span>
+                {/* Подпись бригады снизу */}
+                <div className={styles.colInfo}>
+                  <span className={styles.colName} title={brigade.name}>
+                    {brigade.name.replace(/^Синтетическая\s+/, "")}
+                  </span>
+                  <span className={styles.colTasks}>
+                    {brigade.activeTasks} зад.
+                  </span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className={styles.emptyState}>
+              <p>Нет активных бригад в базе данных</p>
+              {onUploadClick && (
+                <button
+                  type="button"
+                  className={styles.emptyActionBtn}
+                  onClick={onUploadClick}
+                >
+                  Загрузить данные CSV
+                </button>
+              )}
             </div>
-          ))
-        ) : (
-          <div className={styles.emptyState}>
-            <p>Нет активных бригад в базе данных</p>
-            {onUploadClick && (
-              <button
-                type="button"
-                className={styles.emptyActionBtn}
-                onClick={onUploadClick}
-              >
-                Загрузить данные CSV
-              </button>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Футер */}
@@ -125,6 +141,7 @@ export default function BrigadesWorkloadCard({ onOpenJournal, onUploadClick }) {
           type="button"
           className={styles.linkBtn}
           onClick={onOpenJournal}
+          title="Открыть журнал бригад"
         >
           <span>Открыть журнал бригад</span>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

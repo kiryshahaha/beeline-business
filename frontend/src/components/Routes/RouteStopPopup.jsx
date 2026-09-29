@@ -41,7 +41,8 @@ export default function RouteStopPopup({
     <Popup
       longitude={longitude}
       latitude={latitude}
-      offset={16}
+      offset={28}
+      maxWidth="340px"
       closeButton
       closeOnClick={false}
       onClose={onClose}

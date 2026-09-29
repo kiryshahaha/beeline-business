@@ -21,23 +21,23 @@ export default function RouteLines({ routesGeoJson }) {
         }}
       />
 
-      {/* 1. Темная контрастная окантовка для четкости на карте */}
+      {/* 1. Темная контрастная окантовка для максимальной четкости на белой карте */}
       <Layer
         id="routes-casing"
         type="line"
         layout={{ "line-join": "round", "line-cap": "round" }}
         paint={{
-          "line-color": "#000000",
+          "line-color": "#0F172A",
           "line-width": [
             "case",
             ["boolean", ["get", "isSelected"], false],
-            6.5,
-            4.2,
+            7.5,
+            4.5,
           ],
           "line-opacity": [
             "case",
             ["boolean", ["get", "isSelected"], false],
-            0.8,
+            0.9,
             ["boolean", ["get", "isDimmed"], false],
             0.15,
             0.45,
@@ -55,7 +55,7 @@ export default function RouteLines({ routesGeoJson }) {
           "line-width": [
             "case",
             ["boolean", ["get", "isSelected"], false],
-            4.5,
+            5.0,
             3.0,
           ],
           "line-opacity": [

@@ -11,7 +11,10 @@ from app.core.config import get_settings
 
 @lru_cache
 def get_engine() -> Engine:
-    return create_engine(str(get_settings().database_url), pool_pre_ping=True)
+    url = str(get_settings().database_url)
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    return create_engine(url, pool_pre_ping=True)
 
 
 def get_session() -> Iterator[Session]:

@@ -27,6 +27,38 @@ const MAP_STYLES = {
   },
 };
 
+const CloseIcon = ({ size = 11 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
+const RouteIcon = ({ size = 13 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="6" cy="19" r="3" />
+    <path d="M9 19h8.5a4.5 4.5 0 0 0 0-9H7a4 4 0 0 1 0-8h11" />
+  </svg>
+);
+
 export default function Layers({
   mapRef,
   layers,
@@ -34,9 +66,21 @@ export default function Layers({
   onToggleLayer,
   error,
   points = [],
+  activeDistrict = null,
+  focusedOffice = null,
+  showDistrictBoundary = true,
+  onToggleDistrictBoundary = null,
+  filterTicketsByDistrict = true,
+  onToggleFilterTicketsByDistrict = null,
+  activeRouteTicket = null,
+  onClearRoute = null,
+  onFitDistrict = null,
+  onClearDistrict = null,
 }) {
   const [activeStyle, setActiveStyle] = useState("standard");
   const [isGlobe, setIsGlobe] = useState(false);
+
+  const hasActiveFocus = Boolean(activeDistrict || focusedOffice || activeRouteTicket);
 
   const getMap = () => mapRef?.current?.getMap?.() || mapRef?.current;
 
@@ -91,12 +135,96 @@ export default function Layers({
       className={styles.menu}
       baseSize={46}
       renderHeader={() => (
-        <div className={styles.trigger}>
+        <div className={styles.trigger} style={{ position: "relative" }}>
           <Image src="/icons/lauers.svg" alt="Слои" width={19} height={19} />
+          {hasActiveFocus && <span className={styles.activeBadgeDot} />}
         </div>
       )}
     >
       <div className={styles.panel}>
+        {/* Активный фокус района / офиса */}
+        {(activeDistrict || focusedOffice) && (
+          <div className={styles.districtSection}>
+            <div className={styles.districtHeader}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p className={styles.sectionLabel} style={{ marginBottom: 2 }}>Фокус района</p>
+                <div className={styles.districtTitle}>
+                  <span className={focusedOffice ? styles.officeIndicator : styles.districtIndicator} />
+                  <span className={styles.districtTitleText}>
+                    {focusedOffice ? focusedOffice.office_name : activeDistrict}
+                  </span>
+                </div>
+                {focusedOffice?.district && focusedOffice.district !== focusedOffice.office_name && (
+                  <div className={styles.districtSub}>{focusedOffice.district}</div>
+                )}
+              </div>
+              {onClearDistrict && (
+                <button
+                  type="button"
+                  className={styles.districtBtnReset}
+                  onClick={onClearDistrict}
+                  title="Сбросить фокус района"
+                  aria-label="Сбросить фокус"
+                >
+                  <CloseIcon size={11} />
+                </button>
+              )}
+            </div>
+
+            <div className={styles.districtActions}>
+              {onFitDistrict && (
+                <button
+                  type="button"
+                  className={styles.districtBtn}
+                  onClick={onFitDistrict}
+                  title="Приблизить камеру к границам района"
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="15 3 21 3 21 9" />
+                    <polyline points="9 21 3 21 3 15" />
+                    <line x1="21" y1="3" x2="14" y2="10" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </svg>
+                  <span>Вписать</span>
+                </button>
+              )}
+
+              {onToggleFilterTicketsByDistrict && (
+                <button
+                  type="button"
+                  className={`${styles.districtBtn} ${filterTicketsByDistrict ? styles.active : ""}`}
+                  onClick={onToggleFilterTicketsByDistrict}
+                  title={filterTicketsByDistrict ? "Показать все заявки города" : "Оставить только заявки района"}
+                >
+                  <span>{filterTicketsByDistrict ? "Только район" : "Все заявки"}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Активный маршрут к заявке */}
+        {activeRouteTicket && (
+          <div className={styles.routeLegItem}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+              <span className={styles.routeLegIconWrapper}>
+                <RouteIcon size={13} />
+              </span>
+              <span className={styles.routeLegTitle}>Маршрут к заявке #{activeRouteTicket.id}</span>
+            </div>
+            {onClearRoute && (
+              <button
+                type="button"
+                className={styles.routeLegClose}
+                onClick={onClearRoute}
+                title="Скрыть маршрут"
+              >
+                <CloseIcon size={11} />
+              </button>
+            )}
+          </div>
+        )}
+
         <div className={styles.zoom}>
           <button
             type="button"
@@ -115,22 +243,20 @@ export default function Layers({
         </div>
 
         <div className={styles.styles} aria-label="Стили карты">
-          {Object.entries(MAP_STYLES).map(([id, style]) => (
-            <button
-              type="button"
-              className={activeStyle === id ? styles.active : ""}
-              onClick={() => setStyle(id)}
-              aria-pressed={activeStyle === id}
-              key={id}
-            >
-              {style.label}
-              {activeStyle === id && (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              )}
-            </button>
-          ))}
+          <p className={styles.sectionLabel}>Стиль карты</p>
+          <div className={styles.styleButtonsRow}>
+            {Object.entries(MAP_STYLES).map(([id, style]) => (
+              <button
+                type="button"
+                className={`${styles.styleBtn} ${activeStyle === id ? styles.active : ""}`}
+                onClick={() => setStyle(id)}
+                aria-pressed={activeStyle === id}
+                key={id}
+              >
+                {style.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className={styles.objectLayers}>
           <p className={styles.sectionLabel}>Объекты на карте</p>
@@ -153,6 +279,20 @@ export default function Layers({
               <span className={styles.layerCount}>{count}</span>
             </button>
           ))}
+
+          {activeDistrict && onToggleDistrictBoundary && (
+            <button
+              type="button"
+              className={`${styles.layerToggle} ${showDistrictBoundary ? styles.layerEnabled : ""}`}
+              aria-pressed={showDistrictBoundary}
+              onClick={onToggleDistrictBoundary}
+            >
+              <i className={styles.districtDot} />
+              <span>Границы района</span>
+              <span className={styles.layerCount}>{showDistrictBoundary ? "Вкл" : "Скрыты"}</span>
+            </button>
+          )}
+
           <p className={styles.sectionLabel}>Статус заявки</p>
           <div className={styles.statusKey}>
             <span><i className={styles.ticketDot} /> Ожидает</span>

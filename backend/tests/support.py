@@ -19,9 +19,13 @@ class DatabaseTestCase(unittest.TestCase):
         from dotenv import load_dotenv
 
         load_dotenv()
+        os.environ["PLANNING_ENABLED"] = "false"
         database_url = os.getenv("TEST_DATABASE_URL")
         if not database_url:
             raise RuntimeError("TEST_DATABASE_URL is required for PostgreSQL integration tests")
+        os.environ["DATABASE_URL"] = database_url
+        from app.core.config import get_settings
+        get_settings.cache_clear()
         parsed_url = make_url(database_url)
         if parsed_url.get_backend_name() != "postgresql" or not (
             parsed_url.database or ""
