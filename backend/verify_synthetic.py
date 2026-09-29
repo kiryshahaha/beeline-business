@@ -16,6 +16,21 @@ from app.modules.planning.case_policy import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def verify_auxiliary_files(directory: Path, manifest: dict) -> int:
+    """Check non-import files that belong to a synthetic acceptance package."""
+    for name, metadata in manifest.get("auxiliary_files", {}).items():
+        relative = Path(name)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError(f"Invalid auxiliary path: {name}")
+        path = directory / relative
+        content = path.read_bytes()
+        if hashlib.sha256(content).hexdigest() != metadata["sha256"]:
+            raise ValueError(f"Checksum mismatch: {path}")
+        if len(content) != metadata["bytes"]:
+            raise ValueError(f"Size mismatch: {path}")
+    return len(manifest.get("auxiliary_files", {}))
+
+
 def verify_packages(root: Path = ROOT) -> dict:
     report = {
         "files": 0,
@@ -23,16 +38,19 @@ def verify_packages(root: Path = ROOT) -> dict:
         "rows_per_pair": {},
         "policy_comparisons": 0,
         "dynamic_replanning_cases": 0,
+        "auxiliary_files": 0,
     }
     required = {
         root / "data/planning/manifest.json",
         root / "data/synthetic/standard/manifest.json",
+        root / "data/synthetic/acceptance/manifest.json",
         root / "data/synthetic/large/manifest.json",
         root / "backend/bruno/fixtures/manifest.json",
     }
     manifests = sorted(set((root / "data").rglob("manifest.json")) | required)
     for path in manifests:
         manifest = json.loads(path.read_text(encoding="utf-8"))
+        report["auxiliary_files"] += verify_auxiliary_files(path.parent, manifest)
         by_stem = {}
         for name, metadata in manifest["files"].items():
             package = path.parent / name

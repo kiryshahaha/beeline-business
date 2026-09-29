@@ -1,0 +1,6 @@
+case_id,request_type_hd,category,strict,expected
+empty_hd,,repair,false,repair
+unknown_default,Неизвестный тип,repair,false,repair
+unknown_strict,Неизвестный тип,repair,true,unknown_hd_type
+conflicting_hd,Авария,repair,false,category_classification_conflict
+unknown_emergency,Неизвестный тип,emergency,false,category_classification_conflict

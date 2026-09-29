@@ -155,7 +155,9 @@ def _convert_type(value, column):
         result = json.loads(value) if isinstance(value, str) else value
         # Reject NaN/Infinity at any nesting level.
         json.dumps(result, allow_nan=False)
-        if not isinstance(result, dict):
+        if not isinstance(result, dict) and not (
+            column.name == "roster" and isinstance(result, list)
+        ):
             raise ValueError("Ожидается JSON-объект")
         return result
     result = str(value)

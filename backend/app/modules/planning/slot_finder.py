@@ -183,9 +183,9 @@ def find_regular_ticket_slot(
             service_end = service_start + duration
 
             # Check new ticket window and shift
-            if service_start > window_end:
+            if service_end > window_end:
                 rejection_reasons_worker.append(
-                    f"pos_{insert_idx}: arrival after window ({service_start} > {window_end})"
+                    f"pos_{insert_idx}: service ends after window ({service_end} > {window_end})"
                 )
                 continue
 
@@ -219,7 +219,7 @@ def find_regular_ticket_slot(
                 )
                 sub_end = sub_start + sub_dur
 
-                if sub_start > sub_win_end:
+                if sub_end > sub_win_end:
                     cascade_ok = False
                     rejection_reasons_worker.append(
                         f"pos_{insert_idx}: window violation on ticket {subsequent_v['ticket_id']}"

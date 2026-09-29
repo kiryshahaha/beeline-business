@@ -107,6 +107,9 @@ jobs:
       - name: Backend, real planner, PostgreSQL and Bruno E2E
         run: python run_planning_e2e.py --report-dir .local/planning-e2e
 
+      - name: Plan 5 acceptance package on PostgreSQL and native planner
+        run: python run_acceptance_plan5.py --report-dir .local/acceptance-plan5
+
       - name: Preserve API test report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -114,6 +117,7 @@ jobs:
           name: backend-test-reports-${{ github.sha }}
           path: |
             backend/.local/planning-e2e/
+            backend/.local/acceptance-plan5/
           if-no-files-found: ignore
 
   frontend-checks:
