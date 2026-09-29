@@ -6,16 +6,10 @@ import {
   useReportConfig,
   REPORT_STATUS_OPTIONS,
   CITIES_OPTIONS,
+  PERIOD_OPTIONS,
 } from "@/hooks/useReportConfig";
 
-const PERIOD_OPTIONS = [
-  { value: "20–26 сентября 2026", label: "20–26 сентября 2026" },
-  { value: "today", label: "Сегодня" },
-  { value: "week", label: "Текущая неделя" },
-  { value: "month", label: "Текущий месяц" },
-];
-
-export default function ReportsExportSection({ currentTime = "14:32" }) {
+export default function ReportsExportSection() {
   const [filterSearch, setFilterSearch] = useState("");
 
   const {
@@ -32,28 +26,24 @@ export default function ReportsExportSection({ currentTime = "14:32" }) {
     serviceAreas,
     brigades,
     recordsCount,
+    isCountLoading,
+    cityName,
+    areaName,
+    brigadeName,
+    periodLabel,
     handleDownloadCSV,
     handleDownloadXLSX,
     isExporting,
     exportError,
   } = useReportConfig();
 
-  // Вычисляем человекочитаемые названия
-  const cityName =
-    CITIES_OPTIONS.find((c) => c.value === Number(selectedCityId))?.label || "Москва";
+  const filteredAreas = (serviceAreas || []).filter((a) =>
+    !filterSearch || a.name.toLowerCase().includes(filterSearch.toLowerCase())
+  );
 
-  const areaName =
-    selectedAreaId && serviceAreas?.length > 0
-      ? serviceAreas.find((a) => String(a.id) === String(selectedAreaId))?.name || "Центральный район"
-      : "Центральный район";
-
-  const brigadeName =
-    selectedBrigadeId && brigades?.length > 0
-      ? brigades.find((b) => String(b.id) === String(selectedBrigadeId))?.name || "все бригады"
-      : "все бригады";
-
-  // Отображаем количество записей (если из базы пока 0 — показываем демонстрационные 248 как на макете)
-  const displayRecordsCount = recordsCount > 0 ? recordsCount : 248;
+  const filteredBrigades = (brigades || []).filter((b) =>
+    !filterSearch || b.name.toLowerCase().includes(filterSearch.toLowerCase())
+  );
 
   return (
     <div className={styles.section}>
@@ -84,32 +74,12 @@ export default function ReportsExportSection({ currentTime = "14:32" }) {
             </svg>
             <input
               type="text"
-              placeholder="Поиск бригады или задачи..."
+              placeholder="Фильтр по районам/бригадам..."
               className={styles.searchInput}
               value={filterSearch}
               onChange={(e) => setFilterSearch(e.target.value)}
             />
           </div>
-
-          <button
-            type="button"
-            className={styles.filterBtn}
-            title="Фильтры"
-            aria-label="Фильтры"
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-            </svg>
-          </button>
         </div>
       </div>
 
@@ -145,8 +115,8 @@ export default function ReportsExportSection({ currentTime = "14:32" }) {
               value={selectedAreaId}
               onChange={(e) => setSelectedAreaId(e.target.value)}
             >
-              <option value="">Центральный</option>
-              {serviceAreas?.map((area) => (
+              <option value="">Все районы</option>
+              {filteredAreas.map((area) => (
                 <option key={area.id} value={area.id}>
                   {area.name}
                 </option>
@@ -168,7 +138,7 @@ export default function ReportsExportSection({ currentTime = "14:32" }) {
               onChange={(e) => setSelectedBrigadeId(e.target.value)}
             >
               <option value="">Все бригады</option>
-              {brigades?.map((b) => (
+              {filteredBrigades.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
                 </option>
@@ -233,7 +203,7 @@ export default function ReportsExportSection({ currentTime = "14:32" }) {
         <div className={styles.reportInfo}>
           <div className={styles.reportTitleRow}>
             <span className={styles.reportTitle}>
-              Отчёт по заявкам · {selectedPeriod}
+              Отчёт по заявкам · {periodLabel}
             </span>
             <div className={styles.readyBadge}>
               <span className={styles.readyDot}></span>
@@ -242,11 +212,12 @@ export default function ReportsExportSection({ currentTime = "14:32" }) {
           </div>
 
           <div className={styles.reportDescription}>
-            {cityName} · {areaName} · {brigadeName} · {displayRecordsCount} записей · часовой пояс UTC+3
+            {cityName} · {areaName} · {brigadeName} ·{" "}
+            <strong>{isCountLoading ? "…" : recordsCount} записей</strong> · время в отчёте: Europe/Moscow (UTC+3)
           </div>
 
           <div className={styles.reportSubtext}>
-            Включены SLA, адрес, категория, исполнитель, сроки и история статусов
+            Включены русские названия статусов, категорий и состояний, адрес, SLA, ФИО инженера и бригада.
           </div>
         </div>
 
@@ -283,7 +254,7 @@ export default function ReportsExportSection({ currentTime = "14:32" }) {
 
       {/* Сноска */}
       <div className={styles.footnote}>
-        Файл формируется по данным на {currentTime}. Ссылка на скачивание будет доступна 24 часа.
+        Файл формируется по актуальным данным системы с разделителем «;» (для CSV) и автоформатированием ячеек (для Excel).
       </div>
     </div>
   );

@@ -3,12 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/providers/AuthProvider";
+import { API_BASE } from "@/lib/apiFetch";
 import styles from "./login.module.css";
 import HexGrid from "./HexGrid";
 
 export default function LoginPage() {
-  const [username, setUsername] = useState("demo_observer");
-  const [password, setPassword] = useState("ObserverSecret123!");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -20,7 +21,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/auth/login`, {
+      const res = await fetch(`${API_BASE}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

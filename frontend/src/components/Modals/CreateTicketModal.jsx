@@ -40,35 +40,6 @@ function formatApiError(errData, fallbackMessage) {
   return fallbackMessage;
 }
 
-async function getObserverToken(currentToken) {
-  if (currentToken) {
-    const payload = parseJwt(currentToken);
-    const isExpired = payload?.exp && payload.exp * 1000 < Date.now() + 15000;
-    if (!isExpired && payload?.role === "observer") {
-      return currentToken;
-    }
-  }
-
-  try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        username: "demo_observer",
-        password: "ObserverSecret123!",
-      }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return data.access_token;
-    }
-  } catch (err) {
-    console.warn("Failed to get observer token automatically:", err);
-  }
-  return currentToken;
-}
-
 const FALLBACK_WORK_TYPES = [
   { id: 8, name: "Локальные работы", category: "repair", priority: 3, norm_minutes: 55 },
   { id: 9, name: "Работы на подключение и дозаказы", category: "repair", priority: 3, norm_minutes: 55 },
@@ -256,10 +227,6 @@ export default function CreateTicketModal({
     setErrorMessage(null);
 
     try {
-      // Получаем валидный observer токен (при необходимости прозрачно авторизуется как demo_observer)
-      const observerToken = await getObserverToken(token);
-      const authHeader = observerToken ? { Authorization: `Bearer ${observerToken}` } : {};
-
       // 1. Создаем или получаем локацию в БД
       let locationId = null;
       try {
@@ -267,13 +234,8 @@ export default function CreateTicketModal({
           .replace(/\s*(район|муниципальный округ|административный округ)\s*/gi, "")
           .trim() || "Тверской";
 
-        const locRes = await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/location`, {
+        const locRes = await apiFetch("/location", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeader,
-          },
-          credentials: "include",
           body: JSON.stringify({
             city: city.trim() || "Москва",
             district: cleanDist,
@@ -298,10 +260,7 @@ export default function CreateTicketModal({
       // Резервный поиск существующей локации в БД
       if (!locationId) {
         try {
-          const fallbackRes = await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/location/511`, {
-            headers: authHeader,
-            credentials: "include",
-          });
+          const fallbackRes = await apiFetch("/location/511");
           if (fallbackRes.ok) {
             const fbData = await fallbackRes.json();
             locationId = fbData.id;
@@ -329,13 +288,8 @@ export default function CreateTicketModal({
         ticketPayload.priority = Number(selectedWorkType.default_priority || selectedWorkType.priority);
       }
 
-      const ticketRes = await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/tickets`, {
+      const ticketRes = await apiFetch("/tickets", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeader,
-        },
-        credentials: "include",
         body: JSON.stringify(ticketPayload),
       });
 
@@ -350,13 +304,8 @@ export default function CreateTicketModal({
       const requiredApplianceMap = { 8: 36, 9: 37, 10: 38 };
       const reqAppId = requiredApplianceMap[Number(ticketWorkTypeId)];
       if (reqAppId && createdTicket?.id) {
-        await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/tickets/${createdTicket.id}/appliances`, {
+        await apiFetch(`/tickets/${createdTicket.id}/appliances`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeader,
-          },
-          credentials: "include",
           body: JSON.stringify({
             appliance_id: reqAppId,
             quantity: 1,
@@ -365,12 +314,12 @@ export default function CreateTicketModal({
         }).catch(() => null);
       }
 
-      // Инвалидируем кэш для немедленного обновления карты и списков
+      // Инвалидируем кэш для немедленного обновления карты и списков (FE-04)
       queryClient.invalidateQueries({ queryKey: ["ticketsList"] });
-      queryClient.invalidateQueries({ queryKey: ["tickets"] });
-      queryClient.invalidateQueries({ queryKey: ["fast-stats"] });
-      queryClient.invalidateQueries({ queryKey: ["tickets-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["locations"] });
+      queryClient.invalidateQueries({ queryKey: ["fastStats"] });
+      queryClient.invalidateQueries({ queryKey: ["ticketsSummary"] });
+      queryClient.invalidateQueries({ queryKey: ["brigadesWorkload"] });
+      queryClient.invalidateQueries({ queryKey: ["location"] });
 
       if (onTicketCreated) {
         onTicketCreated(createdTicket);
@@ -403,31 +352,8 @@ export default function CreateTicketModal({
           {!isObserver && (
             <div className={styles.roleWarningBanner}>
               <div className={styles.roleWarningText}>
-                Создание заявок доступно диспетчеру (роль: observer). Сейчас выполнен вход под ролью «{userRole}».
+                Создание заявок доступно только диспетчерам и администраторам системы. Сейчас выполнен вход под ролью «{userRole}».
               </div>
-              <button
-                type="button"
-                className={styles.switchRoleBtn}
-                onClick={async () => {
-                  try {
-                    const res = await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/auth/login`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      credentials: "include",
-                      body: JSON.stringify({ username: "demo_observer", password: "ObserverSecret123!" }),
-                    });
-                    if (res.ok) {
-                      const data = await res.json();
-                      login(data.access_token);
-                      setErrorMessage(null);
-                    }
-                  } catch {
-                    setErrorMessage("Не удалось переключиться на demo_observer");
-                  }
-                }}
-              >
-                Войти как demo_observer
-              </button>
             </div>
           )}
 

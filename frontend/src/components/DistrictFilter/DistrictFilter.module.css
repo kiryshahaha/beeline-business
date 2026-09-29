@@ -3,15 +3,15 @@
   display: flex;
   font-family: inherit;
   align-self: stretch;
-  height: 100%;
+  height: 36px;
 }
 
 .triggerButton {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 100%;
-  min-height: 38px;
+  height: 36px;
+  min-height: 36px;
   padding: 0 12px;
   background-color: var(--tertiary);
   border: 2px solid var(--stroke);

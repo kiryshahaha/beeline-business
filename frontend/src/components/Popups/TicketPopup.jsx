@@ -15,6 +15,21 @@ const STATUS_LABELS = {
   wont_fix: "Отменена",
 };
 
+function formatApiError(errorData, fallback = "Ошибка операции") {
+  if (!errorData) return fallback;
+  if (typeof errorData === "string") return errorData;
+  if (typeof errorData.detail === "string") return errorData.detail;
+  if (Array.isArray(errorData.detail?.violations)) {
+    return errorData.detail.violations.map((v) => v.message || v.code).filter(Boolean).join(" · ");
+  }
+  if (Array.isArray(errorData.violations)) {
+    return errorData.violations.map((v) => v.message || v.code).filter(Boolean).join(" · ");
+  }
+  if (errorData.detail?.message) return errorData.detail.message;
+  if (errorData.message) return errorData.message;
+  return fallback;
+}
+
 export default function TicketPopup({
   ticket,
   workers = [],
@@ -27,6 +42,8 @@ export default function TicketPopup({
   const queryClient = useQueryClient();
   const [currentStatus, setCurrentStatus] = useState(ticket?.status || "planned");
   const [assignedWorkerId, setAssignedWorkerId] = useState(ticket?.assigned_worker_id || "");
+  const [selectedCandidateId, setSelectedCandidateId] = useState(ticket?.assigned_worker_id || "");
+  const [isPinned, setIsPinned] = useState(Boolean(ticket?.is_pinned));
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isUpdatingAssignee, setIsUpdatingAssignee] = useState(false);
   const [actionMessage, setActionMessage] = useState(null);
@@ -36,49 +53,18 @@ export default function TicketPopup({
     queueMicrotask(() => {
       setCurrentStatus(ticket?.status || "planned");
       setAssignedWorkerId(ticket?.assigned_worker_id || "");
+      setSelectedCandidateId(ticket?.assigned_worker_id || "");
+      setIsPinned(Boolean(ticket?.is_pinned));
       setActionMessage(null);
       setErrorMessage(null);
     });
   }, [ticket]);
-
-  const handleStatusChange = async (newStatus) => {
-    if (newStatus === currentStatus || isUpdatingStatus) return;
-    setIsUpdatingStatus(true);
-    setErrorMessage(null);
-    setActionMessage(null);
-
-    try {
-      const res = await apiFetch(`/tickets/${ticket.id}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: newStatus }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.detail || "Не удалось изменить статус заявки");
-      }
-
-      const updated = await res.json();
-      setCurrentStatus(updated.status || newStatus);
-      setActionMessage("Статус обновлен");
-      setTimeout(() => setActionMessage(null), 3000);
-
-      queryClient.invalidateQueries({ queryKey: ["tickets"] });
-      queryClient.invalidateQueries({ queryKey: ["fast-stats"] });
-      queryClient.invalidateQueries({ queryKey: ["tickets-summary"] });
-    } catch (err) {
-      setErrorMessage(err.message || "Ошибка смены статуса");
-    } finally {
-      setIsUpdatingStatus(false);
-    }
-  };
 
   const isClosed = currentStatus === "completed" || currentStatus === "wont_fix";
   const ticketAreaId = ticket?.service_area_id ?? ticket?.location?.service_area_id;
   const ticketBrigadeId = ticket?.brigade_id;
 
   const eligibleWorkers = useMemo(() => {
-    // Предлагаем только инженеров, относящихся к участку / бригаде этой заявки
     const filtered = workers.filter((w) => {
       if (ticketBrigadeId && w.brigade_id && Number(w.brigade_id) !== Number(ticketBrigadeId)) {
         return false;
@@ -99,168 +85,181 @@ export default function TicketPopup({
     });
   }, [workers, ticketAreaId, ticketBrigadeId]);
 
-  const candidateWorkerIds = useMemo(() => {
-    return eligibleWorkers.map((w) => w.id).join(",");
-  }, [eligibleWorkers]);
+  // On-demand preview: проверяем доступность только выбранного кандидата
+  const candidateWorkerIdNum = selectedCandidateId ? Number(selectedCandidateId) : null;
+  const isCandidateSelected = candidateWorkerIdNum && candidateWorkerIdNum !== Number(assignedWorkerId);
 
-  // Глубокая валидация движком планирования бэкенда: занятость, пересечение заявок, навыки, склад
-  const { data: eligibilityMap = {}, isLoading: isLoadingEligibility } = useQuery({
-    queryKey: ["ticketEligibleWorkers", ticket?.id, candidateWorkerIds],
-    enabled: !!ticket?.id && eligibleWorkers.length > 0 && !isClosed,
+  const {
+    data: previewData,
+    isLoading: isLoadingPreview,
+    error: previewError,
+  } = useQuery({
+    queryKey: ["assignPreview", ticket?.id, candidateWorkerIdNum],
     queryFn: async () => {
-      const results = {};
-      await Promise.all(
-        eligibleWorkers.map(async (w) => {
-          try {
-            const res = await apiFetch(`/tickets/${ticket.id}/assign/preview`, {
-              method: "POST",
-              body: JSON.stringify({ worker_id: w.id }),
-            });
-            if (res.ok) {
-              const data = await res.json();
-              const firstViolation = data.violations?.[0];
-              results[w.id] = {
-                is_eligible: Boolean(data.is_eligible),
-                violations: data.violations || [],
-                reason: firstViolation?.message || (data.is_eligible ? null : "Ограничение планирования"),
-              };
-            } else {
-              const err = await res.json().catch(() => ({}));
-              results[w.id] = {
-                is_eligible: false,
-                reason: err.detail || "Недоступен",
-              };
-            }
-          } catch {
-            results[w.id] = { is_eligible: false, reason: "Ошибка связи" };
-          }
-        })
-      );
-      return results;
+      const res = await apiFetch(`/tickets/${ticket.id}/assign/preview`, {
+        method: "POST",
+        body: JSON.stringify({ worker_id: candidateWorkerIdNum }),
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(errorData, "Планировщик отклонил назначение"));
+      }
+      return await res.json();
     },
-    staleTime: 15000,
+    enabled: Boolean(ticket?.id && isCandidateSelected && !isClosed),
+    staleTime: 30000,
   });
 
-  const HARD_BLOCKING_CODES = useMemo(() => [
-    "worker_offline",
-    "worker_archived",
-    "worker_unavailable",
-    "working_on_route_date",
-    "service_area_mismatch",
-    "service_area_unknown",
-    "brigade_mismatch",
-    "brigade_resolution_required",
-    "missing_skill",
-    "equipment_not_reserved",
-    "stock_inconsistent",
-    "invalid_worker_role",
-    "required_transport_mismatch",
-  ], []);
+  const invalidateTicketState = () => {
+    queryClient.invalidateQueries({ queryKey: ["ticketsList"] });
+    queryClient.invalidateQueries({ queryKey: ["tickets"] });
+    queryClient.invalidateQueries({ queryKey: ["fastStats"] });
+    queryClient.invalidateQueries({ queryKey: ["fast-stats"] });
+    queryClient.invalidateQueries({ queryKey: ["ticketsSummary"] });
+    queryClient.invalidateQueries({ queryKey: ["tickets-summary"] });
+    queryClient.invalidateQueries({ queryKey: ["brigadesWorkload"] });
+    queryClient.invalidateQueries({ queryKey: ["routes"] });
+  };
 
-  const availableWorkers = useMemo(() => {
-    return eligibleWorkers.filter((w) => {
-      if (assignedWorkerId && Number(w.id) === Number(assignedWorkerId)) return true;
-      if (isLoadingEligibility && Object.keys(eligibilityMap).length === 0) {
-        return false;
+  const handleStatusChange = async (newStatus) => {
+    if (newStatus === currentStatus || isUpdatingStatus) return;
+    setIsUpdatingStatus(true);
+    setErrorMessage(null);
+    setActionMessage(null);
+
+    let cancelReason = null;
+    if (newStatus === "wont_fix") {
+      cancelReason = window.prompt("Укажите причину отмены заявки:", "Отменено диспетчером");
+      if (cancelReason === null) {
+        setIsUpdatingStatus(false);
+        return;
       }
-      const status = eligibilityMap[w.id];
-      if (!status) return true;
-      if (status.is_eligible) return true;
-      // Если мастер в смене и с оборудованием, но занят другими задачами — разрешаем назначить
-      const violations = status.violations || [];
-      const hasHardBlock = violations.some((v) => HARD_BLOCKING_CODES.includes(v.code));
-      return !hasHardBlock;
-    });
-  }, [eligibleWorkers, eligibilityMap, isLoadingEligibility, assignedWorkerId, HARD_BLOCKING_CODES]);
+    }
 
-  const unavailableWorkers = useMemo(() => {
-    return eligibleWorkers.filter((w) => {
-      if (assignedWorkerId && Number(w.id) === Number(assignedWorkerId)) return false;
-      const status = eligibilityMap[w.id];
-      if (!status) return false;
-      const violations = status.violations || [];
-      return violations.some((v) => HARD_BLOCKING_CODES.includes(v.code));
-    });
-  }, [eligibleWorkers, eligibilityMap, assignedWorkerId, HARD_BLOCKING_CODES]);
+    try {
+      const payload = {
+        status: newStatus,
+        reason: cancelReason || undefined,
+        expected_revision: ticket.revision || undefined,
+      };
 
-  const handleAssigneeChange = async (e) => {
-    if (isClosed) return;
-    const rawVal = e.target.value;
-    const workerId = rawVal ? Number(rawVal) : null;
-    if (workerId === assignedWorkerId || isUpdatingAssignee) return;
+      const res = await apiFetch(`/tickets/${ticket.id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
 
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(errorData, "Не удалось изменить статус заявки"));
+      }
+
+      const updated = await res.json();
+      setCurrentStatus(updated.status || newStatus);
+      setActionMessage("Статус обновлен");
+      setTimeout(() => setActionMessage(null), 3000);
+
+      invalidateTicketState();
+    } catch (err) {
+      setErrorMessage(err.message || "Ошибка смены статуса");
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const handleApplyAssignment = async () => {
+    if (isClosed || isUpdatingAssignee) return;
+    const workerId = candidateWorkerIdNum;
     setIsUpdatingAssignee(true);
     setErrorMessage(null);
     setActionMessage(null);
 
     try {
-      if (workerId) {
-        const selectedWorker = eligibleWorkers.find((w) => w.id === workerId) || workers.find((w) => w.id === workerId);
-        if (selectedWorker?.brigade_id && ticket?.brigade_id !== selectedWorker.brigade_id) {
-          await apiFetch(`/tickets/${ticket.id}/brigade`, {
-            method: "PUT",
-            body: JSON.stringify({ brigade_id: selectedWorker.brigade_id }),
-          }).catch(() => null);
-        }
-      }
-
       let res = await apiFetch(`/tickets/${ticket.id}/assignees`, {
         method: "PUT",
         body: JSON.stringify({
           worker_id: workerId,
-          is_pinned: true,
+          is_pinned: isPinned,
         }),
       });
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        const eqViolation = errorData?.detail?.violations?.find((v) => v.code === "equipment_not_reserved");
+        const eqViolation = errorData?.detail?.violations?.find(
+          (v) => v.code === "equipment_not_reserved"
+        );
         if (eqViolation && eqViolation.ids?.appliance_ids?.length) {
           const appId = eqViolation.ids.appliance_ids[0];
           const selectedWorker = workers.find((w) => w.id === workerId);
-          const officeId = selectedWorker?.office_id || 10;
+          const officeId =
+            selectedWorker?.worker_profile?.stock_office_id ||
+            selectedWorker?.office_id ||
+            ticket?.office_id ||
+            10;
           await apiFetch(`/tickets/${ticket.id}/appliances`, {
             method: "POST",
             body: JSON.stringify({ appliance_id: appId, quantity: 1, office_id: officeId }),
           }).catch(() => null);
 
-          // Повторяем попытку назначения после выделения оборудования
+          // Повторяем назначение после выделения оборудования
           res = await apiFetch(`/tickets/${ticket.id}/assignees`, {
             method: "PUT",
             body: JSON.stringify({
               worker_id: workerId,
-              is_pinned: true,
+              is_pinned: isPinned,
             }),
           });
         }
 
         if (!res.ok) {
           const retryErrData = await res.json().catch(() => errorData);
-          let msg = null;
-          if (retryErrData?.detail?.violations?.length) {
-            msg = retryErrData.detail.violations.map((v) => v.message).filter(Boolean).join(" · ");
-          } else if (typeof retryErrData?.detail === "string") {
-            msg = retryErrData.detail;
-          } else if (retryErrData?.detail?.message) {
-            msg = retryErrData.detail.message;
-          } else if (retryErrData?.message) {
-            msg = retryErrData.message;
-          }
-          throw new Error(msg || "Не удалось назначить исполнителя");
+          throw new Error(formatApiError(retryErrData, "Не удалось назначить исполнителя"));
         }
       }
 
       await res.json();
       setAssignedWorkerId(workerId || "");
-      setActionMessage(workerId ? "Инженер назначен" : "Назначение снято");
+      setSelectedCandidateId(workerId || "");
+      setActionMessage("Инженер назначен");
       setTimeout(() => setActionMessage(null), 3000);
 
-      queryClient.invalidateQueries({ queryKey: ["tickets"] });
-      queryClient.invalidateQueries({ queryKey: ["ticketsList"] });
-      queryClient.invalidateQueries({ queryKey: ["routes"] });
-      queryClient.invalidateQueries({ queryKey: ["fast-stats"] });
+      invalidateTicketState();
     } catch (err) {
       setErrorMessage(err.message || "Ошибка назначения мастера");
+    } finally {
+      setIsUpdatingAssignee(false);
+    }
+  };
+
+  const handleUnassign = async () => {
+    if (isClosed || isUpdatingAssignee) return;
+    setIsUpdatingAssignee(true);
+    setErrorMessage(null);
+    setActionMessage(null);
+
+    try {
+      const res = await apiFetch(`/tickets/${ticket.id}/assignees`, {
+        method: "PUT",
+        body: JSON.stringify({
+          worker_id: null,
+          is_pinned: false,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(errorData, "Не удалось снять назначение"));
+      }
+
+      await res.json();
+      setAssignedWorkerId("");
+      setSelectedCandidateId("");
+      setIsPinned(false);
+      setActionMessage("Назначение снято");
+      setTimeout(() => setActionMessage(null), 3000);
+
+      invalidateTicketState();
+    } catch (err) {
+      setErrorMessage(err.message || "Ошибка при снятии назначения");
     } finally {
       setIsUpdatingAssignee(false);
     }
@@ -274,6 +273,9 @@ export default function TicketPopup({
   if (!Number.isFinite(popupLongitude) || !Number.isFinite(popupLatitude)) {
     return null;
   }
+
+  const assignedWorker = workers.find((w) => Number(w.id) === Number(assignedWorkerId));
+  const candidateWorker = workers.find((w) => Number(w.id) === candidateWorkerIdNum);
 
   return (
     <Popup
@@ -312,18 +314,24 @@ export default function TicketPopup({
           <p className={styles.popupTime}>
             <IconClock size={13} style={{ flexShrink: 0, opacity: 0.7 }} />
             <span>
-              Окно визита: {new Date(ticket.visit_window_start).toLocaleTimeString("ru-RU", {
+              Окно визита:{" "}
+              {new Date(ticket.visit_window_start).toLocaleTimeString("ru-RU", {
+                timeZone: "Europe/Moscow",
                 hour: "2-digit",
                 minute: "2-digit",
               })}
               {ticket.visit_window_end && (
-                ` — ${new Date(ticket.visit_window_end).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`
+                ` — ${new Date(ticket.visit_window_end).toLocaleTimeString("ru-RU", {
+                  timeZone: "Europe/Moscow",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}`
               )}
             </span>
           </p>
         )}
 
-        {/* Индикатор загрузки реалистичного автомаршрута */}
+        {/* Индикатор загрузки автомаршрута */}
         {isLoadingRoute && (
           <div className={styles.routeLegBox}>
             <div className={styles.routeLegLoading}>
@@ -406,54 +414,128 @@ export default function TicketPopup({
           </div>
 
           <div className={styles.assignSection}>
-            <span className={styles.actionSectionTitle}>Назначить инженера</span>
+            <span className={styles.actionSectionTitle}>Исполнитель</span>
             <div className={styles.assignSelectWrapper}>
               <select
                 className={styles.assignSelect}
-                value={assignedWorkerId}
-                onChange={handleAssigneeChange}
-                disabled={isUpdatingAssignee || isClosed || (isLoadingEligibility && Object.keys(eligibilityMap).length === 0)}
+                value={selectedCandidateId}
+                onChange={(e) => {
+                  setSelectedCandidateId(e.target.value);
+                  setErrorMessage(null);
+                }}
+                disabled={isUpdatingAssignee || isClosed}
               >
                 <option value="">Не назначен (в пуле)</option>
-                {isLoadingEligibility && Object.keys(eligibilityMap).length === 0 ? (
-                  <option disabled>⏳ Проверка доступности инженеров...</option>
-                ) : (
-                  availableWorkers.map((w) => {
-                    const fullName = [w.surname, w.name, w.lastname].filter(Boolean).join(" ") || `Инженер #${w.id}`;
-                    const brigadeSuffix = w.brigade_name ? ` · ${w.brigade_name}` : "";
-                    const status = eligibilityMap[w.id];
-                    const subText = status && !status.is_eligible ? " (в смене, есть задачи)" : "";
-                    return (
-                      <option key={w.id} value={w.id}>
-                        {fullName}{brigadeSuffix}{subText}
-                      </option>
-                    );
-                  })
-                )}
+                {eligibleWorkers.map((w) => {
+                  const fullName = [w.surname, w.name, w.lastname].filter(Boolean).join(" ") || `Инженер #${w.id}`;
+                  const brigadeSuffix = w.brigade_name ? ` · ${w.brigade_name}` : "";
+                  const isCurrent = Number(w.id) === Number(assignedWorkerId);
+                  return (
+                    <option key={w.id} value={w.id}>
+                      {fullName}{brigadeSuffix}{isCurrent ? " (текущий)" : ""}
+                    </option>
+                  );
+                })}
               </select>
+
               {isClosed && (
                 <div className={styles.assignDisabledNote}>
                   {currentStatus === "completed"
-                    ? "Заявка выполнена — назначение недоступно"
-                    : "Заявка отменена — назначение недоступно"}
+                    ? "Заявка выполнена — изменение исполнителя недоступно"
+                    : "Заявка отменена — изменение исполнителя недоступно"}
                 </div>
               )}
-              {isLoadingEligibility && Object.keys(eligibilityMap).length === 0 && (
-                <div className={styles.assignDisabledNote} style={{ color: "#F59E0B" }}>
-                  Проверка графиков и занятости инженеров...
+
+              {/* Текущее назначение */}
+              {!isCandidateSelected && assignedWorker && !isClosed && (
+                <div style={{ marginTop: 6 }}>
+                  <button
+                    type="button"
+                    className={styles.assignCancelBtn}
+                    onClick={handleUnassign}
+                    disabled={isUpdatingAssignee}
+                  >
+                    {isUpdatingAssignee ? "Снятие..." : "Снять назначение"}
+                  </button>
                 </div>
               )}
-              {!isClosed && !isLoadingEligibility && availableWorkers.length === 0 && (
-                <div className={styles.assignDisabledNote}>
-                  Нет свободных воркеров
+
+              {/* On-demand валидация выбранного кандидата */}
+              {isCandidateSelected && !isClosed && (
+                <div>
+                  {isLoadingPreview && (
+                    <div className={styles.assignPreviewBox}>
+                      <span className={styles.assignPreviewTitle} style={{ color: "#FFC800" }}>
+                        ⏳ Оценка влияния на маршрут OR-Tools...
+                      </span>
+                    </div>
+                  )}
+
+                  {!isLoadingPreview && previewError && (
+                    <div className={`${styles.assignPreviewBox} ${styles.assignPreviewIneligible}`}>
+                      <div className={styles.assignPreviewTitle} style={{ color: "#FF453A" }}>
+                        ✕ Ошибка проверки кандидата
+                      </div>
+                      <div>{previewError.message}</div>
+                    </div>
+                  )}
+
+                  {!isLoadingPreview && previewData && (
+                    <div
+                      className={`${styles.assignPreviewBox} ${
+                        previewData.is_eligible ? styles.assignPreviewEligible : styles.assignPreviewIneligible
+                      }`}
+                    >
+                      <div
+                        className={styles.assignPreviewTitle}
+                        style={{ color: previewData.is_eligible ? "#30D158" : "#FF453A" }}
+                      >
+                        {previewData.is_eligible ? "✓ Подходит для назначения" : "✕ Ограничение планировщика"}
+                      </div>
+
+                      {previewData.is_eligible ? (
+                        <div className={styles.assignPreviewStats}>
+                          <span>Сдвиг маршрута: {previewData.route_shift_minutes > 0 ? `+${previewData.route_shift_minutes}` : previewData.route_shift_minutes} мин</span>
+                          {previewData.sla_violations_added > 0 ? (
+                            <span style={{ color: "#FF9F0A" }}>
+                              ⚠ +{previewData.sla_violations_added} нарушений SLA
+                            </span>
+                          ) : (
+                            <span style={{ color: "#30D158" }}>SLA в норме</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ color: "#FF453A", fontSize: 9.5 }}>
+                          {previewData.violations?.map((v) => v.message || v.code).join(" · ") || "Недоступен для назначения"}
+                        </div>
+                      )}
+
+                      <label className={styles.assignPinnedRow}>
+                        <input
+                          type="checkbox"
+                          className={styles.assignPinnedCheckbox}
+                          checked={isPinned}
+                          onChange={(e) => setIsPinned(e.target.checked)}
+                        />
+                        <span>Закрепить заявку (не переносить автопланом)</span>
+                      </label>
+
+                      <button
+                        type="button"
+                        className={styles.assignConfirmBtn}
+                        onClick={handleApplyAssignment}
+                        disabled={!previewData.is_eligible || isUpdatingAssignee}
+                      >
+                        {isUpdatingAssignee ? "Назначение..." : `Назначить ${candidateWorker?.surname || "мастера"}`}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </div>
 
-          {errorMessage && (
-            <div className={styles.actionErrorMsg}>{errorMessage}</div>
-          )}
+          {errorMessage && <div className={styles.actionErrorMsg}>{errorMessage}</div>}
         </div>
       </div>
     </Popup>

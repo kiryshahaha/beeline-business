@@ -9,7 +9,7 @@ export function useOffices() {
     queryKey: ["officesList"],
     enabled: !!token,
     queryFn: async () => {
-      const res = await apiFetch("/offices");
+      const res = await apiFetch("/offices/");
       if (!res.ok) throw new Error("Ошибка в получении офисов");
       return res.json();
     },

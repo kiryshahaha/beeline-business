@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/providers/AuthProvider";
 import { apiFetch } from "@/lib/apiFetch";
 
-const MAX_SCALE_CAPACITY = 12; // Базовая шкала емкости задач для визуализации (12 задач = 100%)
 
 function formatTime(timestamp) {
   if (!timestamp) return "";
@@ -10,17 +9,19 @@ function formatTime(timestamp) {
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
 }
 
-export function useBrigadesWorkload({ date } = {}) {
+export function useBrigadesWorkload({ date, date_from, date_to } = {}) {
   const { token } = useAuth();
 
   const queryInfo = useQuery({
-    queryKey: ["brigadesWorkload", date],
+    queryKey: ["brigadesWorkload", date, date_from, date_to],
     enabled: !!token,
     refetchInterval: 30000, // Автообновление каждые 30 секунд
 
     queryFn: async () => {
       const urlParams = new URLSearchParams();
       if (date) urlParams.append("date", date);
+      if (date_from) urlParams.append("date_from", date_from);
+      if (date_to) urlParams.append("date_to", date_to);
 
       const qs = urlParams.toString();
       const url = qs ? `/analytics/brigades-workload?${qs}` : "/analytics/brigades-workload";
@@ -40,10 +41,17 @@ export function useBrigadesWorkload({ date } = {}) {
   const brigades = rawList.map((item) => {
     const activeTasks = item.tickets ?? item.active_tickets ?? 0;
     
-    // Расчет процента загрузки относительно шкалы задач (12 задач = 100%, 8 задач = норма 67%)
-    const percent = Math.min(100, Math.round((activeTasks / MAX_SCALE_CAPACITY) * 100));
+    // Расчет процента загрузки на основе реального фонда рабочего времени смены
+    const busyMinutes = (item.service_minutes || 0) + (item.travel_minutes || 0);
+    const shiftMinutes = item.shift_minutes || 0;
+    const percent = shiftMinutes > 0
+      ? Math.min(100, Math.round((busyMinutes / shiftMinutes) * 100))
+      : (activeTasks > 0 ? Math.min(100, activeTasks * 10) : 0);
 
-    // Определение статуса загрузки
+    // Определение статуса загрузки строго по шкале:
+    // 0–50%: Свободна (зеленый #34C759)
+    // 51–80%: Оптимально (синий #007AFF)
+    // >80%: Перегружена (красный #FF3B30)
     let status = "free";
     let statusLabel = "Свободна";
     let color = "#34C759"; // зеленый 0-50%

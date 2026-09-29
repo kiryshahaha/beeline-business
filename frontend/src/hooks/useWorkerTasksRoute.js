@@ -86,36 +86,85 @@ export function useWorkerTasksRoute(selectedWorker, workerTickets = [], location
     queryKey,
     enabled: canRoute,
     queryFn: async () => {
-      const origin = points[0];
-      const destination = points[points.length - 1];
-      const waypoints = points.slice(1, -1);
-
-      const res = await apiFetch("/routes", {
-        method: "POST",
-        body: JSON.stringify({
-          origin: { latitude: origin.latitude, longitude: origin.longitude },
-          waypoints: waypoints.map((p) => ({ latitude: p.latitude, longitude: p.longitude })),
-          destination: { latitude: destination.latitude, longitude: destination.longitude },
-          mode: "drive",
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Не удалось рассчитать маршрут инженера");
+      // 1. Сначала проверяем сохраненный снимок маршрута из БД (FE-11)
+      try {
+        const savedRes = await apiFetch(`/routes?worker_id=${selectedWorker.id}&limit=1`);
+        if (savedRes.ok) {
+          const savedRoutes = await savedRes.json();
+          if (Array.isArray(savedRoutes) && savedRoutes.length > 0) {
+            const savedRoute = savedRoutes[0];
+            const geoRes = await apiFetch(`/routes/${savedRoute.id}/geojson`);
+            if (geoRes.ok) {
+              const geoData = await geoRes.json();
+              return {
+                id: `worker-route-${selectedWorker.id}`,
+                workerId: selectedWorker.id,
+                worker_id: selectedWorker.id,
+                workerName: [selectedWorker.name, selectedWorker.surname].filter(Boolean).join(" "),
+                distanceKm: (savedRoute.distance_meters ? savedRoute.distance_meters / 1000 : 0).toFixed(1),
+                durationMin: Math.max(1, Math.round((savedRoute.duration_seconds || 0) / 60)),
+                geometry: geoData.geometry || geoData,
+                stops: points,
+                color: "#FFC800",
+                raw: savedRoute,
+              };
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch saved route:", err);
       }
 
-      const data = await res.json();
+      // 2. Если сохраненного маршрута нет — пробуем расчет через POST /routes
+      try {
+        const origin = points[0];
+        const destination = points[points.length - 1];
+        const waypoints = points.slice(1, -1);
+
+        const res = await apiFetch("/routes", {
+          method: "POST",
+          body: JSON.stringify({
+            origin: { latitude: origin.latitude, longitude: origin.longitude },
+            waypoints: waypoints.map((p) => ({ latitude: p.latitude, longitude: p.longitude })),
+            destination: { latitude: destination.latitude, longitude: destination.longitude },
+            mode: "drive",
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          return {
+            id: `worker-route-${selectedWorker.id}`,
+            workerId: selectedWorker.id,
+            worker_id: selectedWorker.id,
+            workerName: [selectedWorker.name, selectedWorker.surname].filter(Boolean).join(" "),
+            distanceKm: (data.distance_meters / 1000).toFixed(1),
+            durationMin: Math.max(1, Math.round(data.duration_seconds / 60)),
+            geometry: data.geometry,
+            stops: points,
+            color: "#FFC800",
+            raw: data,
+          };
+        }
+      } catch {
+        // Fallback to straight lines
+      }
+
+      // 3. Fallback: порядок объезда соединен прямыми отрезками
       return {
         id: `worker-route-${selectedWorker.id}`,
         workerId: selectedWorker.id,
         worker_id: selectedWorker.id,
         workerName: [selectedWorker.name, selectedWorker.surname].filter(Boolean).join(" "),
-        distanceKm: (data.distance_meters / 1000).toFixed(1),
-        durationMin: Math.max(1, Math.round(data.duration_seconds / 60)),
-        geometry: data.geometry,
+        distanceKm: "0.0",
+        durationMin: 0,
+        geometry: {
+          type: "LineString",
+          coordinates: points.map((p) => [p.longitude, p.latitude]),
+        },
         stops: points,
         color: "#FFC800",
-        raw: data,
+        raw: null,
       };
     },
     staleTime: 5 * 60 * 1000,

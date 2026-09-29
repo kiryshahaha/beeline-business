@@ -330,3 +330,16 @@ class BrigadesWorkloadApiTests(DatabaseTestCase):
         app.dependency_overrides.pop(get_current_user, None)
         unauthorized = self.client.get("/api/v1/analytics/brigades-workload")
         self.assertEqual(unauthorized.status_code, 401)
+
+    def test_date_range_calculates_daily_averages(self):
+        self.current_user = self.observer
+        # День с планом (3 тикета) и день без плана (0 тикетов): среднее делится на 2 дня
+        res = self.workload(
+            date_from=DAY.isoformat(),
+            date_to=(DAY + timedelta(days=1)).isoformat(),
+        )
+        self.assertIn("Альфа", res)
+        alpha = res["Альфа"]
+        # За 2 дня суммарно 3 тикета, в среднем round(3/2) = 2 тикета/день, 90 мин работы
+        self.assertEqual(alpha["tickets"], 2)
+        self.assertEqual(alpha["service_minutes"], 90)

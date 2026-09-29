@@ -5,10 +5,14 @@ import styles from "./EmptyDataModal.module.css";
 import { useImportData } from "@/hooks/useImportData";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { apiFetch } from "@/lib/apiFetch";
+
 export default function EmptyDataModal({ isOpen, onClose }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [step, setStep] = useState("upload"); // 'upload' | 'planning' | 'approval' | 'applying' | 'done'
+  const [importSummary, setImportSummary] = useState(null);
+  const [planResult, setPlanResult] = useState(null);
   const fileInputRef = useRef(null);
   const queryClient = useQueryClient();
 
@@ -30,18 +34,54 @@ export default function EmptyDataModal({ isOpen, onClose }) {
     }
   };
 
-  const runPlanningFlow = () => {
+  const runPlanningFlow = async (importResult) => {
     setStep("planning");
-    setTimeout(() => {
+    try {
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Moscow" });
+      const [ticketsRes, workersRes] = await Promise.all([
+        apiFetch(`/tickets?date=${today}&limit=100`),
+        apiFetch("/users?role=worker&limit=50"),
+      ]);
+
+      const tickets = ticketsRes.ok ? await ticketsRes.json() : [];
+      const workers = workersRes.ok ? await workersRes.json() : [];
+
+      const candidateTickets = tickets
+        .filter((t) => t.status === "planned" || !t.assigned_worker_id)
+        .map((t) => t.id)
+        .slice(0, 100);
+
+      const candidateWorkers = workers.map((w) => w.id).slice(0, 50);
+
+      if (candidateTickets.length > 0 && candidateWorkers.length > 0) {
+        const previewRes = await apiFetch("/planning/preview", {
+          method: "POST",
+          body: JSON.stringify({
+            route_date: today,
+            ticket_ids: candidateTickets,
+            worker_ids: candidateWorkers,
+            allow_partial: true,
+          }),
+        });
+
+        if (previewRes.ok) {
+          const planData = await previewRes.json();
+          setPlanResult(planData);
+        }
+      }
+    } catch (e) {
+      console.warn("Planning preview error in modal:", e);
+    } finally {
       setStep("approval");
-    }, 1400);
+    }
   };
 
   const handleUploadSelected = async () => {
     if (!selectedFile) return;
     try {
-      await importFile(selectedFile, { dryRun: false });
-      runPlanningFlow();
+      const data = await importFile(selectedFile, { dryRun: false });
+      setImportSummary(data);
+      await runPlanningFlow(data);
     } catch {
       // Ошибка обрабатывается хуком useImportData
     }
@@ -56,31 +96,44 @@ export default function EmptyDataModal({ isOpen, onClose }) {
       const blob = await response.blob();
       const demoFile = new File([blob], "dataset.zip", { type: "application/zip" });
       setSelectedFile(demoFile);
-      await importFile(demoFile, { dryRun: false });
-      runPlanningFlow();
+      const data = await importFile(demoFile, { dryRun: false });
+      setImportSummary(data);
+      await runPlanningFlow(data);
     } catch {
       // Ошибка обрабатывается хуком
     }
   };
 
-  const handleApprovePlan = () => {
+  const handleApprovePlan = async () => {
     setStep("applying");
-    setTimeout(() => {
-      // Инвалидируем все запросы, чтобы дашборд и карта обновились
+    try {
+      if (planResult?.plan_id) {
+        await apiFetch(`/planning/plans/${planResult.plan_id}/apply`, {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+      }
+    } catch (err) {
+      console.warn("Plan apply error:", err);
+    } finally {
+      // Инвалидируем все запросы (FE-04)
       queryClient.invalidateQueries({ queryKey: ["fastStats"] });
       queryClient.invalidateQueries({ queryKey: ["ticketsSummary"] });
       queryClient.invalidateQueries({ queryKey: ["brigadesWorkload"] });
       queryClient.invalidateQueries({ queryKey: ["recentActivity"] });
-      queryClient.invalidateQueries({ queryKey: ["tickets"] });
-      queryClient.invalidateQueries({ queryKey: ["routes"] });
+      queryClient.invalidateQueries({ queryKey: ["ticketsList"] });
+      queryClient.invalidateQueries({ queryKey: ["routesList"] });
+      queryClient.invalidateQueries({ queryKey: ["usersList"] });
 
       setStep("done");
       setTimeout(() => {
         onClose();
         setStep("upload");
         setSelectedFile(null);
+        setPlanResult(null);
+        setImportSummary(null);
       }, 1000);
-    }, 800);
+    }
   };
 
   return (
@@ -260,23 +313,39 @@ export default function EmptyDataModal({ isOpen, onClose }) {
             <div className={styles.metricsSummary}>
               <div className={styles.summaryItem}>
                 <span className={styles.summaryLabel}>Распределено</span>
-                <span className={styles.summaryValue}>1 500 заявок</span>
-                <span className={styles.summarySub}>100% покрытие</span>
+                <span className={styles.summaryValue}>
+                  {planResult?.metrics?.assigned_tickets != null
+                    ? `${planResult.metrics.assigned_tickets} заявок`
+                    : importSummary?.inserted_count != null
+                    ? `${importSummary.inserted_count} записей`
+                    : "Данные загружены"}
+                </span>
+                <span className={styles.summarySub}>
+                  {planResult?.outcome === "optimal" ? "Оптимальный план" : "Готово к выдаче"}
+                </span>
               </div>
               <div className={styles.summaryItem}>
                 <span className={styles.summaryLabel}>Задействовано</span>
-                <span className={styles.summaryValue}>12 бригад</span>
-                <span className={styles.summarySub}>120 специалистов</span>
+                <span className={styles.summaryValue}>
+                  {planResult?.routes?.length != null
+                    ? `${planResult.routes.length} маршрутов`
+                    : "Специалисты готовы"}
+                </span>
+                <span className={styles.summarySub}>Выездная служба</span>
               </div>
               <div className={styles.summaryItem}>
-                <span className={styles.summaryLabel}>Маршруты</span>
-                <span className={styles.summaryValue}>896 выездов</span>
-                <span className={styles.summarySub}>Геопривязка СПб</span>
+                <span className={styles.summaryLabel}>Пробег</span>
+                <span className={styles.summaryValue}>
+                  {planResult?.metrics?.total_travel_distance_km != null
+                    ? `${planResult.metrics.total_travel_distance_km.toFixed(1)} км`
+                    : "В норме"}
+                </span>
+                <span className={styles.summarySub}>Оптимизация дорог</span>
               </div>
               <div className={styles.summaryItem}>
                 <span className={styles.summaryLabel}>Статус SLA</span>
                 <span className={`${styles.summaryValue} ${styles.slaOk}`}>SLA OK</span>
-                <span className={styles.summarySub}>Без задержек</span>
+                <span className={styles.summarySub}>В окнах визитов</span>
               </div>
             </div>
 

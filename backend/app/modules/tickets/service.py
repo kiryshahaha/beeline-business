@@ -1,6 +1,6 @@
 import asyncio
 import math
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import RowMapping, func, select, text
@@ -222,6 +222,9 @@ def list_tickets(
     limit: int,
     offset: int,
     brigade_id: int | None = None,
+    target_date: date | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
     current_user: UserRead,
 ) -> list[TicketRead]:
     rows = repository.find_tickets(
@@ -234,6 +237,9 @@ def list_tickets(
         brigade_id=brigade_id,
         foreman_id=_foreman_id(current_user),
         worker_id=_worker_id(current_user),
+        target_date=target_date,
+        date_from=date_from,
+        date_to=date_to,
     )
     return [_ticket_from_row(row) for row in rows]
 

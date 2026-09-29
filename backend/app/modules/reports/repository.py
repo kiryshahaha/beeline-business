@@ -13,22 +13,39 @@ FETCH_BATCH_ROWS = 500
 
 def _ticket_filters(
     *,
-    status: str | None,
-    city_id: int | None,
-    service_area_id: int | None,
-    brigade_id: int | None,
+    status: str | None = None,
+    city_id: int | None = None,
+    service_area_id: int | None = None,
+    brigade_id: int | None = None,
+    date_from: object | None = None,
+    date_to: object | None = None,
+    exclude_cancelled: bool = False,
 ) -> tuple[str, dict[str, object]]:
     conditions: list[str] = []
     parameters: dict[str, object] = {}
     if status is not None:
         conditions.append("t.status = :status")
         parameters["status"] = status
+    elif exclude_cancelled:
+        conditions.append("t.status != 'wont_fix'")
     if city_id is not None:
         conditions.append("b.city_id = :city_id")
         parameters["city_id"] = city_id
     if service_area_id is not None:
         conditions.append("COALESCE(t.service_area_id, b.service_area_id) = :service_area_id")
         parameters["service_area_id"] = service_area_id
+    if date_from is not None:
+        conditions.append(
+            "(COALESCE(t.planned_start_at, t.visit_window_start) "
+            "AT TIME ZONE 'Europe/Moscow')::date >= :date_from"
+        )
+        parameters["date_from"] = date_from
+    if date_to is not None:
+        conditions.append(
+            "(COALESCE(t.planned_start_at, t.visit_window_start) "
+            "AT TIME ZONE 'Europe/Moscow')::date <= :date_to"
+        )
+        parameters["date_to"] = date_to
     if brigade_id is not None:
         conditions.append("""
             (
@@ -81,3 +98,14 @@ def worker_names(session: Session, worker_ids: Iterable[int]) -> dict[int, str]:
         row["id"]: " ".join(part for part in (row["surname"], row["name"], row["lastname"]) if part)
         for row in rows
     }
+
+
+def brigade_names(session: Session, brigade_ids: Iterable[int]) -> dict[int, str]:
+    ids = sorted(set(brigade_ids))
+    if not ids:
+        return {}
+    rows = session.execute(
+        text("SELECT id, name FROM brigades WHERE id = ANY(:ids)"),
+        {"ids": ids},
+    ).mappings()
+    return {row["id"]: row["name"] for row in rows}

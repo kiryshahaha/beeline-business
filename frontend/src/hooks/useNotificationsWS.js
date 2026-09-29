@@ -11,15 +11,22 @@ export function useNotificationsWS() {
   const pingIntervalRef = useRef(null);
 
   useEffect(() => {
-    // Если токена нет, не пытаемся подключиться
     if (!token) return;
 
     let cancelled = false;
 
-    // Формируем URL для вебсокета (меняем http/https на ws/wss)
-    const baseUrl = process.env.NEXT_PUBLIC_ENDPOINT || "http://localhost:8000/api/v1";
-    // Меняем localhost на 127.0.0.1, чтобы избежать проблем с IPv6 в браузере (когда uvicorn слушает только IPv4)
-    const wsUrl = baseUrl.replace(/^http/, "ws").replace("localhost", "127.0.0.1") + "/notifications/ws";
+    const rawBaseUrl =
+      process.env.NEXT_PUBLIC_API_URL ||
+      process.env.NEXT_PUBLIC_ENDPOINT ||
+      "http://localhost:8000/api/v1";
+
+    const normalizedBase = rawBaseUrl.endsWith("/api/v1")
+      ? rawBaseUrl
+      : `${rawBaseUrl.replace(/\/+$/, "")}/api/v1`;
+
+    const wsUrl =
+      normalizedBase.replace(/^http/, "ws").replace("localhost", "127.0.0.1") +
+      "/notifications/ws";
 
     let reconnectTimer;
 
@@ -30,12 +37,25 @@ export function useNotificationsWS() {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        if (cancelled) { ws.close(); return; }
-        // Сразу при открытии отправляем токен
-        ws.send(JSON.stringify({ type: "authenticate", token }));
+        if (cancelled) {
+          ws.close();
+          return;
+        }
+
+        const savedLastId =
+          typeof window !== "undefined"
+            ? parseInt(localStorage.getItem("beeline_last_event_id") || "0", 10)
+            : 0;
+
+        const authPayload = {
+          type: "authenticate",
+          token,
+          ...(savedLastId > 0 ? { last_event_id: savedLastId } : {}),
+        };
+
+        ws.send(JSON.stringify(authPayload));
         setIsConnected(true);
 
-        // Настраиваем пинги каждые 30 секунд для удержания соединения
         pingIntervalRef.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "ping" }));
@@ -46,21 +66,29 @@ export function useNotificationsWS() {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          
+
           if (data.type === "authenticated") {
-            console.log("WebSocket аутентифицирован для пользователя", data.user_id);
+            // Аутентифицирован
           } else if (data.type === "pong") {
-            // Игнорируем понг
+            // Понг
           } else {
-            // Пришло реальное бизнес-событие (новое уведомление)
-            console.log("Новое уведомление по WS:", data);
-            
-            // Включаем красную точку
             setHasUnread(true);
-            
-            // Инвалидируем запросы заявок, чтобы они перезагрузились в фоне
+
+            if (data.id && typeof window !== "undefined") {
+              localStorage.setItem("beeline_last_event_id", String(data.id));
+            }
+
+            // Инвалидируем все связанные сущности, чтобы интерфейс диспетчера обновлялся в реальном времени
             queryClient.invalidateQueries({ queryKey: ["ticketsList"] });
-            // Инвалидируем историю уведомлений, чтобы выпадашка обновилась
+            queryClient.invalidateQueries({ queryKey: ["tickets"] });
+            queryClient.invalidateQueries({ queryKey: ["fastStats"] });
+            queryClient.invalidateQueries({ queryKey: ["fast-stats"] });
+            queryClient.invalidateQueries({ queryKey: ["ticketsSummary"] });
+            queryClient.invalidateQueries({ queryKey: ["tickets-summary"] });
+            queryClient.invalidateQueries({ queryKey: ["brigadesWorkload"] });
+            queryClient.invalidateQueries({ queryKey: ["routesList"] });
+            queryClient.invalidateQueries({ queryKey: ["routes"] });
+            queryClient.invalidateQueries({ queryKey: ["completionReviews"] });
             queryClient.invalidateQueries({ queryKey: ["notificationsHistory"] });
           }
         } catch (err) {
@@ -71,25 +99,19 @@ export function useNotificationsWS() {
       ws.onclose = (event) => {
         setIsConnected(false);
         if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-        
-        // Если компонент размонтирован — не реконнектимся
+
         if (cancelled) return;
 
-        // 1008 - токен недействителен (возможно протух), не делаем автореконнект
         if (event.code === 1008) {
-          console.error("WS закрыт бэкендом (Недействительный токен)");
           return;
         }
-        
-        // В других случаях пытаемся переподключиться через 3 секунды
+
         reconnectTimer = setTimeout(() => {
           connect();
         }, 3000);
       };
 
       ws.onerror = () => {
-        // Подавляем ошибку если это cleanup от Strict Mode
-        if (!cancelled) console.error("WebSocket ошибка");
         ws.close();
       };
     };
@@ -104,8 +126,9 @@ export function useNotificationsWS() {
     };
   }, [token, queryClient]);
 
-  // Функция для сброса индикатора непрочитанных
-  const clearUnread = () => setHasUnread(false);
+  const clearUnread = () => {
+    setHasUnread(false);
+  };
 
-  return { isConnected, hasUnread, clearUnread };
+  return { hasUnread, isConnected, clearUnread };
 }
