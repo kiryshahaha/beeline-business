@@ -4,7 +4,7 @@ import csv
 import json
 import unittest
 from collections import Counter
-from datetime import date
+from datetime import date, time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -45,6 +45,25 @@ class AcceptanceDatasetTests(unittest.TestCase):
             by_area.setdefault(ticket["service_area_id"], set()).add(cities[building["city_id"]])
         self.assertEqual(set(by_area), {101, 102, 103})
         self.assertTrue(all("Москва" in names and len(names) >= 2 for names in by_area.values()))
+        tickets = {ticket["id"]: ticket for ticket in tables["tickets"]}
+        ticket_building = buildings[locations[tickets[37]["location_id"]]["building_id"]]
+        nearby_building = buildings[locations[tickets[2]["location_id"]]["building_id"]]
+        remote_building = buildings[locations[tickets[38]["location_id"]]["building_id"]]
+        self.assertNotEqual(ticket_building["service_area_id"], nearby_building["service_area_id"])
+        self.assertEqual(cities[ticket_building["city_id"]], "Москва")
+        self.assertEqual(cities[nearby_building["city_id"]], "Москва")
+        self.assertLess(
+            max(
+                abs(
+                    locations[tickets[37]["location_id"]][coordinate]
+                    - locations[tickets[2]["location_id"]][coordinate]
+                )
+                for coordinate in ("latitude", "longitude")
+            ),
+            0.001,
+        )
+        self.assertEqual(remote_building["service_area_id"], tickets[38]["service_area_id"])
+        self.assertNotEqual(cities[remote_building["city_id"]], "Москва")
         self.assertEqual(
             tables["tickets"][36]["received_at"].isoformat(), "2030-01-15T08:10:00+03:00"
         )
@@ -55,6 +74,20 @@ class AcceptanceDatasetTests(unittest.TestCase):
         )
         self.assertEqual(len(tables["day_plan_revisions"]), 3)
         self.assertTrue(all(len(row["roster"]) == 4 for row in tables["day_plan_revisions"]))
+
+    def test_emergency_windows_match_s14_cases(self):
+        tickets = {ticket["id"]: ticket for ticket in build_dataset()[0]["tickets"]}
+        early = tickets[43]
+        later = tickets[45]
+
+        self.assertEqual(
+            (early["visit_window_start"].time(), early["visit_window_end"].time()),
+            (time(10), time(12)),
+        )
+        self.assertEqual(
+            (later["visit_window_start"].time(), later["visit_window_end"].time()),
+            (time(12), time(14)),
+        )
 
     def test_negative_hd_cases_match_server_classifier(self):
         with TemporaryDirectory() as temporary:

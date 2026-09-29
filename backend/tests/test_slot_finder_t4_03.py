@@ -1,7 +1,7 @@
 """Tests for T4-03: regular ticket slot search and insertion."""
 
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.modules.planning.slot_finder import find_regular_ticket_slot
@@ -170,6 +170,101 @@ class SlotFinderTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "not_insertable")
         self.assertEqual(result.candidate_reasons[10]["code"], "no_feasible_slot")
+
+    def test_slot_can_start_at_shift_start_and_finish_at_shift_end(self):
+        self.now = self.shift_start
+        start_result = find_regular_ticket_slot(
+            ticket={
+                "id": 97,
+                "location_id": 100,
+                "estimated_duration_minutes": 30,
+                "visit_window_start": "2026-09-30T08:00:00+03:00",
+                "visit_window_end": "2026-09-30T08:30:00+03:00",
+            },
+            candidate_workers=[self.worker_1],
+            baseline_state={"visits": []},
+            lifecycle_by_ticket={},
+            travel_time_fn=self.travel_fn,
+            office_location_id=100,
+            now=self.now,
+        )
+        self.assertEqual(start_result.status, "slot_found")
+        self.assertEqual(start_result.selected.service_start_at, self.shift_start)
+
+        self.now = self.shift_end - timedelta(minutes=30)
+        end_result = find_regular_ticket_slot(
+            ticket={
+                "id": 98,
+                "location_id": 100,
+                "estimated_duration_minutes": 30,
+                "visit_window_start": "2026-09-30T19:30:00+03:00",
+                "visit_window_end": "2026-09-30T20:00:00+03:00",
+            },
+            candidate_workers=[self.worker_1],
+            baseline_state={"visits": []},
+            lifecycle_by_ticket={},
+            travel_time_fn=self.travel_fn,
+            office_location_id=100,
+            now=self.now,
+        )
+        self.assertEqual(end_result.status, "slot_found")
+        self.assertEqual(end_result.selected.service_end_at, self.shift_end)
+
+    def test_multiple_feasible_slots_choose_lowest_added_travel(self):
+        baseline = {
+            "visits": [
+                {
+                    "ticket_id": 1,
+                    "worker_id": 10,
+                    "sequence": 1,
+                    "location_id": 101,
+                    "visit_window_start": "2026-09-30T09:00:00+03:00",
+                    "visit_window_end": "2026-09-30T12:00:00+03:00",
+                    "service_start_at": "2026-09-30T09:00:00+03:00",
+                    "service_end_at": "2026-09-30T09:30:00+03:00",
+                },
+                {
+                    "ticket_id": 2,
+                    "worker_id": 10,
+                    "sequence": 2,
+                    "location_id": 102,
+                    "visit_window_start": "2026-09-30T11:00:00+03:00",
+                    "visit_window_end": "2026-09-30T13:00:00+03:00",
+                    "service_start_at": "2026-09-30T11:00:00+03:00",
+                    "service_end_at": "2026-09-30T11:30:00+03:00",
+                },
+            ]
+        }
+        travel = {
+            (100, 200): 20,
+            (200, 101): 20,
+            (101, 200): 2,
+            (200, 102): 2,
+            (101, 102): 15,
+            (102, 200): 20,
+            (200, 100): 20,
+        }
+        result = find_regular_ticket_slot(
+            ticket={
+                "id": 99,
+                "location_id": 200,
+                "estimated_duration_minutes": 30,
+                "visit_window_start": "2026-09-30T09:45:00+03:00",
+                "visit_window_end": "2026-09-30T10:30:00+03:00",
+            },
+            candidate_workers=[self.worker_1],
+            baseline_state=baseline,
+            lifecycle_by_ticket={1: "assigned", 2: "assigned"},
+            travel_time_fn=lambda source, target, mode: (
+                0 if source == target else travel.get((source, target), 1)
+            ),
+            office_location_id=100,
+            now=self.now,
+        )
+
+        self.assertEqual(result.status, "slot_found")
+        self.assertEqual(result.selected.insertion_sequence, 2)
+        self.assertEqual(result.selected.added_travel_minutes, 0)
 
     def test_safe_point_prevents_inserting_before_in_progress_stop(self):
         baseline = {

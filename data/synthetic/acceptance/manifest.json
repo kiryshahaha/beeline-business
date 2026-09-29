@@ -86,8 +86,8 @@
   "road_matrix_source": "deterministic_stub",
   "files": {
     "dataset.zip": {
-      "sha256": "8c618c170ec96a94e0b7a65c681db1e729a9b756a7c9740ceb519069477cdeb5",
-      "bytes": 14671,
+      "sha256": "fa86203c866ac3141107a81cfa597a5467a0d02e2597d1d3c5a06a7887427c20",
+      "bytes": 14680,
       "rows": {
         "appliances": 27,
         "cities": 4,
@@ -130,8 +130,8 @@
       }
     },
     "dataset.xlsx": {
-      "sha256": "efe91b766de8f080f075e79c3068204ba429ac5e9e199b939c2dc0d8c9ca8f89",
-      "bytes": 47745,
+      "sha256": "f60fb3a4e2a8164d97be1c0ef64769b55bfdf7df3aa4c6350ccdf947616984d4",
+      "bytes": 47746,
       "rows": {
         "appliances": 27,
         "cities": 4,
@@ -176,8 +176,8 @@
   },
   "auxiliary_files": {
     "scenarios.json": {
-      "sha256": "16546a8c6dab6b128b5bc9896e7bce5482325a85dc7e20142e2ac17a21870f21",
-      "bytes": 11700
+      "sha256": "55037a4b5915d17f17e3d878d27cae3ec37347fd68f15b770790f83b73a32103",
+      "bytes": 17332
     },
     "road_matrix.json": {
       "sha256": "00680d044f9a8b04ca9a483547e06d8cac33cb2a11bc7f4a83c553b18bcc1e8c",

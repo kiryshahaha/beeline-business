@@ -7,7 +7,10 @@ import subprocess
 import sys
 import time
 from contextlib import ExitStack
+from datetime import datetime, timedelta
+from datetime import time as clock_time
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import create_engine, text
@@ -22,6 +25,7 @@ from testing.database import migrated_schema
 
 ROOT = Path(__file__).resolve().parents[1]
 PASSWORD = "AcceptanceOnly123!"
+MOSCOW = ZoneInfo("Europe/Moscow")
 
 
 def _start(name, cwd, module, port, env, report_dir, stack):
@@ -64,6 +68,9 @@ def main():
     engine = create_engine(database_url)
     package = ROOT / "data/synthetic/acceptance/dataset.zip"
     tables = parse_file(package.read_bytes(), package.name)
+    scenarios = json.loads(
+        (ROOT / "data/synthetic/acceptance/scenarios.json").read_text(encoding="utf-8")
+    )
     report = {"package": str(package.relative_to(ROOT)), "steps": []}
     with ExitStack() as stack:
         stack.callback(engine.dispose)
@@ -126,6 +133,114 @@ def main():
                         "roster": len(current["roster"]),
                     }
                 )
+            route_day = datetime.fromisoformat(f"{scenarios['route_date']}T00:00:00+03:00").date()
+            for source, current in initial.items():
+                shifts = {}
+                lengths = []
+                for member in current["roster"]:
+                    start = datetime.combine(
+                        route_day, clock_time.fromisoformat(member["workshift_start"]), MOSCOW
+                    )
+                    end = datetime.combine(
+                        route_day, clock_time.fromisoformat(member["workshift_end"]), MOSCOW
+                    )
+                    if end <= start:
+                        end += timedelta(days=1)
+                    shifts[member["worker_id"]] = (start, end)
+                    lengths.append(int((end - start).total_seconds() // 60))
+                if sorted(lengths) != [480, 480, 720, 720]:
+                    raise AssertionError(f"Area {source} has unexpected shift profiles: {lengths}")
+                for visit in current["visits"]:
+                    shift = shifts.get(visit["worker_id"])
+                    start = datetime.fromisoformat(visit["service_start_at"])
+                    end = datetime.fromisoformat(visit["service_end_at"])
+                    if (
+                        shift is None
+                        or start.date() != route_day
+                        or start < shift[0]
+                        or end > shift[1]
+                    ):
+                        raise AssertionError(
+                            f"Area {source} visit {visit['ticket_id']} exceeds its day shift"
+                        )
+                report["steps"].append(
+                    {
+                        "id": f"S02_daily_shifts_{source}",
+                        "shift_minutes": sorted(lengths),
+                        "visits_inside_shift": len(current["visits"]),
+                    }
+                )
+            territory = scenarios["territory_cases"]
+            nearby_ticket_id = ids["tickets"][str(territory["nearby_cross_area_ticket_id"])]
+            nearby_worker_id = ids["users"][str(territory["nearby_worker_id"])]
+            cross_area = _request(
+                client,
+                "POST",
+                "/api/v1/planning/preview",
+                422,
+                json={
+                    "route_date": scenarios["route_date"],
+                    "service_area_id": areas[101],
+                    "base_day_revision": 1,
+                    "ticket_ids": [nearby_ticket_id],
+                    "worker_ids": [nearby_worker_id],
+                    "allow_partial": True,
+                },
+            )
+            if (
+                cross_area["detail"]["code"] != "worker_service_area_mismatch"
+                or nearby_worker_id not in cross_area["detail"]["worker_ids"]
+            ):
+                raise AssertionError(f"Nearby cross-area worker was not refused: {cross_area}")
+            after_cross_area = _request(
+                client,
+                "GET",
+                f"/api/v1/planning/areas/{areas[101]}/{scenarios['route_date']}/current",
+                200,
+            )
+            if after_cross_area != initial[101]:
+                raise AssertionError("Cross-area preview changed the published day")
+            report["steps"].append(
+                {
+                    "id": "S03_nearby_cross_area_rejected",
+                    "worker_id": nearby_worker_id,
+                    "reason": cross_area["detail"]["code"],
+                }
+            )
+            remote_ticket_id = ids["tickets"][str(territory["same_area_remote_ticket_id"])]
+            remote = _request(
+                client,
+                "POST",
+                f"/api/v1/planning/areas/{areas[102]}/{scenarios['route_date']}/tickets/{remote_ticket_id}/preview",
+                201,
+                json={"base_day_revision": 1},
+            )
+            remote_event = remote["event"]
+            remote_case = next(
+                case
+                for case in scenarios["tickets"]
+                if case["ticket_id"] == territory["same_area_remote_ticket_id"]
+            )
+            remote_slot = remote_event["selected_slot"]
+            if (
+                remote_event["outcome"] != "insertion_ready"
+                or remote_slot is None
+                or not remote["plan"]
+            ):
+                raise AssertionError(f"Same-area remote ticket was not insertable: {remote_event}")
+            if datetime.fromisoformat(remote_slot["service_start_at"]) < datetime.fromisoformat(
+                remote_case["visit_window_start"]
+            ) or datetime.fromisoformat(remote_slot["service_end_at"]) > datetime.fromisoformat(
+                remote_case["visit_window_end"]
+            ):
+                raise AssertionError("Same-area remote ticket exceeds its customer window")
+            report["steps"].append(
+                {
+                    "id": "S03_same_area_remote_city",
+                    "outcome": remote_event["outcome"],
+                    "worker_id": remote_slot["worker_id"],
+                }
+            )
             regular_id = ids["tickets"]["37"]
             regular = _request(
                 client,
@@ -200,6 +315,8 @@ def main():
                     f"Impossible ticket received a plan: {no_slot['event']}, "
                     f"plan={no_slot['plan'] is not None}"
                 )
+            if not no_slot["event"]["candidate_reasons"]:
+                raise AssertionError("No-slot preview omitted candidate rejection reasons")
             unchanged = _request(
                 client, "GET", f"/api/v1/planning/areas/{areas[103]}/2030-01-15/current", 200
             )
@@ -213,7 +330,68 @@ def main():
                     "revision": unchanged["revision"],
                 }
             )
+            window_cases = scenarios["window_cases"]
+            tight_window_id = ids["tickets"][str(window_cases["no_slot_ticket_id"])]
+            before_tight_window = _request(
+                client,
+                "GET",
+                f"/api/v1/planning/areas/{areas[101]}/{scenarios['route_date']}/current",
+                200,
+            )
+            with isolated.connect() as connection:
+                tight_window_before = connection.execute(
+                    text("SELECT visit_window_start, visit_window_end FROM tickets WHERE id=:id"),
+                    {"id": tight_window_id},
+                ).one()
+            tight_window = _request(
+                client,
+                "POST",
+                f"/api/v1/planning/areas/{areas[101]}/{scenarios['route_date']}/tickets/{tight_window_id}/preview",
+                201,
+                json={"base_day_revision": before_tight_window["revision"]},
+            )
+            if (
+                tight_window["event"]["can_apply"]
+                or tight_window["event"]["outcome"] != "emergency_unassigned"
+            ):
+                raise AssertionError(
+                    f"Emergency exceeded its original 10:00-12:00 window: {tight_window['event']}"
+                )
+            if tight_window["plan"] and any(
+                stop["ticket_id"] == tight_window_id
+                for route in tight_window["plan"]["routes"]
+                for stop in route["stops"]
+            ):
+                raise AssertionError("Emergency outside its original window entered the route")
+            preserved = _request(
+                client,
+                "GET",
+                f"/api/v1/planning/areas/{areas[101]}/{scenarios['route_date']}/current",
+                200,
+            )
+            if preserved != before_tight_window:
+                raise AssertionError("Rejected emergency preview changed the published day")
+            report["steps"].append(
+                {
+                    "id": "S14_original_10_12_window",
+                    "outcome": tight_window["event"]["outcome"],
+                    "can_apply": tight_window["event"]["can_apply"],
+                    "published_revision_unchanged": True,
+                }
+            )
+            with isolated.connect() as connection:
+                tight_window_after = connection.execute(
+                    text("SELECT visit_window_start, visit_window_end FROM tickets WHERE id=:id"),
+                    {"id": tight_window_id},
+                ).one()
+            if tight_window_after != tight_window_before:
+                raise AssertionError("Preview changed the emergency's original customer window")
             emergency_id = ids["tickets"]["45"]
+            with isolated.connect() as connection:
+                later_window_before = connection.execute(
+                    text("SELECT visit_window_start, visit_window_end FROM tickets WHERE id=:id"),
+                    {"id": emergency_id},
+                ).one()
             emergency = _request(
                 client,
                 "POST",
@@ -245,6 +423,23 @@ def main():
                 raise AssertionError("Emergency replan changed the published roster")
             if emergency_id not in {v["ticket_id"] for v in emergency_current["visits"]}:
                 raise AssertionError("Emergency is absent from the published route")
+            emergency_visit = next(
+                visit for visit in emergency_current["visits"] if visit["ticket_id"] == emergency_id
+            )
+            original_start = datetime.fromisoformat("2030-01-15T12:00:00+03:00")
+            original_end = datetime.fromisoformat("2030-01-15T14:00:00+03:00")
+            if not (
+                original_start <= datetime.fromisoformat(emergency_visit["service_start_at"])
+                and datetime.fromisoformat(emergency_visit["service_end_at"]) <= original_end
+            ):
+                raise AssertionError("Emergency service is outside its original 12:00-14:00 window")
+            with isolated.connect() as connection:
+                later_window_after = connection.execute(
+                    text("SELECT visit_window_start, visit_window_end FROM tickets WHERE id=:id"),
+                    {"id": emergency_id},
+                ).one()
+            if later_window_after != later_window_before:
+                raise AssertionError("Apply changed the emergency's original customer window")
             emergency_replay = _request(
                 client, "POST", f"/api/v1/planning/plans/{emergency_plan['plan_id']}/apply", 200
             )

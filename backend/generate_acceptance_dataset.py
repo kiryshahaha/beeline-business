@@ -147,6 +147,16 @@ def build_dataset() -> tuple[dict, dict]:
         # New events 37-42 are ordinary, 43-48 are emergencies.
         worker_id = 9 + region * 4 + (index // 3) % 4 if phase == "planned" else None
         location_id = area_locations[101 + region][(index // 3) % 8]
+        if ticket["id"] == 37:
+            # Put the new ticket on a Moscow address near the neighboring area's route.
+            location_id = area_locations[101][1]
+        elif ticket["id"] == 38:
+            # This ticket exercises a remote city that still belongs to area 102.
+            location_id = next(
+                location_id
+                for location_id in area_locations[102]
+                if tables["buildings"][locations[location_id]["building_id"] - 1]["city_id"] != 1
+            )
         hour = (9, 11, 14)[(index // 12) % 3] if phase == "planned" else 10 + (index - 36) // 3
         start = _at(hour)
         received = _at(8) if phase == "planned" else start - timedelta(minutes=20)
@@ -183,6 +193,12 @@ def build_dataset() -> tuple[dict, dict]:
             planned_end_at=start + timedelta(minutes=30) if phase == "planned" else None,
             cancel_reason=None,
         )
+        if ticket["id"] == 43:
+            ticket["visit_window_start"] = _at(10)
+            ticket["visit_window_end"] = _at(12)
+        elif ticket["id"] == 45:
+            ticket["visit_window_start"] = _at(12)
+            ticket["visit_window_end"] = _at(14)
         if worker_id:
             assigned[worker_id].append(ticket)
         ticket_cases.append(
@@ -192,6 +208,8 @@ def build_dataset() -> tuple[dict, dict]:
                 "category": category,
                 "service_area_id": ticket["service_area_id"],
                 "received_at": received.isoformat(),
+                "visit_window_start": ticket["visit_window_start"].isoformat(),
+                "visit_window_end": ticket["visit_window_end"].isoformat(),
                 "expected_worker_id": worker_id,
             }
         )
@@ -308,6 +326,13 @@ def build_dataset() -> tuple[dict, dict]:
         "route_date": DATE.isoformat(),
         "roster_worker_ids": list(range(9, 21)),
         "outside_roster_worker_id": 21,
+        "territory_cases": {
+            "nearby_cross_area_ticket_id": 37,
+            "nearby_reference_ticket_id": 2,
+            "nearby_worker_id": 13,
+            "same_area_remote_ticket_id": 38,
+        },
+        "window_cases": {"no_slot_ticket_id": 43, "later_window_ticket_id": 45},
         "tickets": ticket_cases,
         "events": [
             {
