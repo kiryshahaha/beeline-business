@@ -794,19 +794,33 @@ async def preview(
                                 solution,
                                 provider,
                                 settings,
-                                allow_corrections=(attempt == 0),
+                                allow_corrections=True,
                             )
                         finally:
                             telemetry.record_stage("route_fetch", time.perf_counter() - started)
-                        if route_result.corrections and not attempt:
+                        if route_result.corrections:
                             current_corrected_edges = {
                                 (c.profile, c.source, c.target) for c in route_result.corrections
                             }
+                            if attempt and (current_corrected_edges & previous_corrected_edges):
+                                raise PlanningError("routing_estimate_changed", 502)
                             previous_corrected_edges |= current_corrected_edges
-                            apply_estimate_corrections(
-                                problem, prepared, nodes, route_result.corrections
+                            if not attempt:
+                                apply_estimate_corrections(
+                                    problem, prepared, nodes, route_result.corrections
+                                )
+                                continue
+                            # On attempt == 1, if there are minor edge corrections that did not repeat,
+                            # build the routes with real geometries instead of discarding them:
+                            route_result = await build_routes(
+                                prepared,
+                                problem,
+                                nodes,
+                                solution,
+                                provider,
+                                settings,
+                                allow_corrections=False,
                             )
-                            continue
                         routes, creates = route_result.routes, route_result.creates
                         break
 
