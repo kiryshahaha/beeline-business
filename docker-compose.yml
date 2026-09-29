@@ -119,7 +119,17 @@ services:
     container_name: beeline_ollama_pull
     environment:
       OLLAMA_HOST: http://ollama:11434
-    command: ["pull", "${ASSISTANT_MODEL:-qwen3.5:0.8b}"]
+      ASSISTANT_MODEL: ${ASSISTANT_MODEL:-qwen3.5:2b}
+    # A fine-tuned GGUF placed in assistant/model/model.gguf becomes ASSISTANT_MODEL;
+    # without it the stock model is pulled from the Ollama registry.
+    volumes:
+      - ./assistant/model:/model:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        if [ -f /model/model.gguf ];
+        then ollama create "$$ASSISTANT_MODEL" -f /model/Modelfile;
+        else ollama pull "$$ASSISTANT_MODEL"; fi
     restart: "no"
     depends_on:
       ollama:
@@ -135,7 +145,7 @@ services:
     restart: unless-stopped
     environment:
       OLLAMA_URL: http://ollama:11434
-      ASSISTANT_MODEL: ${ASSISTANT_MODEL:-qwen3.5:0.8b}
+      ASSISTANT_MODEL: ${ASSISTANT_MODEL:-qwen3.5:2b}
       LLM_NUM_THREAD: ${LLM_NUM_THREAD:-}
     ports:
       - "${ASSISTANT_PORT:-8002}:8002"
