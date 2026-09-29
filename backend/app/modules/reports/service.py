@@ -1,7 +1,7 @@
 """Build CSV and XLSX downloads from filtered ticket rows."""
 
 from collections.abc import Iterable, Iterator
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -180,7 +180,7 @@ def _format_msk(dt: Any) -> str:
         return ""
     if isinstance(dt, datetime):
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt.astimezone(MOSCOW).strftime("%Y-%m-%d %H:%M:%S")
     if isinstance(dt, date):
         return dt.isoformat()
@@ -329,7 +329,6 @@ def export_tickets(
             return build_file(write, CSV_MEDIA_TYPE, "tickets.csv")
         return build_file(write, XLSX_MEDIA_TYPE, "tickets.xlsx")
     except CellTooLongError as error:
-        col_list = EXPORT_COLUMNS if profile == "raw" else HUMAN_COLUMNS
         ticket_id = error.values[0] if error.values else "N/A"
         raise ReportError(
             422,

@@ -167,7 +167,11 @@ class TicketExportApiTests(DatabaseTestCase):
     def test_xlsx_export_returns_workbook_and_applies_service_area_filter(self):
         response = self.client.get(
             "/api/v1/reports/tickets/export",
-            params={"format": "xlsx", "service_area_id": self.ids["service_areas"]["101"], "profile": "raw"},
+            params={
+                "format": "xlsx",
+                "service_area_id": self.ids["service_areas"]["101"],
+                "profile": "raw",
+            },
             headers=self.observer,
         )
 

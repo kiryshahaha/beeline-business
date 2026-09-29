@@ -88,7 +88,10 @@ def brigades_workload(
         Query(
             ge=dt.date(2000, 1, 1),
             le=dt.date(2100, 12, 31),
-            description="Дата по Москве; если задан диапазон date_from/date_to, считается среднее распределение.",
+            description=(
+                "Дата по Москве; если задан диапазон date_from/date_to, "
+                "считается среднее распределение."
+            ),
         ),
     ] = None,
     date_from: Annotated[

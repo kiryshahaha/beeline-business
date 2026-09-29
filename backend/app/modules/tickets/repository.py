@@ -430,14 +430,23 @@ def find_tickets(
         conditions.append("COALESCE(t.service_area_id, b.service_area_id) = :service_area_id")
         parameters["service_area_id"] = service_area_id
     if target_date is not None:
-        conditions.append("(COALESCE(t.planned_start_at, t.visit_window_start) AT TIME ZONE 'Europe/Moscow')::date = :target_date")
+        conditions.append(
+            "(COALESCE(t.planned_start_at, t.visit_window_start) "
+            "AT TIME ZONE 'Europe/Moscow')::date = :target_date"
+        )
         parameters["target_date"] = target_date
     else:
         if date_from is not None:
-            conditions.append("(COALESCE(t.planned_start_at, t.visit_window_start) AT TIME ZONE 'Europe/Moscow')::date >= :date_from")
+            conditions.append(
+                "(COALESCE(t.planned_start_at, t.visit_window_start) "
+                "AT TIME ZONE 'Europe/Moscow')::date >= :date_from"
+            )
             parameters["date_from"] = date_from
         if date_to is not None:
-            conditions.append("(COALESCE(t.planned_start_at, t.visit_window_start) AT TIME ZONE 'Europe/Moscow')::date <= :date_to")
+            conditions.append(
+                "(COALESCE(t.planned_start_at, t.visit_window_start) "
+                "AT TIME ZONE 'Europe/Moscow')::date <= :date_to"
+            )
             parameters["date_to"] = date_to
     if brigade_id is not None:
         conditions.append("""

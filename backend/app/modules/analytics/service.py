@@ -180,7 +180,9 @@ def get_brigades_workload(
         daily_results: list[list[BrigadeWorkloadItem]] = []
         cur = start
         while cur <= end:
-            daily_results.append(_calculate_single_day_workload(session, current_user=current_user, day=cur))
+            daily_results.append(
+                _calculate_single_day_workload(session, current_user=current_user, day=cur)
+            )
             cur += timedelta(days=1)
 
         aggregated: dict[int, dict] = defaultdict(lambda: {
@@ -250,11 +252,27 @@ def get_brigades_workload(
             SELECT 
                 LEAST(
                     (SELECT min(route_date) FROM routes),
-                    (SELECT min((COALESCE(planned_start_at, visit_window_start) AT TIME ZONE 'Europe/Moscow')::date) FROM tickets)
+                    (
+                        SELECT min(
+                            (
+                                COALESCE(planned_start_at, visit_window_start)
+                                AT TIME ZONE 'Europe/Moscow'
+                            )::date
+                        )
+                        FROM tickets
+                    )
                 ),
                 GREATEST(
                     (SELECT max(route_date) FROM routes),
-                    (SELECT max((COALESCE(planned_start_at, visit_window_start) AT TIME ZONE 'Europe/Moscow')::date) FROM tickets)
+                    (
+                        SELECT max(
+                            (
+                                COALESCE(planned_start_at, visit_window_start)
+                                AT TIME ZONE 'Europe/Moscow'
+                            )::date
+                        )
+                        FROM tickets
+                    )
                 )
         """)
     ).fetchone()

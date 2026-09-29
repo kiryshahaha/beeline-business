@@ -112,7 +112,10 @@ def export_tickets(
     date_from: Annotated[date | None, Query(description="Начало периода")] = None,
     date_to: Annotated[date | None, Query(description="Конец периода")] = None,
     exclude_cancelled: Annotated[bool, Query(description="Исключить отмененные заявки")] = False,
-    profile: Annotated[Literal["human", "raw"], Query(description="Схема колонок: human (понятные русские) или raw (БД)")] = "human",
+    profile: Annotated[
+        Literal["human", "raw"],
+        Query(description="Схема колонок: human (понятные русские) или raw (БД)"),
+    ] = "human",
 ) -> StreamingResponse:
     """Download all tickets matching the supplied filters."""
 

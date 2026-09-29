@@ -733,7 +733,17 @@ class TicketsApiTests(DatabaseTestCase):
         parameters = {param["name"]: param for param in operation["parameters"]}
         self.assertEqual(
             set(parameters),
-            {"status", "city_id", "service_area_id", "brigade_id", "limit", "offset", "date", "date_from", "date_to"},
+            {
+                "status",
+                "city_id",
+                "service_area_id",
+                "brigade_id",
+                "limit",
+                "offset",
+                "date",
+                "date_from",
+                "date_to",
+            },
         )
         self.assertFalse(parameters["brigade_id"]["required"])
         self.assertEqual(parameters["brigade_id"]["schema"]["anyOf"][0]["minimum"], 1)
