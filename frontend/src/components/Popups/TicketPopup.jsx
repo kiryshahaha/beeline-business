@@ -33,10 +33,12 @@ export default function TicketPopup({
   const [errorMessage, setErrorMessage] = useState(null);
 
   useEffect(() => {
-    setCurrentStatus(ticket?.status || "planned");
-    setAssignedWorkerId(ticket?.assigned_worker_id || "");
-    setActionMessage(null);
-    setErrorMessage(null);
+    queueMicrotask(() => {
+      setCurrentStatus(ticket?.status || "planned");
+      setAssignedWorkerId(ticket?.assigned_worker_id || "");
+      setActionMessage(null);
+      setErrorMessage(null);
+    });
   }, [ticket]);
 
   if (!ticket) return null;
@@ -60,7 +62,6 @@ export default function TicketPopup({
 
       const updated = await res.json();
       setCurrentStatus(updated.status || newStatus);
-      ticket.status = updated.status || newStatus;
       setActionMessage("Статус обновлен");
       setTimeout(() => setActionMessage(null), 3000);
 
@@ -99,7 +100,6 @@ export default function TicketPopup({
 
       const updated = await res.json();
       setAssignedWorkerId(workerId || "");
-      ticket.assigned_worker_id = workerId;
       setActionMessage(workerId ? "Инженер назначен" : "Назначение снято");
       setTimeout(() => setActionMessage(null), 3000);
 

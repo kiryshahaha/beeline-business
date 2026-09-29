@@ -123,8 +123,10 @@ export default function CreateTicketModal({
     if (initialCoordinates) {
       const lat = parseFloat(initialCoordinates.lat || initialCoordinates[1]);
       const lng = parseFloat(initialCoordinates.lng || initialCoordinates[0]);
-      setLatitude(lat.toFixed(5));
-      setLongitude(lng.toFixed(5));
+      queueMicrotask(() => {
+        setLatitude(lat.toFixed(5));
+        setLongitude(lng.toFixed(5));
+      });
 
       // Запускаем распознавание адреса по координатам точки на карте
       reverseGeocodeCoordinates(lat, lng).then((parsed) => {
@@ -138,14 +140,16 @@ export default function CreateTicketModal({
         }
       });
     } else if (!latitude) {
-      // Центр Москвы по умолчанию
-      setLatitude("55.7558");
-      setLongitude("37.6173");
-      setStreet("Тверская");
-      setBuildingNumber("1");
-      setDistrict("Тверской");
-      setFormattedAddress("Москва, Тверская, 1");
-      setAddressSearchQuery("Москва, Тверская, 1");
+      queueMicrotask(() => {
+        // Центр Москвы по умолчанию
+        setLatitude("55.7558");
+        setLongitude("37.6173");
+        setStreet("Тверская");
+        setBuildingNumber("1");
+        setDistrict("Тверской");
+        setFormattedAddress("Москва, Тверская, 1");
+        setAddressSearchQuery("Москва, Тверская, 1");
+      });
     }
 
     // Временные окна визита (сегодня с 10:00 до 14:00)
@@ -162,10 +166,12 @@ export default function CreateTicketModal({
       return `${year}-${month}-${day}T${hours}:${mins}`;
     };
 
-    setVisitStart(formatForInput(start));
-    setVisitEnd(formatForInput(end));
-    setErrorMessage(null);
-  }, [isOpen, initialCoordinates]);
+    queueMicrotask(() => {
+      setVisitStart(formatForInput(start));
+      setVisitEnd(formatForInput(end));
+      setErrorMessage(null);
+    });
+  }, [isOpen, initialCoordinates, latitude]);
 
   // Обработка живого поиска адреса с автокомплитом
   const handleAddressInputChange = (e) => {

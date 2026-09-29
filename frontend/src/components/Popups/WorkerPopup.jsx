@@ -27,8 +27,10 @@ export default function WorkerPopup({
   const [errorMessage, setErrorMessage] = useState(null);
 
   useEffect(() => {
-    setIsOnLine(Boolean(worker?.worker_profile?.is_on_line));
-    setErrorMessage(null);
+    queueMicrotask(() => {
+      setIsOnLine(Boolean(worker?.worker_profile?.is_on_line));
+      setErrorMessage(null);
+    });
   }, [worker]);
 
   if (!worker || !worker.location) return null;
@@ -65,9 +67,6 @@ export default function WorkerPopup({
       }
 
       setIsOnLine(targetStatus);
-      if (worker.worker_profile) {
-        worker.worker_profile.is_on_line = targetStatus;
-      }
       // Инвалидируем кэш для обновления маркеров на карте
       queryClient.invalidateQueries({ queryKey: ["users"] });
       queryClient.invalidateQueries({ queryKey: ["workers"] });
