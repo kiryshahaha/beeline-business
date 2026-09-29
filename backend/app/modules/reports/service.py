@@ -282,7 +282,7 @@ def export_tickets(
     date_from: date | None = None,
     date_to: date | None = None,
     exclude_cancelled: bool = False,
-    profile: str = "human",
+    profile: str = "raw",
 ) -> ExportFile:
     filters = {
         "status": status.value if status is not None else None,

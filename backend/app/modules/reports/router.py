@@ -115,7 +115,7 @@ def export_tickets(
     profile: Annotated[
         Literal["human", "raw"],
         Query(description="Схема колонок: human (понятные русские) или raw (БД)"),
-    ] = "human",
+    ] = "raw",
 ) -> StreamingResponse:
     """Download all tickets matching the supplied filters."""
 

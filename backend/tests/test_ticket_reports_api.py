@@ -151,10 +151,10 @@ class TicketExportApiTests(DatabaseTestCase):
         self.assertIn("count", count_res.json())
         self.assertGreater(count_res.json()["count"], 0)
 
-        # 2. Test default human CSV export (semicolon delimited, Russian columns)
+        # 2. Test human CSV export (semicolon delimited, Russian columns)
         csv_res = self.client.get(
             "/api/v1/reports/tickets/export",
-            params={"format": "csv", "status": "completed"},
+            params={"format": "csv", "status": "completed", "profile": "human"},
             headers=self.observer,
         )
         self.assertEqual(csv_res.status_code, 200)
