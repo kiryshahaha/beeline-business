@@ -112,7 +112,9 @@ export default function DevAccountSwitcher() {
         if (typeof parsed.x === "number" && typeof parsed.y === "number") {
           const clampedX = Math.max(8, Math.min(window.innerWidth - 60, parsed.x));
           const clampedY = Math.max(8, Math.min(window.innerHeight - 50, parsed.y));
-          setPosition({ x: clampedX, y: clampedY });
+          queueMicrotask(() => {
+            setPosition({ x: clampedX, y: clampedY });
+          });
         }
       }
     } catch {
