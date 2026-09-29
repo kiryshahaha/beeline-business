@@ -25,7 +25,9 @@ class ScheduleTicket(BaseModel):
     status: TicketStatus
     start: AwareDatetime = Field(description="Плановое начало работы по заявке.")
     end: AwareDatetime = Field(description="Плановое окончание работы по заявке.")
-    is_pinned: bool = Field(default=False, description="Заблокирована ли заявка от автоперепланирования.")
+    is_pinned: bool = Field(
+        default=False, description="Заблокирована ли заявка от автоперепланирования."
+    )
 
 
 class ScheduleConflict(BaseModel):

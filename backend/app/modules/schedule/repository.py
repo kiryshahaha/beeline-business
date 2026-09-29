@@ -106,19 +106,29 @@ def find_planned_tickets(
         session.execute(
             text("""
                 SELECT
-                    t.assigned_worker_id AS worker_id, t.id, t.title, t.work_type, t.status, t.is_pinned,
+                    t.assigned_worker_id AS worker_id, t.id, t.title, t.work_type,
+                    t.status, t.is_pinned,
                     COALESCE(t.planned_start_at, t.visit_window_start) AS planned_start_at,
                     COALESCE(
                         t.planned_end_at,
                         t.visit_window_end,
-                        t.visit_window_start + make_interval(mins => COALESCE(t.estimated_duration_minutes, 60))
+                        t.visit_window_start + make_interval(
+                            mins => COALESCE(t.estimated_duration_minutes, 60)
+                        )
                     ) AS planned_end_at
                 FROM tickets AS t
                 WHERE t.assigned_worker_id = ANY(:worker_ids)
                   AND (
-                    (t.planned_start_at IS NOT NULL AND t.planned_start_at < :day_end AND t.planned_end_at > :day_start)
+                    (
+                        t.planned_start_at IS NOT NULL
+                        AND t.planned_start_at < :day_end
+                        AND t.planned_end_at > :day_start
+                    )
                     OR
-                    (t.planned_start_at IS NULL AND (t.visit_window_start AT TIME ZONE 'Europe/Moscow')::date = :day)
+                    (
+                        t.planned_start_at IS NULL
+                        AND (t.visit_window_start AT TIME ZONE 'Europe/Moscow')::date = :day
+                    )
                   )
                 ORDER BY COALESCE(t.planned_start_at, t.visit_window_start), t.id
             """),
@@ -143,14 +153,24 @@ def find_worker_day_tickets(
                        COALESCE(
                            t.planned_end_at,
                            t.visit_window_end,
-                           t.visit_window_start + make_interval(mins => COALESCE(t.estimated_duration_minutes, 60))
+                           t.visit_window_start + make_interval(
+                               mins => COALESCE(t.estimated_duration_minutes, 60)
+                           )
                        ) AS planned_end_at
                 FROM tickets AS t
                 WHERE t.assigned_worker_id = ANY(:worker_ids)
                   AND (
-                    (t.planned_start_at IS NOT NULL AND t.planned_start_at >= :window_start AND t.planned_start_at < :window_end)
+                    (
+                        t.planned_start_at IS NOT NULL
+                        AND t.planned_start_at >= :window_start
+                        AND t.planned_start_at < :window_end
+                    )
                     OR
-                    (t.planned_start_at IS NULL AND t.visit_window_start >= :window_start AND t.visit_window_start < :window_end)
+                    (
+                        t.planned_start_at IS NULL
+                        AND t.visit_window_start >= :window_start
+                        AND t.visit_window_start < :window_end
+                    )
                   )
                 ORDER BY COALESCE(t.planned_start_at, t.visit_window_start), t.id
             """),

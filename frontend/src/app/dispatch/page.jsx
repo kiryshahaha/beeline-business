@@ -236,7 +236,7 @@ export default function DispatchPage() {
   const [selectedBrigadeId, setSelectedBrigadeId] = useState("all");
   const [selectedWorkType, setSelectedWorkType] = useState("all");
   const [selectedTaskId, setSelectedTaskId] = useState(null);
-  const [lockedTaskIds, setLockedTaskIds] = useState(new Set());
+  const [lockedOverrides, setLockedOverrides] = useState(new Map());
   const [redistPool, setRedistPool] = useState([]); // tasks moved to redistribution
   const [draggedTask, setDraggedTask] = useState(null);
   const [dragOverWorkerId, setDragOverWorkerId] = useState(null);
@@ -245,7 +245,6 @@ export default function DispatchPage() {
   const [tooltip, setTooltip] = useState(null);
   const [showRedistZone, setShowRedistZone] = useState(true);
   const [isReplanning, setIsReplanning] = useState(false);
-  const [isDateChanging, setIsDateChanging] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const [assigningText, setAssigningText] = useState("Обновление назначения…");
   const [assignError, setAssignError] = useState(null);
@@ -266,7 +265,6 @@ export default function DispatchPage() {
   const handleDateChange = useCallback((newVal) => {
     const newDate = newVal?.date || newVal?.startDate || newVal?.from || todayStr;
     if (newDate && newDate !== dateValue.date) {
-      setIsDateChanging(true);
       setRedistPool([]);
       setSelectedTaskId(null);
     }
@@ -278,11 +276,12 @@ export default function DispatchPage() {
     });
   }, [dateValue.date, todayStr]);
 
-  useEffect(() => {
-    if (isDateChanging && !isFetching && !isLoading) {
-      setIsDateChanging(false);
-    }
-  }, [isDateChanging, isFetching, isLoading]);
+  const isDateChanging = Boolean(
+    (isFetching || isLoading) &&
+      dateValue?.date &&
+      schedule?.date &&
+      dateValue.date !== schedule.date
+  );
 
   const { brigades: brigadesList } = useBrigades();
   const { workTypes } = useWorkTypes();
@@ -344,26 +343,29 @@ export default function DispatchPage() {
     };
   }, []);
 
-  /* ── Sync pinned tickets from schedule into lockedTaskIds ── */
-  useEffect(() => {
-    if (!schedule) return;
+  /* ── Sync pinned tickets from schedule with optimistic local overrides ── */
+  const lockedTaskIds = useMemo(() => {
     const pinned = new Set();
-    for (const b of schedule.brigades || []) {
+    for (const b of schedule?.brigades || []) {
       for (const w of b.workers || []) {
         for (const t of w.tickets || []) {
           if (t.is_pinned) pinned.add(t.id);
         }
       }
     }
-    if (schedule.unassigned_workers) {
+    if (schedule?.unassigned_workers) {
       for (const w of schedule.unassigned_workers) {
         for (const t of w.tickets || []) {
           if (t.is_pinned) pinned.add(t.id);
         }
       }
     }
-    setLockedTaskIds(pinned);
-  }, [schedule]);
+    for (const [id, isLocked] of lockedOverrides.entries()) {
+      if (isLocked) pinned.add(id);
+      else pinned.delete(id);
+    }
+    return pinned;
+  }, [schedule, lockedOverrides]);
 
   /* ── Processed schedule data ── */
   const { brigades, unassignedTickets, allWorkerIds, workerBrigadeMap } = useMemo(() => {
@@ -411,8 +413,8 @@ export default function DispatchPage() {
   }, [brigades, selectedBrigadeId]);
 
   /* ── Target task being selected or dragged ── */
-  const targetTask = useMemo(() => {
-    const targetTaskId = selectedTaskId || draggedTask?.id;
+  const targetTaskId = selectedTaskId || draggedTask?.id;
+  const targetTask = (() => {
     if (!targetTaskId) return null;
 
     // Check brigades -> workers -> tickets
@@ -466,7 +468,7 @@ export default function DispatchPage() {
     }
 
     return null;
-  }, [selectedTaskId, draggedTask, brigades, schedule?.unassigned_workers, combinedUnassignedTickets]);
+  })();
 
   /* ── Check if a worker is suitable for targetTask ── */
   const isWorkerSuitable = useCallback(
@@ -563,7 +565,7 @@ export default function DispatchPage() {
     }
 
     return eligible;
-  }, [targetTask, brigades, schedule?.unassigned_workers, isWorkerSuitable]);
+  }, [targetTask, brigades, schedule, isWorkerSuitable]);
 
   /* ── Visible brigades (when task clicked, ONLY eligible workers + current worker remain) ── */
   const visibleBrigades = useMemo(() => {
@@ -852,7 +854,7 @@ export default function DispatchPage() {
       setDraggedTask(null);
       setSelectedTaskId(null);
     },
-    [isForeman, draggedTask, brigades, schedule?.unassigned_workers, redistPool, queryClient]
+    [isForeman, draggedTask, brigades, schedule, redistPool, queryClient]
   );
 
   /* Wrappers that reset counters before calling the real drop handlers */
@@ -910,10 +912,9 @@ export default function DispatchPage() {
       }
 
       const isCurrentlyLocked = lockedTaskIds.has(taskId);
-      setLockedTaskIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(taskId)) next.delete(taskId);
-        else next.add(taskId);
+      setLockedOverrides((prev) => {
+        const next = new Map(prev);
+        next.set(taskId, !isCurrentlyLocked);
         return next;
       });
 
@@ -958,16 +959,15 @@ export default function DispatchPage() {
       } catch (err) {
         console.error("Failed to toggle pin:", err);
         // Revert
-        setLockedTaskIds((prev) => {
-          const next = new Set(prev);
-          if (isCurrentlyLocked) next.add(taskId);
-          else next.delete(taskId);
+        setLockedOverrides((prev) => {
+          const next = new Map(prev);
+          next.delete(taskId);
           return next;
         });
       }
       setContextMenu(null);
     },
-    [isForeman, lockedTaskIds, brigades, schedule?.unassigned_workers, queryClient]
+    [isForeman, lockedTaskIds, brigades, schedule, queryClient]
   );
 
   /* ── Move to redistribution ── */
