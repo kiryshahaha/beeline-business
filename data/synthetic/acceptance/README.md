@@ -20,4 +20,4 @@ cd backend
 python generate_acceptance_dataset.py --output ../data/synthetic/acceptance
 ```
 
-Тест `tests.test_acceptance_dataset` проверяет состав, связность адресов и участков, эквивалентность CSV/XLSX, повторный импорт в PostgreSQL и классификацию отрицательных строк. Сценарии S01–S20 и границы их фактического покрытия приведены в отчёте `docs/ACCEPTANCE_PLAN5_2026-09-29.md`.
+Тест `tests.test_acceptance_dataset` проверяет состав, связность адресов и участков, эквивалентность CSV/XLSX, повторный импорт в PostgreSQL и классификацию отрицательных строк. Сценарии S01–S20 и границы их фактического покрытия приведены в отчёте `Артефакты_нейронки/ACCEPTANCE_PLAN5_2026-09-29.md`.
