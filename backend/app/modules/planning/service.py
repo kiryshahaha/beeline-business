@@ -4,6 +4,7 @@ import asyncio
 import copy
 import logging
 import time
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from math import ceil
 from uuid import UUID, uuid4
@@ -1164,6 +1165,60 @@ def _experiment_summary(public: dict) -> dict:
     }
 
 
+class _WindowExperimentProvider:
+    """Capture baseline matrix responses and replay them for the window variant."""
+
+    def __init__(self, provider, matrices, requests, *, replay):
+        self._provider = provider
+        self._matrices = matrices
+        self._requests = requests
+        self._replay = replay
+
+    @property
+    def telemetry(self):
+        return getattr(self._provider, "telemetry", None)
+
+    @telemetry.setter
+    def telemetry(self, value):
+        self._provider.telemetry = value
+
+    def __getattr__(self, name):
+        return getattr(self._provider, name)
+
+    async def build_route_matrix(self, *, sources, targets, mode):
+        key = (
+            mode,
+            tuple(tuple(point) for point in sources),
+            tuple(tuple(point) for point in targets),
+        )
+        self._requests.add(key)
+        if self._replay:
+            matrix = self._matrices.get(key)
+            if matrix is None:
+                raise PlanningError("window_experiment_matrix_mismatch", 500)
+            telemetry = self.telemetry
+            if telemetry is not None:
+                telemetry.record_operation(
+                    "matrix", mode, cells=len(sources) * len(targets), source="matrix_replay"
+                )
+                telemetry.record_cache_hit("matrix")
+            return copy.deepcopy(matrix)
+        matrix = await self._provider.build_route_matrix(
+            sources=sources, targets=targets, mode=mode
+        )
+        self._matrices[key] = copy.deepcopy(matrix)
+        return matrix
+
+
+def _window_experiment_provider_factory(provider_factory, matrices, requests, *, replay):
+    @asynccontextmanager
+    async def open_provider():
+        async with provider_factory() as provider:
+            yield _WindowExperimentProvider(provider, matrices, requests, replay=replay)
+
+    return open_provider
+
+
 async def compare_window_experiment(
     engine,
     request,
@@ -1179,12 +1234,17 @@ async def compare_window_experiment(
     """Run two non-persisted calculations over the same captured input snapshot."""
     scenario_snapshot = snapshot_with_experimental_windows(snapshot, windows, request.route_date)
     original_tickets = {ticket["id"]: ticket for ticket in snapshot["tickets"]}
+    matrix_responses = {}
+    baseline_matrix_requests = set()
+    experiment_matrix_requests = set()
     baseline = await preview(
         engine,
         request,
         actor,
         settings,
-        provider_factory,
+        _window_experiment_provider_factory(
+            provider_factory, matrix_responses, baseline_matrix_requests, replay=False
+        ),
         planner,
         clock,
         snapshot_override=snapshot,
@@ -1195,12 +1255,16 @@ async def compare_window_experiment(
         request,
         actor,
         settings,
-        provider_factory,
+        _window_experiment_provider_factory(
+            provider_factory, matrix_responses, experiment_matrix_requests, replay=True
+        ),
         planner,
         clock,
         snapshot_override=scenario_snapshot,
         persist=False,
     )
+    if baseline_matrix_requests != experiment_matrix_requests:
+        raise PlanningError("window_experiment_matrix_mismatch", 500)
     return {
         "experimental": True,
         "applied": False,
