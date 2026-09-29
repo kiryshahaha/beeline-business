@@ -154,6 +154,7 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         appliance_office_id=None,
         category="emergency",
         window=None,
+        response_deadline_at=None,
     ):
         window_start, window_end = window or (
             "2030-01-15T11:00:00+03:00",
@@ -170,6 +171,7 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
                 "category": category,
                 "priority": 1 if category == "emergency" else 3,
                 "received_at": self.now.isoformat(),
+                "response_deadline_at": response_deadline_at,
                 "sla_deadline_at": "2030-01-15T18:00:00+03:00",
                 "visit_window_start": window_start,
                 "visit_window_end": window_end,
@@ -650,7 +652,8 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
     def test_midday_replan_keeps_completed_visit_and_uses_confirmed_location_and_time(self):
         initial = self.apply(self.preview())
         day_state = self.client.get(self.day_url("/current"), headers=self.headers).json()
-        completed_visit = day_state["visits"][0]
+        visits = sorted(day_state["visits"], key=lambda visit: visit["service_start_at"])
+        completed_visit = visits[0]
         ticket_id = completed_visit["ticket_id"]
         worker_id = completed_visit["worker_id"]
         with Session(self.engine) as session:
@@ -699,13 +702,33 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
             "Авария после завершённого выезда",
             brigade_id=self.receipt["id_map"]["brigades"]["1"],
         )
-        preview_response = self.client.post(
-            self.day_url("/replan/preview"),
-            json={"base_day_revision": initial["day_revision"]},
-            headers=self.headers,
+        preview_response = self.event_preview(
+            emergency["id"], base_day_revision=initial["day_revision"]
         )
         self.assertEqual(preview_response.status_code, 201, preview_response.text)
-        proposal = preview_response.json()
+        emergency_preview = preview_response.json()
+        event_result = emergency_preview["event"]
+        proposal = emergency_preview["plan"]
+        self.assertTrue(event_result["can_apply"])
+        self.assertEqual(event_result["selection_reason"]["code"], "emergency_response_priority")
+        self.assertEqual(
+            event_result["selection_reason"]["selected_worker_id"],
+            event_result["selected_slot"]["worker_id"],
+        )
+        self.assertEqual(event_result["sla_forecast"]["response_target_minutes"], 120)
+        self.assertTrue(event_result["sla_forecast"]["response_deadline_met"])
+        self.assertEqual(
+            datetime.fromisoformat(event_result["sla_forecast"]["response_deadline_at"]),
+            datetime.fromisoformat(emergency["response_deadline_at"]),
+        )
+        self.assertEqual(
+            datetime.fromisoformat(event_result["sla_forecast"]["visit_window_start"]),
+            datetime.fromisoformat(emergency["visit_window_start"]),
+        )
+        self.assertEqual(
+            datetime.fromisoformat(event_result["sla_forecast"]["visit_window_end"]),
+            datetime.fromisoformat(emergency["visit_window_end"]),
+        )
         self.assertEqual(proposal["metrics"]["available_workers"], 4)
         self.assertIn(
             emergency["id"],
@@ -724,6 +747,10 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
                 for visit in route["stops"]
             )
         )
+        self.assertEqual(proposal["replan_diff"]["ticket_event"]["ticket_id"], emergency["id"])
+        self.assertTrue(proposal["replan_diff"]["emergency_sla_forecasts"])
+        before_apply = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        self.assertEqual(before_apply["revision"], initial["day_revision"])
 
         applied = self.apply(proposal)
         current = self.client.get(self.day_url("/current"), headers=self.headers).json()
@@ -1182,6 +1209,8 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         preview = preview_response.json()
         self.assertEqual(preview["event"]["outcome"], "emergency_unassigned")
         self.assertFalse(preview["event"]["can_apply"])
+        self.assertEqual(preview["event"]["sla_forecast"]["response_sla_status"], "unassigned")
+        self.assertFalse(preview["event"]["sla_forecast"]["response_deadline_met"])
         apply_response = self.client.post(
             f"/api/v1/planning/plans/{preview['plan']['plan_id']}/apply",
             headers=self.headers,
@@ -1213,6 +1242,11 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         )
         self.assertEqual(preview["event"]["ticket_id"], ticket["id"])
         self.assertIsNotNone(preview["event"]["sla_forecast"])
+        self.assertEqual(preview["event"]["sla_forecast"]["response_target_minutes"], 120)
+        self.assertIsInstance(preview["event"]["sla_forecast"]["response_deadline_met"], bool)
+        self.assertEqual(
+            preview["event"]["selection_reason"]["code"], "emergency_response_priority"
+        )
 
         applied = self.apply(preview["plan"])
 
@@ -1232,3 +1266,29 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
             self.assertEqual(source_event.event_type.value, "new_ticket")
             self.assertEqual(source_event.ticket_id, ticket["id"])
         self.assertEqual(applied["day_revision"], initial["day_revision"] + 1)
+
+    def test_60_minute_response_target_missed_due_to_customer_window_is_explicit(self):
+        initial = self.apply(self.preview())
+        ticket = self.create_ticket(
+            "Авария с окном позже 60-минутного норматива",
+            response_deadline_at=(self.now + timedelta(minutes=60)).isoformat(),
+            window=("2030-01-15T11:00:00+03:00", "2030-01-15T17:00:00+03:00"),
+        )
+
+        response = self.event_preview(ticket["id"], base_day_revision=initial["day_revision"])
+
+        self.assertEqual(response.status_code, 201, response.text)
+        preview = response.json()
+        self.assertFalse(preview["event"]["can_apply"])
+        self.assertEqual(preview["event"]["outcome"], "emergency_unassigned")
+        forecast = preview["event"]["sla_forecast"]
+        self.assertEqual(forecast["response_target_minutes"], 60)
+        self.assertFalse(forecast["response_deadline_met"])
+        self.assertEqual(forecast["response_sla_status"], "unassigned")
+        self.assertIsNotNone(forecast["unassigned_reason"])
+        self.assertEqual(
+            datetime.fromisoformat(forecast["visit_window_start"]),
+            datetime.fromisoformat(ticket["visit_window_start"]),
+        )
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        self.assertEqual(current["revision"], initial["day_revision"])

@@ -177,7 +177,7 @@ class TicketEventOutcomeTests(unittest.TestCase):
                     {
                         "ticket_id": 90,
                         "reaction_to_service_start_minutes": 70,
-                        "service_deadline_met": False,
+                        "response_deadline_met": False,
                     }
                 ]
             },
@@ -189,6 +189,53 @@ class TicketEventOutcomeTests(unittest.TestCase):
         )
 
         self.assertEqual(result["outcome"], "sla_violation")
+
+    def test_service_completion_deadline_does_not_override_response_forecast(self):
+        event = {
+            "source_event_id": 51,
+            "event_type": "new_ticket",
+            "ticket_id": 91,
+            "category": "emergency",
+            "request_type_hd": "авария",
+            "received_at": "2030-01-15T08:00:00+03:00",
+            "response_deadline_at": "2030-01-15T10:00:00+03:00",
+        }
+        snapshot = {"area_scope": {"tickets": []}, "current_day_state": {"visits": []}}
+        public = {
+            "routes": [
+                {
+                    "worker_id": 7,
+                    "stops": [
+                        {
+                            "ticket_id": 91,
+                            "sequence": 1,
+                            "arrival_at": "2030-01-15T08:40:00+03:00",
+                            "service_start_at": "2030-01-15T08:45:00+03:00",
+                            "service_end_at": "2030-01-15T09:15:00+03:00",
+                            "effective_service_minutes": 30,
+                        }
+                    ],
+                }
+            ],
+            "replan_diff": {
+                "emergency_response": [
+                    {
+                        "ticket_id": 91,
+                        "reaction_to_service_start_minutes": 45,
+                        "response_deadline_met": True,
+                        "service_deadline_met": False,
+                    }
+                ]
+            },
+            "unassigned": [],
+        }
+
+        result = build_ticket_event_result(
+            event, snapshot, {"workers": [], "excluded_workers": []}, public
+        )
+
+        self.assertEqual(result["outcome"], "emergency_replan_ready")
+        self.assertTrue(result["can_apply"])
 
     def test_emergency_without_a_confirmed_safe_point_waits(self):
         event = {
