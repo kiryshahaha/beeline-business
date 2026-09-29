@@ -69,7 +69,14 @@ class FeasiblePlanner:
             steps = [{"node": depot, "arrival_time": arrival}]
             travel = distance = service = waiting = 0
             previous = depot
-            for node in sorted(remaining):
+            for node in sorted(
+                remaining,
+                key=lambda item: (
+                    problem.time_windows[item][0] != problem.time_windows[item][1],
+                    problem.time_windows[item][0],
+                    item,
+                ),
+            ):
                 if vehicle not in problem.allowed_vehicles[str(node)]:
                     continue
                 policy = policy_by_node[node]

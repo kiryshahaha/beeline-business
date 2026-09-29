@@ -205,6 +205,7 @@ def update_ticket(session: Session, ticket_id: int, values: dict) -> None:
                 received_at = :received_at,
                 response_deadline_at = :response_deadline_at,
                 intake_source = :intake_source,
+                request_type_hd = :request_type_hd,
                 visit_window_start = :visit_window_start,
                 visit_window_end = :visit_window_end,
                 estimated_duration_minutes = :estimated_duration_minutes,
@@ -212,7 +213,13 @@ def update_ticket(session: Session, ticket_id: int, values: dict) -> None:
                 updated_at = now()
             WHERE id = :ticket_id
         """),
-        {"response_deadline_at": None, "intake_source": None, **values, "ticket_id": ticket_id},
+        {
+            "response_deadline_at": None,
+            "intake_source": None,
+            "request_type_hd": None,
+            **values,
+            "ticket_id": ticket_id,
+        },
     )
 
 

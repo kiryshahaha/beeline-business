@@ -1,5 +1,6 @@
 """HTTP coverage for fast stats and role-based scoping."""
 
+import json
 from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
@@ -213,6 +214,47 @@ class FastStatsApiTests(DatabaseTestCase):
 
         # 2 brigades created
         self.assertEqual(data["active_brigades_count"], 2)
+
+    def test_fast_stats_accepts_multiline_route_geometry(self):
+        self.connection.execute(
+            text("""
+                INSERT INTO routes (worker_id, route_date, route_number, geojson)
+                VALUES (
+                    :worker_id,
+                    CURRENT_DATE,
+                    1,
+                    CAST(:geojson AS JSONB)
+                )
+            """),
+            {
+                "worker_id": self.worker_two.id,
+                "geojson": json.dumps(
+                    {
+                        "type": "FeatureCollection",
+                        "features": [
+                            {
+                                "type": "Feature",
+                                "geometry": {
+                                    "type": "MultiLineString",
+                                    "coordinates": [
+                                        [[0, 0], [0.01, 0]],
+                                        [[0.02, 0], [0.04, 0]],
+                                    ],
+                                },
+                                "properties": {"kind": "path"},
+                            }
+                        ],
+                    }
+                ),
+            },
+        )
+        self.session.commit()
+
+        self.current_user = self.observer
+        response = self.client.get("/api/v1/analytics/fast-stats")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertAlmostEqual(response.json()["avg_km_per_worker_per_day"], 3.3, places=1)
 
     def test_foreman_without_brigade_gets_zero_fast_stats(self):
         self.current_user = self.foreman_without_brigade

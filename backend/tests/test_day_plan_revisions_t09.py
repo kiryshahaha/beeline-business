@@ -20,6 +20,7 @@ from app.db.session import get_session
 from app.main import app
 from app.modules.data_exchange.formats import parse_file, serialize
 from app.modules.data_exchange.service import import_data
+from app.modules.execution.models import WorkEvent
 from app.modules.planning import day_plans
 from app.modules.planning import router as api
 from planning_scenarios import NOW, ROUTE_DATE, generate_planning_dataset, preview_request
@@ -1027,3 +1028,205 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
         for suffix in ("/revisions", "/current", "/diff"):
             response = self.client.get(self.day_url(suffix), headers=worker_headers)
             self.assertEqual(response.status_code, 403, f"{suffix}: {response.text}")
+
+    def event_preview(self, ticket_id, **payload):
+        return self.client.post(
+            f"{self.day_url()}/tickets/{ticket_id}/preview",
+            json=payload,
+            headers=self.headers,
+        )
+
+    def test_ticket_event_preview_rejects_client_selected_policy(self):
+        initial = self.apply(self.preview())
+        ticket = self.create_ticket(
+            "Обычная заявка с попыткой выбрать режим",
+            category="repair",
+            window=("2030-01-15T08:00:00+03:00", "2030-01-15T18:00:00+03:00"),
+        )
+
+        response = self.event_preview(
+            ticket["id"], base_day_revision=initial["day_revision"], mode="emergency"
+        )
+
+        self.assertEqual(response.status_code, 422, response.text)
+
+    def test_ticket_event_preview_rejects_stale_revision_without_saving_a_plan(self):
+        initial = self.apply(self.preview())
+        ticket = self.create_ticket(
+            "Авария с устаревшей ревизией",
+            category="emergency",
+            brigade_id=self.receipt["id_map"]["brigades"]["1"],
+        )
+        with Session(self.engine) as session:
+            plans_before = session.scalar(select(func.count()).select_from(PlanningPlan))
+
+        response = self.event_preview(ticket["id"], base_day_revision=initial["day_revision"] + 1)
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["detail"]["code"], "day_revision_stale")
+        with Session(self.engine) as session:
+            plans_after = session.scalar(select(func.count()).select_from(PlanningPlan))
+        self.assertEqual(plans_after, plans_before)
+
+    def test_regular_ticket_event_uses_slot_preview_and_publishes_linked_revision(self):
+        initial = self.apply(self.preview())
+        before = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        previous = {visit["ticket_id"]: visit for visit in before["visits"]}
+        ticket = self.create_ticket(
+            "Обычная заявка через поиск слота",
+            category="repair",
+            brigade_id=self.receipt["id_map"]["brigades"]["1"],
+            window=("2030-01-15T08:00:00+03:00", "2030-01-15T18:00:00+03:00"),
+        )
+
+        response = self.event_preview(ticket["id"], base_day_revision=initial["day_revision"])
+
+        self.assertEqual(response.status_code, 201, response.text)
+        preview = response.json()
+        self.assertEqual(preview["event"]["category"], "repair")
+        self.assertEqual(preview["event"]["outcome"], "insertion_ready", preview["event"])
+        self.assertEqual(preview["event"]["ticket_id"], ticket["id"])
+        self.assertEqual(preview["event"]["received_at"], ticket["received_at"])
+        self.assertEqual(
+            preview["plan"]["replan_diff"]["ticket_event"]["source_event_id"],
+            preview["event"]["source_event_id"],
+        )
+        self.assertIn(
+            preview["event"]["selected_slot"]["worker_id"],
+            {visit["worker_id"] for visit in before["visits"]},
+        )
+        self.assertGreaterEqual(preview["event"]["road_contribution"]["added_travel_minutes"], 0)
+        plan = preview["plan"]
+        applied = self.apply(plan)
+
+        self.assertEqual(applied["day_revision"], initial["day_revision"] + 1)
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        self.assertEqual(current["reason"], "ticket_inserted")
+        actual = {visit["ticket_id"]: visit for visit in current["visits"]}
+        self.assertIn(ticket["id"], actual)
+        expected_shifted = sorted(
+            ticket_id
+            for ticket_id, visit in previous.items()
+            if actual[ticket_id]["sequence"] != visit["sequence"]
+            or actual[ticket_id]["service_start_at"] != visit["service_start_at"]
+        )
+        self.assertEqual(preview["event"]["shifted_ticket_ids"], expected_shifted)
+        for ticket_id, visit in previous.items():
+            self.assertEqual(actual[ticket_id]["worker_id"], visit["worker_id"])
+        for worker_id in {visit["worker_id"] for visit in previous.values()}:
+            previous_order = [
+                ticket_id
+                for ticket_id, _ in sorted(previous.items(), key=lambda item: item[1]["sequence"])
+                if previous[ticket_id]["worker_id"] == worker_id
+            ]
+            current_order = [
+                visit["ticket_id"]
+                for visit in sorted(
+                    (visit for visit in current["visits"] if visit["worker_id"] == worker_id),
+                    key=lambda visit: visit["sequence"],
+                )
+                if visit["ticket_id"] in previous
+            ]
+            self.assertEqual(current_order, previous_order)
+
+        with Session(self.engine) as session:
+            revision = session.scalar(
+                select(DayPlanRevision).where(
+                    DayPlanRevision.service_area_id == self.area_id,
+                    DayPlanRevision.route_date == ROUTE_DATE,
+                    DayPlanRevision.is_current.is_(True),
+                )
+            )
+            source_event = session.get(WorkEvent, revision.event_id)
+            self.assertEqual(revision.event_id, preview["event"]["source_event_id"])
+            self.assertEqual(source_event.event_type.value, "new_ticket")
+            self.assertEqual(source_event.ticket_id, ticket["id"])
+
+    def test_regular_ticket_without_slot_is_explained_without_mutating_day(self):
+        initial = self.apply(self.preview())
+        before = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        ticket = self.create_ticket(
+            "Обычная заявка без слота",
+            category="repair",
+            brigade_id=self.receipt["id_map"]["brigades"]["1"],
+            window=("2030-01-15T01:00:00+03:00", "2030-01-15T01:01:00+03:00"),
+        )
+
+        response = self.event_preview(ticket["id"], base_day_revision=initial["day_revision"])
+
+        self.assertEqual(response.status_code, 201, response.text)
+        preview = response.json()
+        self.assertEqual(preview["event"]["outcome"], "not_insertable")
+        self.assertIsNone(preview["plan"])
+        self.assertTrue(preview["event"]["candidate_reasons"])
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        self.assertEqual(current["revision"], initial["day_revision"])
+        self.assertEqual(current["visits"], before["visits"])
+
+    def test_non_applicable_emergency_preview_cannot_be_applied(self):
+        initial = self.apply(self.preview())
+        before = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        ticket = self.create_ticket(
+            "Авария вне смены не должна публиковаться",
+            brigade_id=self.receipt["id_map"]["brigades"]["1"],
+            window=("2030-01-15T01:00:00+03:00", "2030-01-15T01:01:00+03:00"),
+        )
+
+        preview_response = self.event_preview(
+            ticket["id"], base_day_revision=initial["day_revision"]
+        )
+
+        self.assertEqual(preview_response.status_code, 201, preview_response.text)
+        preview = preview_response.json()
+        self.assertEqual(preview["event"]["outcome"], "emergency_unassigned")
+        self.assertFalse(preview["event"]["can_apply"])
+        apply_response = self.client.post(
+            f"/api/v1/planning/plans/{preview['plan']['plan_id']}/apply",
+            headers=self.headers,
+        )
+        self.assertEqual(apply_response.status_code, 409, apply_response.text)
+        self.assertEqual(
+            apply_response.json()["detail"]["code"], "ticket_event_preview_not_applicable"
+        )
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        self.assertEqual(current["revision"], initial["day_revision"])
+        self.assertEqual(current["visits"], before["visits"])
+
+    def test_emergency_event_uses_replan_and_apply_records_its_new_ticket_event(self):
+        initial = self.apply(self.preview())
+        ticket = self.create_ticket(
+            "Авария через диспетчерский event API",
+            brigade_id=self.receipt["id_map"]["brigades"]["1"],
+        )
+
+        response = self.event_preview(ticket["id"], base_day_revision=initial["day_revision"])
+
+        self.assertEqual(response.status_code, 201, response.text)
+        preview = response.json()
+        self.assertEqual(preview["event"]["category"], "emergency")
+        self.assertEqual(preview["plan"]["replan_diff"]["ticket_event"]["event_type"], "new_ticket")
+        self.assertIn(
+            preview["event"]["outcome"],
+            {"emergency_replan_ready", "sla_risk", "sla_violation"},
+        )
+        self.assertEqual(preview["event"]["ticket_id"], ticket["id"])
+        self.assertIsNotNone(preview["event"]["sla_forecast"])
+
+        applied = self.apply(preview["plan"])
+
+        current = self.client.get(self.day_url("/current"), headers=self.headers).json()
+        self.assertEqual(current["reason"], "emergency_replan")
+        self.assertIn(ticket["id"], {visit["ticket_id"] for visit in current["visits"]})
+        with Session(self.engine) as session:
+            revision = session.scalar(
+                select(DayPlanRevision).where(
+                    DayPlanRevision.service_area_id == self.area_id,
+                    DayPlanRevision.route_date == ROUTE_DATE,
+                    DayPlanRevision.is_current.is_(True),
+                )
+            )
+            source_event = session.get(WorkEvent, revision.event_id)
+            self.assertEqual(revision.event_id, preview["event"]["source_event_id"])
+            self.assertEqual(source_event.event_type.value, "new_ticket")
+            self.assertEqual(source_event.ticket_id, ticket["id"])
+        self.assertEqual(applied["day_revision"], initial["day_revision"] + 1)

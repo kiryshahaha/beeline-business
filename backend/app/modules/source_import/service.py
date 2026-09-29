@@ -355,6 +355,7 @@ def _ticket_values(item: Prepared, work_type, area_id: int, location_id: int) ->
         "received_at": received_at,
         "response_deadline_at": response_deadline_at,
         "intake_source": "morning_assumption",
+        "request_type_hd": hd_type_raw,
         "visit_window_start": item.start,
         "visit_window_end": item.end,
         "estimated_duration_minutes": work_type["work_minutes"] + work_type["documents_minutes"],

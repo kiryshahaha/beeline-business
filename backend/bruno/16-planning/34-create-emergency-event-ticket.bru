@@ -1,0 +1,49 @@
+meta {
+  name: Создать аварийную заявку для T4
+  type: http
+  seq: 34
+}
+
+post {
+  url: {{base_url}}/api/v1/tickets
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {
+    "location_id": {{planning_location_id}},
+    "service_area_id": {{planning_service_area_id}},
+    "title": "T4 аварийная заявка",
+    "description": "Сценарий аварийного перепланирования",
+    "work_type_id": {{planning_work_type_id}},
+    "category": "emergency",
+    "request_type_hd": "авария",
+    "priority": 1,
+    "received_at": "2030-01-15T07:00:00+03:00",
+    "visit_window_start": "2030-01-15T07:00:00+03:00",
+    "visit_window_end": "2030-01-15T18:00:00+03:00",
+    "estimated_duration_minutes": 10
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("planning_event_emergency_ticket_id", res.getBody().id);
+  }
+}
+
+tests {
+  test("Тип HelpDesk определил аварийную категорию", () => {
+    expect(res.getBody().category).to.equal("emergency");
+    expect(res.getBody().request_type_hd).to.equal("авария");
+  });
+}

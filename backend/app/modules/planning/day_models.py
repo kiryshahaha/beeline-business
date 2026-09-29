@@ -25,7 +25,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IntegerIdMixin
 
-REVISION_REASONS = ("plan_applied", "worker_redirected", "manual_edit", "event_replan")
+REVISION_REASONS = (
+    "plan_applied",
+    "worker_redirected",
+    "manual_edit",
+    "event_replan",
+    "ticket_inserted",
+    "emergency_replan",
+)
 
 
 class DayPlanRevision(IntegerIdMixin, Base):
@@ -69,7 +76,8 @@ class DayPlanRevision(IntegerIdMixin, Base):
 
     __table_args__ = (
         CheckConstraint(
-            "reason IN ('plan_applied', 'worker_redirected', 'manual_edit', 'event_replan')",
+            "reason IN ('plan_applied', 'worker_redirected', 'manual_edit', 'event_replan', "
+            "'ticket_inserted', 'emergency_replan')",
             name="day_plan_revision_reason_known",
         ),
         CheckConstraint(

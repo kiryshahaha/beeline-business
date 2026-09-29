@@ -1,0 +1,33 @@
+meta {
+  name: Предпросмотр обычной заявки без слота T4
+  type: http
+  seq: 41
+}
+
+post {
+  url: {{base_url}}/api/v1/planning/areas/{{planning_service_area_id}}/2030-01-15/tickets/{{planning_event_no_slot_ticket_id}}/preview
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"base_day_revision":{{planning_day_revision}}}
+}
+
+assert {
+  res.status: eq 201
+  res.body.event.outcome: eq "not_insertable"
+  res.body.plan: eq null
+}
+
+tests {
+  test("Отказ содержит причины и не сохраняет предложение для apply", () => {
+    expect(res.getBody().event.candidate_reasons).to.be.an("array").that.is.not.empty;
+    expect(res.getBody().event.can_apply).to.equal(false);
+    expect(res.getBody().plan).to.equal(null);
+  });
+}

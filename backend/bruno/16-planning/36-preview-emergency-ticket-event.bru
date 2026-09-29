@@ -1,0 +1,45 @@
+meta {
+  name: Предпросмотр аварийного события T4
+  type: http
+  seq: 36
+}
+
+post {
+  url: {{base_url}}/api/v1/planning/areas/{{planning_service_area_id}}/2030-01-15/tickets/{{planning_event_emergency_ticket_id}}/preview
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{observer_access_token}}
+}
+
+body:json {
+  {"base_day_revision":{{planning_day_revision}}}
+}
+
+assert {
+  res.status: eq 201
+}
+
+script:post-response {
+  if (res.getStatus() === 201 && res.getBody().plan) {
+    bru.setVar("planning_event_emergency_plan_id", res.getBody().plan.plan_id);
+    bru.setVar("planning_event_emergency_from_revision", res.getBody().plan.day_revision);
+    bru.setVar("planning_event_emergency_event_id", res.getBody().event.source_event_id);
+  }
+}
+
+tests {
+  test("Авария маршрутизирована по серверной категории", () => {
+    const body = res.getBody();
+    expect(body.event.category).to.equal("emergency");
+    expect(body.event.outcome).to.be.oneOf([
+      "emergency_replan_ready", "sla_risk", "sla_violation"
+    ]);
+    expect(body.event.sla_forecast.ticket_id)
+      .to.equal(Number(bru.getVar("planning_event_emergency_ticket_id")));
+    expect(body.plan.replan_diff.emergency_response)
+      .to.be.an("array").that.is.not.empty;
+  });
+}

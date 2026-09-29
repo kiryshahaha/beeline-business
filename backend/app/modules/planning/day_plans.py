@@ -141,7 +141,71 @@ def _metric_changes(before: dict, after: dict) -> dict[str, dict]:
     return changes
 
 
-def diff_states(before: dict | None, after: dict) -> dict:
+def build_emergency_replan_summary(
+    before: dict | None,
+    after: dict,
+    tickets_metadata: dict[int, dict] | None = None,
+) -> dict:
+    """Analyze emergency response times and preempted visits for emergency replanning (T4-04)."""
+    meta = tickets_metadata or {}
+    old_visits = _visits_by_ticket(before or {})
+    new_visits = _visits_by_ticket(after)
+
+    preempted = []
+    unassigned_after = set((after or {}).get("unassigned_ticket_ids") or [])
+    for tid, was in old_visits.items():
+        if tid in unassigned_after or tid not in new_visits:
+            preempted.append(
+                {
+                    "ticket_id": tid,
+                    "previous_worker_id": was.get("worker_id"),
+                    "previous_start_at": was.get("service_start_at"),
+                    "reason": "preempted_by_emergency",
+                }
+            )
+
+    emergency_sla_forecasts = []
+    for tid, now in new_visits.items():
+        t_meta = meta.get(tid) or {}
+        if t_meta.get("category") == "emergency":
+            received_str = t_meta.get("received_at")
+            start_str = now.get("service_start_at")
+            response_minutes = None
+            sla_status = "unknown"
+            if received_str and start_str:
+                received_dt = datetime.fromisoformat(received_str)
+                start_dt = datetime.fromisoformat(start_str)
+                response_minutes = max(0, int((start_dt - received_dt).total_seconds() + 59) // 60)
+                if response_minutes <= 60:
+                    sla_status = "on_time"
+                elif response_minutes <= 120:
+                    sla_status = "acceptable"
+                else:
+                    sla_status = "violated"
+
+            emergency_sla_forecasts.append(
+                {
+                    "ticket_id": tid,
+                    "worker_id": now.get("worker_id"),
+                    "received_at": received_str,
+                    "service_start_at": start_str,
+                    "response_minutes": response_minutes,
+                    "target_minutes": 120,
+                    "sla_status": sla_status,
+                }
+            )
+
+    return {
+        "preempted_tickets": preempted,
+        "emergency_sla_forecasts": emergency_sla_forecasts,
+    }
+
+
+def diff_states(
+    before: dict | None,
+    after: dict,
+    tickets_metadata: dict[int, dict] | None = None,
+) -> dict:
     """What changed for the dispatcher: who, in which order, at what time."""
     old, new = _visits_by_ticket(before or {}), _visits_by_ticket(after)
     changed = []
@@ -157,6 +221,9 @@ def diff_states(before: dict | None, after: dict) -> dict:
                 fields[field] = {"from": was.get(field), "to": now.get(field)}
         if fields:
             changed.append({"ticket_id": ticket_id, "changes": fields})
+
+    emergency_summary = build_emergency_replan_summary(before, after, tickets_metadata)
+
     return {
         "added": [new[ticket_id] for ticket_id in sorted(set(new) - set(old))],
         "removed": [old[ticket_id] for ticket_id in sorted(set(old) - set(new))],
@@ -167,6 +234,8 @@ def diff_states(before: dict | None, after: dict) -> dict:
             if ticket_id not in {item["ticket_id"] for item in changed}
         ),
         "metrics": _metric_changes(before or {}, after),
+        "preempted_tickets": emergency_summary["preempted_tickets"],
+        "emergency_sla_forecasts": emergency_summary["emergency_sla_forecasts"],
     }
 
 
@@ -495,3 +564,151 @@ def read_diff(
             to_revision.plan_state,
         ),
     }
+
+
+def classify_stops(plan_state: dict, lifecycle_by_ticket: dict[int, str]) -> dict[str, list[dict]]:
+    """Partition visits into completed, in_flight (safe point / active), and future."""
+    completed = []
+    in_flight = []
+    future = []
+    for visit in (plan_state or {}).get("visits", []):
+        ticket_id = visit["ticket_id"]
+        state = lifecycle_by_ticket.get(ticket_id, "waiting_assignment")
+        if state == "completed":
+            completed.append(visit)
+        elif state in {"en_route", "in_progress"}:
+            in_flight.append(visit)
+        else:
+            future.append(visit)
+    return {"completed": completed, "in_flight": in_flight, "future": future}
+
+
+def get_worker_safe_point(
+    worker_id: int,
+    plan_state: dict,
+    lifecycle_by_ticket: dict[int, str],
+    default_location_id: int | None = None,
+) -> dict:
+    """Find the safe boundary for worker's remaining route."""
+    worker_visits = [
+        v for v in (plan_state or {}).get("visits", []) if v.get("worker_id") == worker_id
+    ]
+    worker_visits.sort(key=lambda v: v.get("sequence", 0))
+
+    active_visit = None
+    last_completed_visit = None
+    for visit in worker_visits:
+        st = lifecycle_by_ticket.get(visit["ticket_id"], "waiting_assignment")
+        if st in {"en_route", "in_progress"}:
+            active_visit = visit
+            break
+        elif st == "completed":
+            last_completed_visit = visit
+
+    if active_visit is not None:
+        return {
+            "worker_id": worker_id,
+            "is_frozen": True,
+            "frozen_ticket_id": active_visit["ticket_id"],
+            "frozen_sequence": active_visit.get("sequence", 0),
+            "available_at": active_visit.get("service_end_at"),
+            "safe_location_id": None,
+        }
+
+    return {
+        "worker_id": worker_id,
+        "is_frozen": False,
+        "frozen_ticket_id": None,
+        "frozen_sequence": last_completed_visit.get("sequence", 0) if last_completed_visit else 0,
+        "available_at": last_completed_visit.get("service_end_at")
+        if last_completed_visit
+        else None,
+        "safe_location_id": default_location_id,
+    }
+
+
+def validate_immutable_route_invariants(
+    baseline_state: dict,
+    proposed_state: dict,
+    inserted_ticket_id: int,
+    lifecycle_by_ticket: dict[int, str] | None = None,
+) -> list[str]:
+    """Validate invariants of a single regular ticket insertion (T4-02 / T4-03).
+
+    Rules:
+    1. Existing assignments cannot change (worker_id preserved for all baseline tickets).
+    2. Relative order of existing visits for each worker must be preserved (subsequence check).
+    3. No baseline tickets may be unassigned or removed.
+    4. Exactly one new ticket (inserted_ticket_id) is added.
+    5. In-flight and completed visits are strictly frozen (no change to sequence or times).
+    """
+    violations = []
+    old_visits = _visits_by_ticket(baseline_state or {})
+    new_visits = _visits_by_ticket(proposed_state or {})
+    lifecycle = lifecycle_by_ticket or {}
+
+    # Check 1 & 3: existing tickets preserved and worker unchanged
+    for tid, was in old_visits.items():
+        if tid not in new_visits:
+            violations.append(f"baseline_ticket_removed: заявка {tid} была удалена из маршрута")
+            continue
+        now = new_visits[tid]
+        if was.get("worker_id") != now.get("worker_id"):
+            violations.append(
+                f"worker_assignment_changed: заявка {tid} переназначена с работника "
+                f"{was.get('worker_id')} на {now.get('worker_id')}"
+            )
+
+    # Check 4: only inserted_ticket_id added
+    added = set(new_visits) - set(old_visits)
+    if added != {inserted_ticket_id}:
+        violations.append(
+            f"unexpected_added_tickets: добавлены {sorted(added)}, ожидалась {inserted_ticket_id}"
+        )
+
+    # Check 5: in_flight & completed visits frozen
+    for tid, was in old_visits.items():
+        st = lifecycle.get(tid)
+        if st in {"completed", "en_route", "in_progress"}:
+            now = new_visits.get(tid)
+            if not now:
+                continue
+            if was.get("sequence") != now.get("sequence"):
+                violations.append(
+                    f"frozen_sequence_changed: замороженная заявка {tid} ({st}) изменила sequence "
+                    f"с {was.get('sequence')} на {now.get('sequence')}"
+                )
+            for field in VISIT_FIELDS:
+                if was.get(field) != now.get(field):
+                    violations.append(
+                        f"frozen_time_changed: замороженная заявка {tid} ({st}) изменила {field} "
+                        f"с {was.get(field)} на {now.get(field)}"
+                    )
+
+    # Check 2: relative order preserved for each worker
+    old_by_worker: dict[int, list[int]] = {}
+    for visit in sorted(
+        (baseline_state or {}).get("visits", []), key=lambda v: v.get("sequence", 0)
+    ):
+        w = visit.get("worker_id")
+        if w is not None:
+            old_by_worker.setdefault(w, []).append(visit["ticket_id"])
+
+    new_by_worker: dict[int, list[int]] = {}
+    for visit in sorted(
+        (proposed_state or {}).get("visits", []), key=lambda v: v.get("sequence", 0)
+    ):
+        w = visit.get("worker_id")
+        if w is not None:
+            new_by_worker.setdefault(w, []).append(visit["ticket_id"])
+
+    for worker_id, old_seq in old_by_worker.items():
+        new_seq = new_by_worker.get(worker_id, [])
+        filtered_new = [tid for tid in new_seq if tid != inserted_ticket_id]
+        if filtered_new != old_seq:
+            violations.append(
+                f"relative_order_violated: порядок работника {worker_id} нарушен. "
+                f"Было: {old_seq}, стало: {filtered_new}"
+            )
+
+    return violations

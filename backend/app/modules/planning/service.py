@@ -13,6 +13,8 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
+from app.modules.execution.enums import WorkEventType
+from app.modules.execution.models import WorkEvent
 from app.modules.notifications.schedule_updates import publish_schedule_updated
 from app.modules.planning.day_models import DayPlanRevision
 from app.modules.planning.day_plans import (
@@ -23,6 +25,7 @@ from app.modules.planning.day_plans import (
     publish_revision,
     roster_from_snapshot,
     roster_ids,
+    validate_immutable_route_invariants,
 )
 from app.modules.planning.diagnostics import (
     diagnose_dropped,
@@ -40,18 +43,31 @@ from app.modules.planning.policy import execution_policy, policy_snapshot, snaps
 from app.modules.planning.reasons import legacy_public
 from app.modules.planning.repository import TICKET_LOCAL_DAY, load_snapshot
 from app.modules.planning.schemas import PreviewRequest
+from app.modules.planning.slot_finder import find_regular_ticket_slot
 from app.modules.planning.snapshot import fingerprint, normalize
 from app.modules.planning.validation import validate_solution
 from app.modules.routing.client import GeoapifyRoutingError
 from app.modules.routing.schemas import RouteCreate
 from app.modules.routing.service import RouteValidationError, save_routes_in_transaction
 from app.modules.routing.telemetry import RoutingTelemetry
+from app.modules.tickets.enums import TicketCategory
 from app.modules.tickets.models import Ticket
 from app.modules.tickets.service import update_assignment_in_transaction
 from app.modules.users.models import User
 
 logger = logging.getLogger(__name__)
 MOSCOW = ZoneInfo("Europe/Moscow")
+
+
+def ticket_event_policy(category: str) -> str:
+    """Select one event policy from the persisted ticket category."""
+    try:
+        normalized_category = TicketCategory(category)
+    except (TypeError, ValueError) as error:
+        raise PlanningError("ticket_category_invalid", 409, category=category) from error
+    return (
+        "emergency_replan" if normalized_category is TicketCategory.EMERGENCY else "regular_insert"
+    )
 
 
 def utc_now():
@@ -142,6 +158,264 @@ def read_replan_snapshot(
         return request, snapshot
 
 
+def read_ticket_event_snapshot(
+    engine,
+    service_area_id,
+    route_date,
+    ticket_id,
+    command,
+    policy,
+    *,
+    max_tickets=100,
+    max_workers=20,
+):
+    """Read a new-ticket event and the matching area-day revision in one snapshot."""
+    with Session(engine) as session, session.begin():
+        session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
+        revision = session.scalar(
+            select(DayPlanRevision).where(
+                DayPlanRevision.service_area_id == service_area_id,
+                DayPlanRevision.route_date == route_date,
+                DayPlanRevision.is_current.is_(True),
+            )
+        )
+        if revision is None:
+            raise PlanningError("day_plan_not_found", 404)
+        if command.base_day_revision != revision.revision:
+            raise PlanningError("day_revision_stale", 409, current_revision=revision.revision)
+
+        ticket = session.get(Ticket, ticket_id)
+        if ticket is None:
+            raise PlanningError("ticket_not_found", 404, ticket_id=ticket_id)
+        area_and_day = session.execute(
+            text(
+                """
+                SELECT COALESCE(tickets.service_area_id, buildings.service_area_id) AS area_id,
+                       (COALESCE(tickets.planned_start_at, tickets.visit_window_start)
+                        AT TIME ZONE 'Europe/Moscow')::date AS route_date
+                FROM tickets
+                JOIN locations ON locations.id = tickets.location_id
+                JOIN buildings ON buildings.id = locations.building_id
+                WHERE tickets.id = :ticket_id
+                """
+            ),
+            {"ticket_id": ticket_id},
+        ).one_or_none()
+        if area_and_day is None or area_and_day.area_id != service_area_id:
+            raise PlanningError("ticket_service_area_mismatch", 409, ticket_id=ticket_id)
+        if area_and_day.route_date != route_date:
+            raise PlanningError(
+                "ticket_route_date_mismatch",
+                409,
+                ticket_id=ticket_id,
+                ticket_route_date=area_and_day.route_date,
+            )
+        if getattr(ticket.status, "value", ticket.status) != "planned":
+            raise PlanningError(
+                "ticket_event_state_conflict",
+                409,
+                ticket_id=ticket_id,
+                status=getattr(ticket.status, "value", ticket.status),
+            )
+        lifecycle_state = getattr(ticket.lifecycle_state, "value", ticket.lifecycle_state)
+        if lifecycle_state not in {"waiting_assignment", "assigned", "dispatched"}:
+            raise PlanningError(
+                "ticket_event_state_conflict",
+                409,
+                ticket_id=ticket_id,
+                lifecycle_state=lifecycle_state,
+            )
+        current_visits = (revision.plan_state or {}).get("visits", [])
+        if any(visit.get("ticket_id") == ticket_id for visit in current_visits):
+            raise PlanningError("ticket_already_in_day_plan", 409, ticket_id=ticket_id)
+
+        event = session.scalar(
+            select(WorkEvent)
+            .where(
+                WorkEvent.ticket_id == ticket_id,
+                WorkEvent.event_type == WorkEventType.NEW_TICKET,
+            )
+            .order_by(WorkEvent.id.desc())
+            .limit(1)
+        )
+        if event is None:
+            raise PlanningError("ticket_new_event_missing", 409, ticket_id=ticket_id)
+
+        category = getattr(ticket.category, "value", ticket.category)
+        emergency = category == "emergency"
+        if emergency:
+            selected_ids = list(
+                session.execute(
+                    text(
+                        """
+                        SELECT tickets.id
+                        FROM tickets
+                        JOIN locations ON locations.id = tickets.location_id
+                        JOIN buildings ON buildings.id = locations.building_id
+                        WHERE COALESCE(tickets.service_area_id, buildings.service_area_id)
+                              = :area_id
+                          AND tickets.status = 'planned'
+                          AND tickets.lifecycle_state <> 'en_route'
+                        AND """
+                        + TICKET_LOCAL_DAY
+                        + " = :route_date ORDER BY tickets.id"
+                    ),
+                    {"area_id": service_area_id, "route_date": route_date},
+                ).scalars()
+            )
+        else:
+            already_unassigned = set((revision.plan_state or {}).get("unassigned_ticket_ids", []))
+            lifecycle = {
+                row[0]: row[1]
+                for row in session.execute(
+                    text("SELECT id, lifecycle_state FROM tickets WHERE id = ANY(:ticket_ids)"),
+                    {"ticket_ids": [visit["ticket_id"] for visit in current_visits] or [ticket_id]},
+                )
+            }
+            selected_ids = sorted(
+                {
+                    visit["ticket_id"]
+                    for visit in current_visits
+                    if visit["ticket_id"] not in already_unassigned
+                    and lifecycle.get(visit["ticket_id"]) != "en_route"
+                }
+                | {ticket_id}
+            )
+
+        roster = day_roster(session, service_area_id, route_date)
+        if roster is None:
+            raise PlanningError("day_roster_unrecoverable", 409, current_revision=revision.revision)
+        worker_ids = roster_ids(roster)
+        validate_replan_limits(
+            len(selected_ids), len(worker_ids), max_tickets=max_tickets, max_workers=max_workers
+        )
+        request = PreviewRequest(
+            route_date=route_date,
+            service_area_id=service_area_id,
+            base_day_revision=revision.revision,
+            ticket_ids=selected_ids,
+            worker_ids=worker_ids,
+            replan=True,
+        )
+        snapshot = load_snapshot(session, request, policy_snapshot=policy_snapshot(policy))
+        event_data = {
+            "source_event_id": event.id,
+            "event_type": "new_ticket",
+            "ticket_id": ticket_id,
+            "category": category,
+            "request_type_hd": ticket.request_type_hd,
+            "received_at": ticket.received_at,
+            "response_deadline_at": ticket.response_deadline_at,
+        }
+        return request, snapshot, event_data
+
+
+async def find_regular_ticket_insertion(
+    snapshot, ticket_id, settings, provider_factory, clock=utc_now
+):
+    """Run shared eligibility and matrix checks, then choose one immutable route gap."""
+    prepared = prepare(snapshot, clock())
+    ticket = next((item for item in prepared["tickets"] if item["id"] == ticket_id), None)
+    if ticket is None:
+        rejection = next(
+            (item for item in prepared["unassigned"] if item["ticket_id"] == ticket_id), None
+        )
+        return None, prepared, rejection
+
+    try:
+        async with asyncio.timeout(settings.planning_total_timeout_seconds):
+            async with provider_factory() as provider:
+                problem, nodes = await build_problem(prepared, provider, settings)
+    except TimeoutError as error:
+        raise PlanningError("planning_timeout", 504) from error
+    except GeoapifyRoutingError as error:
+        raise PlanningError("routing_invalid_response", 502) from error
+
+    location_nodes = {}
+    for index, node in enumerate(nodes):
+        location_nodes.setdefault(node["location_id"], index)
+
+    def travel_time(from_location_id, to_location_id, profile):
+        from_node = location_nodes.get(from_location_id)
+        to_node = location_nodes.get(to_location_id)
+        if from_node is None or to_node is None:
+            return 1_000_000
+        matrix = problem.matrices.get(profile)
+        minutes = matrix.time_minutes[from_node][to_node] if matrix else None
+        return minutes if minutes is not None else 1_000_000
+
+    raw_tickets = {item["id"]: item for item in snapshot["tickets"]}
+    event_ticket = raw_tickets[ticket_id]
+    ticket_window_start = max(
+        datetime.fromisoformat(event_ticket["visit_window_start"]),
+        datetime.fromisoformat(event_ticket["received_at"]),
+    )
+    slot_ticket = {
+        "id": ticket_id,
+        "location_id": ticket["location_id"],
+        "estimated_duration_minutes": ticket["duration"],
+        "visit_window_start": ticket_window_start,
+        "visit_window_end": event_ticket["visit_window_end"],
+        "required_transport_type": ticket.get("required_transport_type"),
+        "required_skills": ticket.get("required_skill_ids", []),
+        # `prepare` already applies reserved-equipment and issuing checks per worker.
+        "required_appliances": {},
+    }
+    offices = {item["id"]: item for item in snapshot["offices"]}
+    allowed = set(ticket["allowed"])
+    candidate_workers = []
+    for index, worker in enumerate(prepared["workers"]):
+        if index not in allowed:
+            continue
+        office = offices.get(worker["office_id"])
+        candidate_workers.append(
+            {
+                "user_id": worker["user_id"],
+                "skills": worker["skill_ids"],
+                "transport_type": worker["transport_type"],
+                "transport_profile": worker["profile"],
+                "available_appliances": {},
+                "shift_start_at": worker["shift_start"],
+                "shift_end_at": worker["shift_end"],
+                "office_location_id": office["location_id"] if office else None,
+            }
+        )
+
+    visits_by_id = {item["id"]: item for item in raw_tickets.values()}
+    baseline_state = dict(snapshot.get("current_day_state") or {})
+    enriched_visits = []
+    for visit in baseline_state.get("visits", []):
+        ticket_row = visits_by_id.get(visit["ticket_id"], {})
+        enriched_visits.append(
+            {
+                **visit,
+                "location_id": ticket_row.get("location_id"),
+                "visit_window_start": ticket_row.get("visit_window_start"),
+                "visit_window_end": ticket_row.get("visit_window_end"),
+            }
+        )
+    baseline_state["visits"] = enriched_visits
+    lifecycle_by_ticket = {
+        item["id"]: item["lifecycle_state"] for item in snapshot["area_scope"]["tickets"]
+    }
+    lifecycle_by_ticket.update(
+        {item["id"]: item["lifecycle_state"] for item in snapshot["tickets"]}
+    )
+    location_ids = [worker.get("office_location_id") for worker in candidate_workers]
+    location_ids.extend(visit.get("location_id") for visit in enriched_visits)
+    office_location_id = next((item for item in location_ids if item is not None), None)
+    result = find_regular_ticket_slot(
+        ticket=slot_ticket,
+        candidate_workers=candidate_workers,
+        baseline_state=baseline_state,
+        lifecycle_by_ticket=lifecycle_by_ticket,
+        travel_time_fn=travel_time,
+        office_location_id=office_location_id,
+        now=clock(),
+    )
+    return result, prepared, None
+
+
 def _ordinary_insert_ticket_ids(snapshot):
     """Only newly arrived unassigned requests are candidates for insertion."""
     day_state = snapshot.get("current_day_state") or {}
@@ -176,7 +450,9 @@ def _ordinary_insert_ticket_ids(snapshot):
     }
 
 
-def _pin_existing_visits_for_ordinary_insert(prepared, snapshot, new_ticket_ids):
+def _pin_existing_visits_for_ordinary_insert(
+    prepared, snapshot, new_ticket_ids, proposed_state=None
+):
     """Keep each published future visit on its worker and at its promised start."""
     candidates = {ticket["id"]: ticket for ticket in prepared["tickets"]}
     eligible_new_ids = new_ticket_ids & candidates.keys()
@@ -198,6 +474,9 @@ def _pin_existing_visits_for_ordinary_insert(prepared, snapshot, new_ticket_ids)
     lifecycle_by_ticket = {
         ticket["id"]: ticket["lifecycle_state"] for ticket in snapshot["tickets"]
     }
+    proposed_visits = {
+        visit["ticket_id"]: visit for visit in (proposed_state or {}).get("visits", [])
+    }
     for visit in (snapshot.get("current_day_state") or {}).get("visits", []):
         ticket = candidates.get(visit["ticket_id"])
         if ticket is None:
@@ -217,7 +496,8 @@ def _pin_existing_visits_for_ordinary_insert(prepared, snapshot, new_ticket_ids)
                 ticket_id=min(new_ticket_ids) if new_ticket_ids else None,
                 conflicting_ticket_id=visit["ticket_id"],
             )
-        service_start = visit.get("service_start_at")
+        proposed_visit = proposed_visits.get(visit["ticket_id"], visit)
+        service_start = proposed_visit.get("service_start_at")
         if not service_start:
             raise PlanningError(
                 "ordinary_insert_existing_visit_conflict",
@@ -273,6 +553,8 @@ async def preview(
     *,
     snapshot_override=None,
     persist=True,
+    ticket_event=None,
+    event_insertion=None,
 ):
     if (
         len(request.ticket_ids) > settings.planning_max_tickets
@@ -290,8 +572,28 @@ async def preview(
     required_existing_ids = None
     if ordinary_insert_ids is not None:
         required_existing_ids = _pin_existing_visits_for_ordinary_insert(
-            prepared, snapshot, ordinary_insert_ids
+            prepared,
+            snapshot,
+            ordinary_insert_ids,
+            proposed_state=(event_insertion.selected.proposed_state if event_insertion else None),
         )
+    if event_insertion is not None:
+        selected = event_insertion.selected
+        worker_indexes = {
+            worker["user_id"]: index for index, worker in enumerate(prepared["workers"])
+        }
+        ticket = next(
+            (item for item in prepared["tickets"] if item["id"] == event_insertion.ticket_id),
+            None,
+        )
+        worker_index = worker_indexes.get(selected.worker_id)
+        if ticket is None or worker_index is None or worker_index not in ticket["allowed"]:
+            raise PlanningError(
+                "ordinary_insert_slot_ineligible", 409, ticket_id=event_insertion.ticket_id
+            )
+        fixed_start = ceil((selected.service_start_at - prepared["epoch"]).total_seconds() / 60)
+        ticket["allowed"] = [worker_index]
+        ticket["window"] = (fixed_start, fixed_start)
     if not request.allow_partial and prepared["unassigned"]:
         raise PlanningError("incomplete_plan", unassigned=prepared["unassigned"])
     problem = solution = estimate = None
@@ -319,12 +621,12 @@ async def preview(
                         finally:
                             telemetry.record_stage("solver", time.perf_counter() - started)
                         validate_solution(problem, solution)
+                        task_by_node = {
+                            index: node["ticket"]["id"]
+                            for index, node in enumerate(nodes)
+                            if node["kind"] == "ticket"
+                        }
                         if ordinary_insert_ids is not None:
-                            task_by_node = {
-                                index: node["ticket"]["id"]
-                                for index, node in enumerate(nodes)
-                                if node["kind"] == "ticket"
-                            }
                             served_ids = {
                                 task_by_node[step.node]
                                 for route in solution.routes
@@ -341,6 +643,31 @@ async def preview(
                                     preserved_ticket_ids=sorted(required_existing_ids),
                                     missing_existing_ticket_ids=sorted(missing_existing),
                                     reason="no_feasible_gap_without_changing_published_visits",
+                                )
+                        if event_insertion is not None:
+                            selected = event_insertion.selected
+                            selected_worker = next(
+                                index
+                                for index, worker in enumerate(prepared["workers"])
+                                if worker["user_id"] == selected.worker_id
+                            )
+                            selected_starts = {
+                                step.arrival_time
+                                for route in solution.routes
+                                if route.vehicle_id == selected_worker
+                                for step in route.steps
+                                if step.node in task_by_node
+                                and task_by_node[step.node] == event_insertion.ticket_id
+                            }
+                            expected_start = ceil(
+                                (selected.service_start_at - prepared["epoch"]).total_seconds() / 60
+                            )
+                            if selected_starts != {expected_start}:
+                                raise PlanningError(
+                                    "ordinary_insert_slot_changed",
+                                    409,
+                                    ticket_id=event_insertion.ticket_id,
+                                    worker_id=selected.worker_id,
                                 )
 
                         started = time.perf_counter()
@@ -440,13 +767,42 @@ async def preview(
             item["id"]: item["lifecycle_state"] for item in snapshot["area_scope"]["tickets"]
         }
         proposed_state = build_replan_state(public, previous_state, lifecycle_by_ticket)
+        if event_insertion is not None:
+            violations = validate_immutable_route_invariants(
+                previous_state,
+                proposed_state,
+                inserted_ticket_id=event_insertion.ticket_id,
+                lifecycle_by_ticket=lifecycle_by_ticket,
+            )
+            if violations:
+                raise PlanningError(
+                    "ordinary_insert_invariant_violation",
+                    409,
+                    ticket_id=event_insertion.ticket_id,
+                    violations=violations,
+                )
+        tickets_meta = {
+            ticket["id"]: {
+                "category": ticket.get("category"),
+                "received_at": ticket.get("received_at"),
+                "response_deadline_at": ticket.get("response_deadline_at"),
+            }
+            for ticket in snapshot.get("tickets", [])
+        }
         public["replan_diff"] = normalize(
             {
                 "from_revision": snapshot.get("current_day_revision"),
-                **diff_states(previous_state, proposed_state),
+                **diff_states(previous_state, proposed_state, tickets_metadata=tickets_meta),
                 "emergency_response": emergency_response_estimates(snapshot, public),
             }
         )
+
+    if ticket_event is not None:
+        public["ticket_event"] = build_ticket_event_result(
+            ticket_event, snapshot, prepared, public, event_insertion
+        )
+        if public.get("replan_diff") is not None:
+            public["replan_diff"]["ticket_event"] = public["ticket_event"]
 
     if persist:
 
@@ -571,6 +927,168 @@ def emergency_response_estimates(snapshot: dict, public: dict) -> list[dict]:
             }
         )
     return estimates
+
+
+def build_ticket_event_result(ticket_event, snapshot, prepared, public, event_insertion=None):
+    """Build the dispatcher-facing event decision from the proposal and saved baseline."""
+    ticket_id = ticket_event["ticket_id"]
+    scheduled = {
+        stop["ticket_id"]: {**stop, "worker_id": route["worker_id"]}
+        for route in public.get("routes", [])
+        for stop in route.get("stops", [])
+    }
+    stop = scheduled.get(ticket_id)
+    diff = public.get("replan_diff") or {}
+    forecast = next(
+        (item for item in diff.get("emergency_response", []) if item["ticket_id"] == ticket_id),
+        None,
+    )
+    category = ticket_event["category"]
+    if category == "emergency":
+        if stop is None:
+            outcome_code = "emergency_unassigned"
+            if not prepared["workers"] and any(
+                item.get("reason", {}).get("code")
+                in {"active_stage_not_completed", "active_work_eta_unknown"}
+                for item in prepared["excluded_workers"]
+            ):
+                outcome_code = "waiting_safe_point"
+            can_apply = False
+        else:
+            response_minutes = (forecast or {}).get("reaction_to_service_start_minutes")
+            if (forecast or {}).get("service_deadline_met") is False:
+                outcome_code = "sla_violation"
+            elif response_minutes is not None and response_minutes > 120:
+                outcome_code = "sla_violation"
+            elif response_minutes is not None and response_minutes > 60:
+                outcome_code = "sla_risk"
+            else:
+                outcome_code = "emergency_replan_ready"
+            can_apply = True
+    else:
+        outcome_code = "insertion_ready"
+        can_apply = stop is not None and event_insertion is not None
+
+    selected_slot = None
+    road_contribution = None
+    if event_insertion is not None:
+        candidate = event_insertion.selected
+        placement = next(
+            (item for item in diff.get("added", []) if item["ticket_id"] == ticket_id),
+            None,
+        )
+        if (
+            placement is None
+            or placement["worker_id"] != candidate.worker_id
+            or placement["sequence"] != candidate.insertion_sequence
+            or datetime.fromisoformat(placement["service_start_at"]) != candidate.service_start_at
+        ):
+            raise PlanningError(
+                "ordinary_insert_slot_changed",
+                409,
+                ticket_id=ticket_id,
+                worker_id=candidate.worker_id,
+            )
+        service_duration = max(
+            0,
+            int(
+                (
+                    datetime.fromisoformat(placement["service_end_at"])
+                    - datetime.fromisoformat(placement["service_start_at"])
+                ).total_seconds()
+                // 60
+            ),
+        )
+        selected_slot = {
+            "worker_id": candidate.worker_id,
+            "sequence": placement["sequence"],
+            "arrival_at": placement["arrival_at"],
+            "service_start_at": placement["service_start_at"],
+            "service_end_at": placement["service_end_at"],
+            "service_minutes": service_duration,
+        }
+        road_contribution = {
+            "inbound_minutes": candidate.travel_to_minutes,
+            "outbound_minutes": candidate.travel_from_minutes,
+            "replaced_leg_minutes": candidate.replaced_travel_minutes,
+            "added_travel_minutes": candidate.added_travel_minutes,
+            "service_minutes": service_duration,
+        }
+    elif stop is not None:
+        event_route = next(
+            route
+            for route in public.get("routes", [])
+            if any(item["ticket_id"] == ticket_id for item in route.get("stops", []))
+        )
+        local_sequence = stop["sequence"]
+        inbound_leg = next(
+            (
+                leg
+                for leg in event_route.get("legs", [])
+                if leg["to_sequence"] == local_sequence + 1
+            ),
+            None,
+        )
+        outbound_leg = next(
+            (
+                leg
+                for leg in event_route.get("legs", [])
+                if leg["from_sequence"] == local_sequence + 1
+            ),
+            None,
+        )
+        selected_slot = {
+            "worker_id": stop["worker_id"],
+            "sequence": stop["sequence"],
+            "arrival_at": stop["arrival_at"],
+            "service_start_at": stop["service_start_at"],
+            "service_end_at": stop["service_end_at"],
+            "service_minutes": stop["effective_service_minutes"],
+        }
+        travel_change = (diff.get("metrics") or {}).get("travel_minutes") or {}
+        road_contribution = {
+            "inbound_minutes": (
+                ceil(inbound_leg["duration_seconds"] / 60) if inbound_leg else None
+            ),
+            "outbound_minutes": (
+                ceil(outbound_leg["duration_seconds"] / 60) if outbound_leg else None
+            ),
+            "replan_travel_delta_minutes": travel_change.get("delta"),
+            "service_minutes": stop["effective_service_minutes"],
+        }
+
+    changed_ids = {
+        item["ticket_id"] for item in diff.get("changed", []) if item["ticket_id"] != ticket_id
+    }
+    changed_ids.update(
+        item["ticket_id"] for item in diff.get("removed", []) if item["ticket_id"] != ticket_id
+    )
+    lifecycle_by_ticket = {
+        item["id"]: item["lifecycle_state"] for item in snapshot["area_scope"]["tickets"]
+    }
+    frozen = [
+        visit
+        for visit in (snapshot.get("current_day_state") or {}).get("visits", [])
+        if lifecycle_by_ticket.get(visit["ticket_id"]) in {"en_route", "in_progress"}
+    ]
+    rejection = next(
+        (item for item in public.get("unassigned", []) if item["ticket_id"] == ticket_id), None
+    )
+    candidates = (rejection or {}).get("candidates", [])
+    return normalize(
+        {
+            **ticket_event,
+            "outcome": outcome_code,
+            "can_apply": can_apply,
+            "selected_slot": selected_slot,
+            "road_contribution": road_contribution,
+            "shifted_ticket_ids": sorted(changed_ids),
+            "preserved_current_stage": frozen,
+            "candidate_reasons": candidates,
+            "sla_forecast": forecast,
+            "reason": (rejection or {}).get("reason", {}).get("code"),
+        }
+    )
 
 
 def _experiment_summary(public: dict) -> dict:
@@ -739,6 +1257,14 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
             return {**plan.apply_result, "already_applied": True}
         snapshot_policy(plan.input_snapshot)
         request = PreviewRequest.model_validate(plan.input_snapshot["request"])
+        ticket_event = plan.result_snapshot.get("public", {}).get("ticket_event")
+        if ticket_event is not None and not ticket_event.get("can_apply", False):
+            raise PlanningError(
+                "ticket_event_preview_not_applicable",
+                409,
+                ticket_id=ticket_event.get("ticket_id"),
+                outcome=ticket_event.get("outcome"),
+            )
         if not plan.result_snapshot["route_creates"] and not request.replan:
             raise PlanningError("plan_has_no_assignments", 409)
         current = load_snapshot(
@@ -894,7 +1420,15 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                     service_area_id=current.get("service_area_id"),
                     route_date=request.route_date,
                     actor_id=plan.created_by,
-                    reason="event_replan" if request.replan else "plan_applied",
+                    reason=(
+                        "ticket_inserted"
+                        if ticket_event and ticket_event["category"] != "emergency"
+                        else "emergency_replan"
+                        if ticket_event
+                        else "event_replan"
+                        if request.replan
+                        else "plan_applied"
+                    ),
                     fingerprint="pending",
                     plan_state=(
                         build_replan_state(
@@ -923,6 +1457,7 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                     result=result,
                     at=clock(),
                     plan_id=plan_id,
+                    event_id=ticket_event["source_event_id"] if ticket_event else None,
                     # A replan keeps the day's roster; a dispatcher's own selection is
                     # admitted with everyone selected, including engineers left idle.
                     roster_additions=(

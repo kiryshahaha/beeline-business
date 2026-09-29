@@ -491,15 +491,23 @@ def find_fast_stats(
                     )))
                 ) AS seg_km
                 FROM jsonb_array_elements(r.geojson->'features') AS feat(f)
-                CROSS JOIN LATERAL jsonb_array_elements(f->'geometry'->'coordinates')
+                CROSS JOIN LATERAL jsonb_array_elements(
+                    CASE feat.f->'geometry'->>'type'
+                        WHEN 'LineString' THEN jsonb_build_array(feat.f->'geometry'->'coordinates')
+                        WHEN 'MultiLineString' THEN feat.f->'geometry'->'coordinates'
+                        ELSE '[]'::jsonb
+                    END
+                ) AS path_lines(line)
+                CROSS JOIN LATERAL jsonb_array_elements(path_lines.line)
                     WITH ORDINALITY AS coords_cur(pt, idx)
                 CROSS JOIN LATERAL (
                     SELECT elem AS pt
-                    FROM jsonb_array_elements(f->'geometry'->'coordinates')
+                    FROM jsonb_array_elements(path_lines.line)
                         WITH ORDINALITY AS t(elem, ord)
                     WHERE t.ord = coords_cur.idx + 1
                 ) AS coords_next
                 WHERE f->'properties'->>'kind' = 'path'
+                  AND f->'geometry'->>'type' IN ('LineString', 'MultiLineString')
                   AND jsonb_typeof(f->'geometry'->'coordinates') = 'array'
             ) AS path_dist
             WHERE r.route_date >= CURRENT_DATE - INTERVAL '14 days'
