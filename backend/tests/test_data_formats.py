@@ -66,6 +66,7 @@ class DataFormatTests(unittest.TestCase):
                 "planning_plan_routes",
                 "ticket_work_type_migration_issues",
                 "ticket_assignment_events",
+                "ticket_completion_reviews",
                 "worker_shift_exceptions",
             },
         )

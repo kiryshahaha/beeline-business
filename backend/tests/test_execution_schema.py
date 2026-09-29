@@ -54,6 +54,7 @@ class ExecutionSchemaTests(unittest.TestCase):
                 "cancel_ticket",
                 "reopen",
                 "progress_delay",
+                "problem_reported",
                 "worker_unavailable",
                 "window_change",
                 "redirect",

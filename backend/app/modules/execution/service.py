@@ -102,13 +102,13 @@ def _canonical_state(
 def next_state_for_event(
     current_state: TicketLifecycleState, event_type: WorkEventType
 ) -> TicketLifecycleState:
+    if event_type == WorkEventType.START_ROUTE and current_state == TicketLifecycleState.ASSIGNED:
+        return TicketLifecycleState.EN_ROUTE
     if event_type in _FORWARD_EVENTS:
         expected_previous, next_state = _FORWARD_EVENTS[event_type]
         if current_state != expected_previous:
             raise IllegalTransition(f"{current_state.value} -> {event_type.value}")
         return next_state
-    if event_type == WorkEventType.START_ROUTE and current_state == TicketLifecycleState.ASSIGNED:
-        return TicketLifecycleState.EN_ROUTE
     if event_type == WorkEventType.CANCEL:
         if current_state not in _CANCELLABLE:
             raise IllegalTransition(f"{current_state.value} -> cancel")
@@ -464,9 +464,16 @@ def apply_ticket_event(
                     INSERT INTO ticket_completion_reviews
                         (ticket_id, execution_cycle, requested_by, note,
                          actual_duration_minutes, state, decided_by, decided_at)
-                    VALUES (:ticket_id, :cycle, :worker_id, :note, :duration, :state,
-                            CASE WHEN :state = 'confirmed' THEN :actor_id END,
-                            CASE WHEN :state = 'confirmed' THEN clock_timestamp() END)
+                    VALUES (
+                        :ticket_id, :cycle, :worker_id, :note, :duration, :review_state,
+                        CASE
+                            WHEN CAST(:decision_state AS text) = 'confirmed' THEN :actor_id
+                        END,
+                        CASE
+                            WHEN CAST(:decision_state AS text) = 'confirmed'
+                            THEN clock_timestamp()
+                        END
+                    )
                     RETURNING id
                     """
                 ),
@@ -476,7 +483,8 @@ def apply_ticket_event(
                     "worker_id": event_worker_id or actor_id,
                     "note": note or "Завершено диспетчером",
                     "duration": (command.payload or {}).get("actual_duration_minutes"),
-                    "state": "pending" if actor_role == "worker" else "confirmed",
+                    "review_state": "pending" if actor_role == "worker" else "confirmed",
+                    "decision_state": "pending" if actor_role == "worker" else "confirmed",
                     "actor_id": actor_id,
                 },
             ).scalar_one()

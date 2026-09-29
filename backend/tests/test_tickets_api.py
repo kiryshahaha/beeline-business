@@ -701,6 +701,11 @@ class TicketsApiTests(DatabaseTestCase):
                 "/api/v1/tickets/{id}/delay",
                 "/api/v1/tickets/{id}/reopen",
                 "/api/v1/tickets/{id}/window-change",
+                "/api/v1/tickets/completion-reviews",
+                "/api/v1/tickets/{ticket_id}/problem",
+                "/api/v1/tickets/{ticket_id}/completion/confirm",
+                "/api/v1/tickets/{ticket_id}/completion/reject",
+                "/api/v1/tickets/{ticket_id}/changes",
             },
         )
         self.assertEqual(set(paths["/api/v1/tickets"]), {"post", "get"})
