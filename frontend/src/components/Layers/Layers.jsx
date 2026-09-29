@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ExpandableMenu from "@/components/ui/ExpandableMenu/ExpandableMenu";
+import { MAP_STYLES, getSavedMapTheme, saveMapTheme } from "@/lib/mapStyles";
 import styles from "./Layers.module.css";
 
 const DEFAULT_VIEW = {
@@ -10,21 +11,6 @@ const DEFAULT_VIEW = {
   zoom: 1,
   bearing: 0,
   pitch: 0,
-};
-
-const MAP_STYLES = {
-  standard: {
-    label: "Обычная",
-    url: `https://api.maptiler.com/maps/01a0a53f-a24b-7778-b5e1-b59ba3d6f612/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`,
-  },
-  satellite: {
-    label: "Спутник",
-    url: `https://api.maptiler.com/maps/019fce77-aa22-7f7d-923a-691e2491e4dd/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`,
-  },
-  dark: {
-    label: "Тёмная",
-    url: `https://api.maptiler.com/maps/01a0620c-e3b1-7d64-b992-a04cd0fb9fdc/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`,
-  },
 };
 
 const CloseIcon = ({ size = 11 }) => (
@@ -76,19 +62,45 @@ export default function Layers({
   onClearRoute = null,
   onFitDistrict = null,
   onClearDistrict = null,
+  activeStyle: propActiveStyle,
+  onChangeStyle,
 }) {
-  const [activeStyle, setActiveStyle] = useState("standard");
+  const [internalStyle, setInternalStyle] = useState("standard");
+  const activeStyle = propActiveStyle !== undefined ? propActiveStyle : internalStyle;
   const [isGlobe, setIsGlobe] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = getSavedMapTheme();
+      if (saved && saved !== internalStyle) {
+        queueMicrotask(() => {
+          setInternalStyle(saved);
+        });
+      }
+    } catch {}
+
+    const handleThemeChange = (e) => {
+      if (e.detail && MAP_STYLES[e.detail]) {
+        setInternalStyle(e.detail);
+      }
+    };
+    window.addEventListener("beeline_map_theme_changed", handleThemeChange);
+    return () => window.removeEventListener("beeline_map_theme_changed", handleThemeChange);
+  }, [internalStyle]);
 
   const hasActiveFocus = Boolean(activeDistrict || focusedOffice || activeRouteTicket);
 
   const getMap = () => mapRef?.current?.getMap?.() || mapRef?.current;
 
   const setStyle = (id) => {
+    if (id === activeStyle) return;
     const map = getMap();
-    if (id === activeStyle || !map) return;
-    map.setStyle(MAP_STYLES[id].url, { diff: true });
-    setActiveStyle(id);
+    if (map && MAP_STYLES[id]) {
+      map.setStyle(MAP_STYLES[id].url, { diff: true });
+    }
+    setInternalStyle(id);
+    saveMapTheme(id);
+    onChangeStyle?.(id);
   };
 
   const toggleProjection = () => {

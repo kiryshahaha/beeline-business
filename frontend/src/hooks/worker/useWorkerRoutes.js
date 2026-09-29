@@ -8,7 +8,13 @@ export function useWorkerRoutes(workerId, date) {
 
   const query = useQuery({
     queryKey: ["workerRoutes", workerId, targetDate],
-    queryFn: () => fetchWorkerRoutes(workerId, targetDate),
+    queryFn: async () => {
+      let data = await fetchWorkerRoutes(workerId, targetDate);
+      if (!Array.isArray(data) || data.length === 0) {
+        data = await fetchWorkerRoutes(workerId);
+      }
+      return data || [];
+    },
     enabled: Boolean(workerId),
     staleTime: 30000,
   });

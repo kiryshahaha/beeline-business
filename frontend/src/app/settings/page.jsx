@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/providers/AuthProvider";
 import { apiFetch } from "@/lib/apiFetch";
+import { getSavedMapTheme, saveMapTheme, MAP_THEME_STORAGE_KEY } from "@/lib/mapStyles";
 import styles from "./settings.module.css";
 
 // SVG Icons for Settings Navigation
@@ -63,6 +64,7 @@ export default function SettingsPage() {
   const [refreshInterval, setRefreshInterval] = useState("30");
   const [starrySkyEnabled, setStarrySkyEnabled] = useState(true);
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
+  const [mapTheme, setMapTheme] = useState("standard");
 
   // Dispatcher Engine Preferences
   const [routingEngine, setRoutingEngine] = useState("ortools");
@@ -95,6 +97,7 @@ export default function SettingsPage() {
       const savedAnim = localStorage.getItem("beeline_animations");
       const savedEngine = localStorage.getItem("beeline_routing_engine");
       const savedBuffer = localStorage.getItem("beeline_traffic_buffer");
+      const savedMapTheme = getSavedMapTheme();
 
       queueMicrotask(() => {
         if (savedCity) setDefaultCity(savedCity);
@@ -109,6 +112,7 @@ export default function SettingsPage() {
         }
         if (savedEngine) setRoutingEngine(savedEngine);
         if (savedBuffer) setTrafficBuffer(savedBuffer);
+        if (savedMapTheme) setMapTheme(savedMapTheme);
       });
     } catch {}
   }, []);
@@ -226,6 +230,8 @@ export default function SettingsPage() {
       localStorage.removeItem("beeline_routing_engine");
       localStorage.removeItem("beeline_traffic_buffer");
       localStorage.removeItem("beeline_animations");
+      localStorage.removeItem("beeline_map_theme");
+      localStorage.removeItem("beeline_map_style");
 
       setDefaultCity("msk");
       setClusterRadius(50);
@@ -236,6 +242,8 @@ export default function SettingsPage() {
       setRoutingEngine("ortools");
       setTrafficBuffer("15");
       setAnimationsEnabled(true);
+      setMapTheme("standard");
+      saveMapTheme("standard");
       document.documentElement.removeAttribute("data-animations");
 
       showToast("Все параметры сброшены к заводским настройкам");
@@ -443,6 +451,29 @@ export default function SettingsPage() {
               </div>
 
               <div className={styles.settingsList}>
+                <div className={styles.settingRow}>
+                  <div className={styles.settingInfo}>
+                    <span className={styles.settingLabel}>Тема подложки карты</span>
+                    <span className={styles.settingExplanation}>
+                      Базовый картографический слой векторных тайлов (запоминается в браузере)
+                    </span>
+                  </div>
+                  <select
+                    className={styles.selectInput}
+                    value={mapTheme}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setMapTheme(val);
+                      saveMapTheme(val);
+                      showToast("Тема карты сохранена");
+                    }}
+                  >
+                    <option value="standard">Обычная (Фирменная тёмная)</option>
+                    <option value="satellite">Спутник (Аэрокосмическая съёмка)</option>
+                    <option value="dark">Тёмная (Высококонтрастная ночная)</option>
+                  </select>
+                </div>
+
                 <div className={styles.settingRow}>
                   <div className={styles.settingInfo}>
                     <span className={styles.settingLabel}>Стартовый город при открытии</span>

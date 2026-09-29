@@ -11,16 +11,35 @@ import { useMyDay } from "@/hooks/worker/useMyDay";
 import { useWorkerRoutes } from "@/hooks/worker/useWorkerRoutes";
 import { getTodayMsk, formatMskTime } from "@/lib/worker/time";
 import { getTicketStateBadge } from "@/lib/worker/labels";
+import { getSavedMapTheme, getMapStyleUrl, MAP_STYLES } from "@/lib/mapStyles";
 import styles from "./map.module.css";
-
-const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_API_KEY || "GgqQJqVNCH4XkEWcVnJs";
-const MAP_STYLE = `https://api.maptiler.com/maps/01a0a53f-a24b-7778-b5e1-b59ba3d6f612/style.json?key=${MAPTILER_KEY}`;
 
 function WorkerMapContent() {
   const { user } = useAuth();
   const searchParams = useSearchParams();
   const mapRef = useRef(null);
   const todayMsk = getTodayMsk();
+
+  const [mapTheme, setMapTheme] = useState("standard");
+
+  useEffect(() => {
+    try {
+      const saved = getSavedMapTheme();
+      if (saved) {
+        queueMicrotask(() => {
+          setMapTheme(saved);
+        });
+      }
+    } catch {}
+
+    const handleThemeChange = (e) => {
+      if (e.detail && MAP_STYLES[e.detail]) {
+        setMapTheme(e.detail);
+      }
+    };
+    window.addEventListener("beeline_map_theme_changed", handleThemeChange);
+    return () => window.removeEventListener("beeline_map_theme_changed", handleThemeChange);
+  }, []);
 
   const { data: dayData, isLoading: isDayLoading } = useMyDay(todayMsk);
   const { currentRoute, isLoading: isRouteLoading } = useWorkerRoutes(user?.id, todayMsk);
@@ -347,7 +366,7 @@ function WorkerMapContent() {
               latitude: stops[0]?.coordinates[1] || defaultCenter[1],
               zoom: 11,
             }}
-            mapStyle={MAP_STYLE}
+            mapStyle={getMapStyleUrl(mapTheme)}
             attributionControl={false}
             style={{ width: "100%", height: "100%" }}
           >

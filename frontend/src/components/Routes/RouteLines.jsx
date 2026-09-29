@@ -51,7 +51,7 @@ export default function RouteLines({ routesGeoJson }) {
         type="line"
         layout={{ "line-join": "round", "line-cap": "round" }}
         paint={{
-          "line-color": ["get", "color"],
+          "line-color": ["coalesce", ["get", "color"], "#FFB800"],
           "line-width": [
             "case",
             ["boolean", ["get", "isSelected"], false],
