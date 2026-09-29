@@ -173,6 +173,67 @@ def list_tickets(
     )
 
 
+@router.get("/dates")
+def get_available_ticket_dates(
+    session: DatabaseSession,
+    current_user: CurrentUser,
+    target_date: date | None = None,
+):
+    """Получить список дат с заявками/маршрутами и ближайшую доступную дату к целевой (по умолчанию сегодня)."""
+    if target_date is None:
+        target_date = datetime.now(UTC).date()
+
+    query = text(
+        """
+        SELECT ticket_date, SUM(cnt)::int as total_count FROM (
+            SELECT 
+                (COALESCE(t.planned_start_at, t.visit_window_start) AT TIME ZONE 'Europe/Moscow')::date AS ticket_date,
+                COUNT(*) as cnt
+            FROM tickets t
+            WHERE (COALESCE(t.planned_start_at, t.visit_window_start)) IS NOT NULL
+            GROUP BY ticket_date
+            UNION ALL
+            SELECT 
+                r.route_date AS ticket_date,
+                COUNT(*) as cnt
+            FROM routes r
+            WHERE r.route_date IS NOT NULL
+            GROUP BY r.route_date
+        ) s
+        WHERE ticket_date IS NOT NULL
+        GROUP BY ticket_date
+        ORDER BY ticket_date ASC
+        """
+    )
+    rows = session.execute(query).fetchall()
+    date_counts = {str(r[0]): int(r[1]) for r in rows if r[0] is not None}
+    dates = list(date_counts.keys())
+
+    target_str = str(target_date)
+    has_today = target_str in date_counts and date_counts[target_str] > 0
+
+    closest_date = target_str
+    if dates:
+        if has_today:
+            closest_date = target_str
+        else:
+            def distance(d_str: str) -> tuple[int, int]:
+                d_obj = datetime.strptime(d_str, "%Y-%m-%d").date()
+                diff = abs((d_obj - target_date).days)
+                return (diff, 0 if d_obj >= target_date else 1)
+
+            closest_date = min(dates, key=distance)
+
+    return {
+        "dates": dates,
+        "date_counts": date_counts,
+        "target_date": target_str,
+        "has_today": has_today,
+        "closest_date": closest_date,
+        "total_dates": len(dates),
+    }
+
+
 @router.post("", response_model=TicketRead, status_code=status.HTTP_201_CREATED)
 def create_ticket(
     data: TicketCreate,

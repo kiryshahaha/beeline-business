@@ -30,6 +30,13 @@ const TabIcons = {
       <line x1="6" y1="18" x2="6.01" y2="18" />
     </svg>
   ),
+  data: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+      <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+    </svg>
+  ),
   account: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -74,6 +81,10 @@ export default function SettingsPage() {
   const [backendPing, setBackendPing] = useState({ status: "checking", latency: null });
   const [plannerPing, setPlannerPing] = useState({ status: "online", version: "v1.4 OR-Tools" });
   const [isPinging, setIsPinging] = useState(false);
+
+  // Data Clearing & Management
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
   // Toast feedback
   const [toastMsg, setToastMsg] = useState(null);
@@ -256,6 +267,95 @@ export default function SettingsPage() {
     router.push("/login");
   };
 
+  // Export full business database package
+  const handleExportData = async (format = "xlsx") => {
+    try {
+      showToast("Формирование резервной выгрузки данных...");
+      const res = await apiFetch(`/data/export?format=${format}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.detail || "Не удалось выгрузить данные");
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `beeline-export-${new Date().toISOString().slice(0, 10)}.${format === "csv" ? "zip" : "xlsx"}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      showToast("Файл резервной копии успешно сохранён");
+    } catch (err) {
+      showToast(`Ошибка экспорта: ${err.message}`);
+    }
+  };
+
+  // Clear all business data (preserve user accounts)
+  const handleClearData = async () => {
+    setIsClearing(true);
+    try {
+      const res = await apiFetch("/data/clear", { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.detail || `Ошибка ${res.status}`);
+      }
+      const data = await res.json();
+      showToast(data.message || "Бизнес-данные успешно очищены!");
+
+      // Clear any dismissal markers and saved dates so map/dashboards reset
+      try {
+        sessionStorage.removeItem("empty_data_modal_dismissed");
+        localStorage.removeItem("beeline_selected_date");
+      } catch {}
+
+      setIsClearModalOpen(false);
+    } catch (err) {
+      showToast(`Ошибка очистки данных: ${err.message}`);
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  // Render danger zone card helper (used in both "data" and "system" tabs)
+  const renderDangerZoneCard = () => (
+    <div className={styles.dangerZoneCard}>
+      <div className={styles.sectionHeader}>
+        <div className={styles.sectionTitleGroup}>
+          <span className={styles.dangerBadge}>Опасная зона</span>
+          <h2 className={styles.dangerTitle}>Стирание операционных данных</h2>
+          <p className={styles.sectionDesc}>
+            Полная очистка базы данных заявок, маршрутов, складов и истории импортов
+          </p>
+        </div>
+      </div>
+
+      <div className={styles.settingsList}>
+        <div className={styles.settingRow}>
+          <div className={styles.settingInfo}>
+            <span className={styles.settingLabel}>Стереть все бизнес-данные</span>
+            <span className={styles.settingExplanation}>
+              Удалит заявки, маршруты, адреса, локации и журнал импортов. Учетные записи пользователей (логины, пароли) и регламентные виды работ будут сохранены.
+            </span>
+          </div>
+          <button
+            type="button"
+            id="clear-data-btn"
+            className={`${styles.btn} ${styles.btnDanger}`}
+            onClick={() => setIsClearModalOpen(true)}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              <line x1="10" y1="11" x2="10" y2="17" />
+              <line x1="14" y1="11" x2="14" y2="17" />
+            </svg>
+            Стереть данные...
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className={styles.page}>
       {/* Page Header */}
@@ -323,6 +423,16 @@ export default function SettingsPage() {
           >
             <span className={styles.tabIconWrapper}>{TabIcons.services}</span>
             <span className={styles.tabLabel}>Сервисы и движок</span>
+          </button>
+
+          <button
+            type="button"
+            id="tab-data-btn"
+            className={`${styles.tabBtn} ${activeTab === "data" ? styles.activeTab : ""}`}
+            onClick={() => setActiveTab("data")}
+          >
+            <span className={styles.tabIconWrapper}>{TabIcons.data}</span>
+            <span className={styles.tabLabel}>Данные и БД</span>
           </button>
 
           <button
@@ -713,7 +823,59 @@ export default function SettingsPage() {
             </>
           )}
 
-          {/* TAB 4: USER & ACCOUNT */}
+          {/* TAB 4: DATA & DATABASE */}
+          {activeTab === "data" && (
+            <>
+              <div className={styles.sectionCard}>
+                <div className={styles.sectionHeader}>
+                  <div className={styles.sectionTitleGroup}>
+                    <h2 className={styles.sectionTitle}>Резервное копирование и экспорт данных</h2>
+                    <p className={styles.sectionDesc}>
+                      Выгрузка полного пакета таблиц системы перед очисткой или передачей данных
+                    </p>
+                  </div>
+                </div>
+
+                <div className={styles.settingsList}>
+                  <div className={styles.settingRow}>
+                    <div className={styles.settingInfo}>
+                      <span className={styles.settingLabel}>Экспорт в Excel (.xlsx)</span>
+                      <span className={styles.settingExplanation}>
+                        Скачать всю рабочую базу (заявки, бригады, адреса, локации) одним файлом со всеми вкладками
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className={`${styles.btn} ${styles.btnSecondary}`}
+                      onClick={() => handleExportData("xlsx")}
+                    >
+                      Экспорт Excel (.xlsx)
+                    </button>
+                  </div>
+
+                  <div className={styles.settingRow}>
+                    <div className={styles.settingInfo}>
+                      <span className={styles.settingLabel}>Экспорт в архив CSV (.zip)</span>
+                      <span className={styles.settingExplanation}>
+                        Скачать пакет CSV-файлов для автоматических интеграций и импорта в другие сервисы
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className={`${styles.btn} ${styles.btnSecondary}`}
+                      onClick={() => handleExportData("csv")}
+                    >
+                      Экспорт CSV (.zip)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {renderDangerZoneCard()}
+            </>
+          )}
+
+          {/* TAB 5: USER & ACCOUNT */}
           {activeTab === "account" && (
             <div className={styles.sectionCard}>
               <div className={styles.sectionHeader}>
@@ -759,57 +921,125 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* TAB 5: SYSTEM & ABOUT */}
+          {/* TAB 6: SYSTEM & ABOUT */}
           {activeTab === "system" && (
-            <div className={styles.sectionCard}>
-              <div className={styles.sectionHeader}>
-                <div className={styles.sectionTitleGroup}>
-                  <h2 className={styles.sectionTitle}>О системе и сборке</h2>
-                  <p className={styles.sectionDesc}>Техническая информация о платформе Beeline Business</p>
+            <>
+              <div className={styles.sectionCard}>
+                <div className={styles.sectionHeader}>
+                  <div className={styles.sectionTitleGroup}>
+                    <h2 className={styles.sectionTitle}>О системе и сборке</h2>
+                    <p className={styles.sectionDesc}>Техническая информация о платформе Beeline Business</p>
+                  </div>
+                </div>
+
+                <div className={styles.settingsList}>
+                  <div className={styles.settingRow}>
+                    <div className={styles.settingInfo}>
+                      <span className={styles.settingLabel}>Продукт</span>
+                      <span className={styles.settingExplanation}>
+                        Beeline Business Field Operations Suite — Автоматизированная система управления выездными бригадами
+                      </span>
+                    </div>
+                    <span style={{ fontWeight: 600 }}>v2.4.0 (Enterprise)</span>
+                  </div>
+
+                  <div className={styles.settingRow}>
+                    <div className={styles.settingInfo}>
+                      <span className={styles.settingLabel}>Технологический стек</span>
+                      <span className={styles.settingExplanation}>
+                        Next.js 16 (Turbopack), React 19, MapLibre GL, FastAPI, PostgreSQL PostGIS, Google OR-Tools
+                      </span>
+                    </div>
+                    <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Production Ready</span>
+                  </div>
+
+                  <div className={styles.settingRow}>
+                    <div className={styles.settingInfo}>
+                      <span className={styles.settingLabel}>Сброс локальных параметров</span>
+                      <span className={styles.settingExplanation}>
+                        Очистить кэш настроек браузера (тема, стартовый город, фильтры) и вернуть значения по умолчанию
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className={`${styles.btn} ${styles.btnSecondary}`}
+                      onClick={handleResetDefaults}
+                    >
+                      Сбросить настройки
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <div className={styles.settingsList}>
-                <div className={styles.settingRow}>
-                  <div className={styles.settingInfo}>
-                    <span className={styles.settingLabel}>Продукт</span>
-                    <span className={styles.settingExplanation}>
-                      Beeline Business Field Operations Suite — Автоматизированная система управления выездными бригадами
-                    </span>
-                  </div>
-                  <span style={{ fontWeight: 600 }}>v2.4.0 (Enterprise)</span>
-                </div>
-
-                <div className={styles.settingRow}>
-                  <div className={styles.settingInfo}>
-                    <span className={styles.settingLabel}>Технологический стек</span>
-                    <span className={styles.settingExplanation}>
-                      Next.js 16 (Turbopack), React 19, MapLibre GL, FastAPI, PostgreSQL PostGIS, Google OR-Tools
-                    </span>
-                  </div>
-                  <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Production Ready</span>
-                </div>
-
-                <div className={styles.settingRow}>
-                  <div className={styles.settingInfo}>
-                    <span className={styles.settingLabel}>Сброс локальных параметров</span>
-                    <span className={styles.settingExplanation}>
-                      Очистить кэш настроек браузера (тема, стартовый город, фильтры) и вернуть значения по умолчанию
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className={`${styles.btn} ${styles.btnSecondary}`}
-                    onClick={handleResetDefaults}
-                  >
-                    Сбросить настройки
-                  </button>
-                </div>
-              </div>
-            </div>
+              {renderDangerZoneCard()}
+            </>
           )}
         </div>
       </div>
+
+      {/* Confirmation Modal for Clearing Business Data */}
+      {isClearModalOpen && (
+        <div
+          className={styles.modalOverlay}
+          onClick={() => !isClearing && setIsClearModalOpen(false)}
+        >
+          <div
+            className={styles.modalContent}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clear-modal-title"
+          >
+            <div className={styles.modalHeader}>
+              <div className={styles.modalIconDanger}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              </div>
+              <div className={styles.modalTitleGroup}>
+                <h3 id="clear-modal-title" className={styles.modalTitle}>
+                  Стереть все бизнес-данные?
+                </h3>
+                <p className={styles.modalSubtitle}>Полный сброс операционной информации базы данных</p>
+              </div>
+            </div>
+
+            <div className={styles.modalBody}>
+              <div className={styles.modalWarningCallout}>
+                <strong>Внимание!</strong> Будут безвозвратно удалены все заявки, сформированные маршруты, адреса, локации, складские остатки и история загрузок.
+              </div>
+              <div className={styles.modalInfoCallout}>
+                <strong>Пользователи сохраняются:</strong> Все учетные записи диспетчеров, бригадиров, пароли, сессии и 4 канонических вида работ будут сохранены.
+              </div>
+              <p style={{ margin: 0, fontSize: "13px" }}>
+                После очистки вы сможете загрузить свежий пакет файлов через окно импорта данных.
+              </p>
+            </div>
+
+            <div className={styles.modalFooter}>
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnSecondary}`}
+                onClick={() => setIsClearModalOpen(false)}
+                disabled={isClearing}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                id="confirm-clear-data-btn"
+                className={`${styles.btn} ${styles.btnDanger}`}
+                onClick={handleClearData}
+                disabled={isClearing}
+              >
+                {isClearing ? "Стирание данных..." : "Да, стереть данные"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating Notification Toast */}
       {toastMsg && (

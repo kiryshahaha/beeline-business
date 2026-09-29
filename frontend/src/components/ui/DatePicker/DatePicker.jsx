@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useAvailableDates } from "@/hooks/useAvailableDates";
 import styles from "./DatePicker.module.css";
 
 // Вспомогательные функции для работы со строками YYYY-MM-DD
@@ -36,6 +37,7 @@ export default function DatePicker({
   const wrapperRef = useRef(null);
 
   const todayStr = useMemo(() => getMskTodayStr(), []);
+  const { dateCounts, hasToday, closestDate } = useAvailableDates(todayStr);
   const effectiveMode = singleOnly ? "single" : (value?.mode || "single");
 
   // Текущий просматриваемый месяц в календаре (год и месяц 0..11)
@@ -47,6 +49,33 @@ export default function DatePicker({
     const base = value?.date || value?.from || todayStr;
     return Number(base.slice(5, 7)) - 1;
   });
+
+  // Автоматическая синхронизация просматриваемого месяца при изменении даты
+  useEffect(() => {
+    const base = value?.date || value?.from;
+    if (base && base.length >= 7) {
+      queueMicrotask(() => {
+        setViewYear(Number(base.slice(0, 4)));
+        setViewMonth(Number(base.slice(5, 7)) - 1);
+      });
+    }
+  }, [value?.date, value?.from]);
+
+  // Автоматический выбор ближайшего доступного дня, если на сегодня нет задач
+  useEffect(() => {
+    if (!value?.date || value.date === todayStr) {
+      if (!hasToday && closestDate && closestDate !== todayStr) {
+        queueMicrotask(() => {
+          onChange?.({
+            mode: "single",
+            date: closestDate,
+            from: closestDate,
+            to: closestDate,
+          });
+        });
+      }
+    }
+  }, [value?.date, todayStr, hasToday, closestDate, onChange]);
 
   // Закрытие по клику вне календаря и по Escape
   useEffect(() => {
@@ -423,6 +452,9 @@ export default function DatePicker({
               if (isRangeStart) cellClasses += ` ${styles.rangeStart}`;
               if (isRangeEnd) cellClasses += ` ${styles.rangeEnd}`;
 
+              const taskCount = dateCounts?.[dateStr] || 0;
+              const hasTasks = taskCount > 0;
+
               return (
                 <div key={dateStr} className={cellClasses}>
                   <button
@@ -434,8 +466,10 @@ export default function DatePicker({
                         setHoverDate(dateStr);
                       }
                     }}
+                    title={hasTasks ? `${taskCount} заявок` : undefined}
                   >
                     {dayNum}
+                    {hasTasks && <span className={styles.hasTasksDot} />}
                   </button>
                 </div>
               );

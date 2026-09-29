@@ -3,6 +3,7 @@
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session
@@ -61,3 +62,39 @@ def import_all(
         return import_data(session, data, dry_run=dry_run)
     except ExchangeError as error:
         raise HTTPException(422, error.detail) from error
+
+
+@router.post("/clear")
+def clear_all_data(session: DatabaseSession):
+    """Стереть все бизнес-данные (заявки, маршруты, адреса, локации и т.д.), сохранив учетные записи пользователей."""
+    tables_res = session.execute(
+        text(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
+            "AND table_name NOT IN ('alembic_version', 'users', 'refresh_tokens')"
+        )
+    ).fetchall()
+    if tables_res:
+        table_names = ", ".join(f'"{t[0]}"' for t in tables_res)
+        session.execute(text(f"TRUNCATE TABLE {table_names} CASCADE;"))
+
+    # Восстанавливаем 4 канонических вида работ по регламенту кейса
+    session.execute(
+        text(
+            """
+            INSERT INTO work_types (name, code, category, default_priority, travel_minutes, work_minutes, documents_minutes)
+            VALUES 
+                ('Подключение клиентов Базовая', 'connection', 'connection', 2, 20, 60, 10),
+                ('Аварий на ТКД', 'emergency', 'emergency', 1, 20, 80, 0),
+                ('Дозаказ оборудования', 'additional', 'additional', 3, 20, 10, 10),
+                ('Локальная заявка/ремонт у клиента', 'repair', 'repair', 3, 20, 30, 0)
+            ON CONFLICT (lower(name)) DO NOTHING;
+            """
+        )
+    )
+    session.commit()
+    return {
+        "success": True,
+        "message": "Все бизнес-данные успешно очищены. Учетные записи пользователей сохранены.",
+    }
+

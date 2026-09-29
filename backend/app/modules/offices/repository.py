@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 OFFICE_COLUMNS = """
     o.id,
     o.name,
-    o.location_id
+    o.location_id,
+    o.service_area_id
 """
 
 

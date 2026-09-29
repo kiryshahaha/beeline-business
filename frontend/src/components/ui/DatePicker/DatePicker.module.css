@@ -372,3 +372,21 @@
 .footerClearBtn:hover {
   background: rgba(255, 200, 0, 0.15);
 }
+
+.hasTasksDot {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--beeline, #ffc800);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.selectedDay .hasTasksDot {
+  background: #111111;
+}
+

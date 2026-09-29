@@ -10,9 +10,11 @@ import Menu from "@/components/Menu/Menu";
 import CreateTicketModal from "@/components/Modals/CreateTicketModal";
 import PlanningModal from "@/components/Modals/PlanningModal";
 import CompletionReviewsModal from "@/components/Modals/CompletionReviewsModal";
+import EmptyDataModal from "@/components/dashboard/EmptyDataModal/EmptyDataModal";
 import DatePicker from "@/components/ui/DatePicker/DatePicker";
 import StarrySky from "@/components/StarrySky/StarrySky";
 import { useTickets } from "@/hooks/useTickets";
+import { useFastStats } from "@/hooks/useFastStats";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOffices } from "@/hooks/useOffices";
 import { useLocations } from "@/hooks/useLocations";
@@ -21,7 +23,13 @@ import { useRoutes } from "@/hooks/useRoutes";
 import { useWorkerTasksRoute } from "@/hooks/useWorkerTasksRoute";
 import { useBrigades } from "@/hooks/useBrigades";
 import { useServiceAreas } from "@/hooks/useServiceAreas";
-import { fetchRealDistrictBoundary, isPointInPolygon } from "@/utils/districtGeometry";
+import { useAvailableDates } from "@/hooks/useAvailableDates";
+import {
+  fetchRealDistrictBoundary,
+  isPointInPolygon,
+  findDistrictByCoordinates,
+  findOkrugByCoordinates,
+} from "@/utils/districtGeometry";
 import { isTicketUrgent } from "@/utils/ticketUtils";
 import { apiFetch } from "@/lib/apiFetch";
 import { useAuth } from "@/providers/AuthProvider";
@@ -61,6 +69,42 @@ export default function Home() {
   const [isPlanningModalOpen, setIsPlanningModalOpen] = useState(false);
   const [isCompletionReviewsModalOpen, setIsCompletionReviewsModalOpen] = useState(false);
   const [pendingReviewsCount, setPendingReviewsCount] = useState(0);
+
+  const { hasToday, closestDate } = useAvailableDates(todayMsk);
+
+  // Автоматический выбор ближайшего доступного дня, если на сегодняшний день нет заявок
+  useEffect(() => {
+    if (!hasToday && closestDate && closestDate !== todayMsk) {
+      queueMicrotask(() => {
+        setDateFilter((prev) => {
+          if (prev.mode === "single" && prev.date === todayMsk) {
+            return { mode: "single", date: closestDate, from: closestDate, to: closestDate };
+          }
+          return prev;
+        });
+      });
+    }
+  }, [hasToday, closestDate, todayMsk]);
+
+  const [isManualEmptyModalOpen, setIsManualEmptyModalOpen] = useState(false);
+  const [isDismissedEmptyModal, setIsDismissedEmptyModal] = useState(() => {
+    if (typeof window !== "undefined") {
+      return sessionStorage.getItem("empty_data_modal_dismissed") === "1";
+    }
+    return false;
+  });
+
+  const { stats, isSuccess: isStatsSuccess, isLoading: isStatsLoading } = useFastStats();
+  const isDbEmpty = !isStatsLoading && isStatsSuccess && (stats?.total_tickets || 0) === 0;
+  const isUploadModalOpen = isManualEmptyModalOpen || (isDbEmpty && !isDismissedEmptyModal);
+
+  const handleCloseEmptyModal = () => {
+    setIsManualEmptyModalOpen(false);
+    setIsDismissedEmptyModal(true);
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("empty_data_modal_dismissed", "1");
+    }
+  };
 
   useEffect(() => {
     let isSubscribed = true;
@@ -173,28 +217,82 @@ export default function Home() {
   const officesFullInfo = useMemo(() => {
     return offices
       .map((office) => {
-        const location = locationById.get(office.location_id);
+        const location = office.location || locationById.get(office.location_id);
+        const sa = serviceAreas.find((s) => s.id === office.service_area_id);
+        const lat = Number(location?.latitude ?? office.latitude);
+        const lon = Number(location?.longitude ?? office.longitude);
+
+        // 1. Вычисляем реальный административный округ / район по координатам офиса
+        let geoDistrict = null;
+        if (Number.isFinite(lon) && Number.isFinite(lat)) {
+          geoDistrict = findOkrugByCoordinates(lon, lat) || findDistrictByCoordinates(lon, lat);
+        }
+
+        // 2. Если координаты не попали в полигон, сопоставляем по названию зоны и алиасам
+        let aliasOkrug = null;
+        const candidateNames = [sa?.name, office.name, office.office_name].filter(Boolean);
+        for (const cName of candidateNames) {
+          const lower = cName.toLowerCase();
+          const match = MOSCOW_ADMIN_OKRUGS.find(
+            (okrug) =>
+              okrug.name.toLowerCase() === lower ||
+              okrug.aliases.some((a) => lower.includes(a))
+          );
+          if (match) {
+            aliasOkrug = match.name;
+            break;
+          }
+        }
+
+        const rawDistrict = location?.district || office.district;
+        const isValidRaw =
+          rawDistrict &&
+          rawDistrict !== "Не указан" &&
+          rawDistrict !== "Адрес не указан";
+
+        const districtName =
+          geoDistrict ||
+          (isValidRaw ? rawDistrict : null) ||
+          aliasOkrug ||
+          sa?.name ||
+          "Округ не определен";
+
         return location
           ? {
               ...location,
               office_id: office.id,
               office_name: office.name,
-              district: location.district || office.district,
-              service_area_id: location.service_area_id || office.service_area_id,
+              district: districtName,
+              latitude: lat,
+              longitude: lon,
+              service_area_id: office.service_area_id || location.service_area_id,
             }
-          : { ...office, office_id: office.id, office_name: office.name };
+          : {
+              ...office,
+              office_id: office.id,
+              office_name: office.name,
+              district: districtName,
+              latitude: lat,
+              longitude: lon,
+              service_area_id: office.service_area_id,
+            };
       })
       .filter(Boolean);
-  }, [offices, locationById]);
+  }, [offices, locationById, serviceAreas]);
 
   // Справочник всех районов в системе (из офисов и заявок)
   const districtsList = useMemo(() => {
     const districtMap = new Map();
+    const isBadName = (name) =>
+      !name ||
+      name === "Не указан" ||
+      name === "Адрес не указан" ||
+      name === "Округ не определен";
 
     // Из офисов
     officesFullInfo.forEach((office) => {
       const name = office.district;
-      if (!name) return;
+      if (isBadName(name)) return;
       if (!districtMap.has(name)) {
         districtMap.set(name, {
           name,
@@ -215,7 +313,7 @@ export default function Home() {
     allTickets.forEach((t) => {
       const loc = t.location || locationById.get(t.location_id);
       const name = t.district || loc?.district;
-      if (!name) return;
+      if (isBadName(name)) return;
       const saId = t.service_area_id || loc?.service_area_id;
 
       if (!districtMap.has(name)) {
@@ -237,7 +335,7 @@ export default function Home() {
     // Зоны обслуживания из бэкенда (FE-09)
     (serviceAreas || []).forEach((sa) => {
       const name = sa.name;
-      if (!name) return;
+      if (isBadName(name)) return;
       if (!districtMap.has(name)) {
         districtMap.set(name, {
           name,
@@ -258,7 +356,12 @@ export default function Home() {
       const office = officesFullInfo.find((o) => {
         const d = (o.district || "").toLowerCase();
         const n = (o.office_name || "").toLowerCase();
+        const isCoordMatch =
+          Number.isFinite(o.longitude) &&
+          Number.isFinite(o.latitude) &&
+          findOkrugByCoordinates(o.longitude, o.latitude) === okrug.name;
         return (
+          isCoordMatch ||
           d === okrug.name.toLowerCase() ||
           okrug.aliases.some((a) => d === a || n.includes(a))
         );
@@ -282,6 +385,9 @@ export default function Home() {
         existing.isOkrug = true;
         existing.aliases = okrug.aliases;
         if (office && !existing.office) existing.office = office;
+        if (office?.service_area_id && !existing.service_area_id) {
+          existing.service_area_id = office.service_area_id;
+        }
       }
     });
 
@@ -305,9 +411,14 @@ export default function Home() {
 
   // Активный район: выбран через поиск/фильтр ИЛИ выведен из клика по офису
   const activeDistrict = useMemo(() => {
-    if (selectedDistrict) return selectedDistrict;
-    if (focusedOffice?.district) return focusedOffice.district;
-    if (selectedOffice?.district) return selectedOffice.district;
+    const isValid = (d) =>
+      d &&
+      d !== "Не указан" &&
+      d !== "Адрес не указан" &&
+      d !== "Округ не определен";
+    if (isValid(selectedDistrict)) return selectedDistrict;
+    if (isValid(focusedOffice?.district)) return focusedOffice.district;
+    if (isValid(selectedOffice?.district)) return selectedOffice.district;
     return null;
   }, [selectedDistrict, focusedOffice, selectedOffice]);
 
@@ -371,14 +482,21 @@ export default function Home() {
       const office = officesFullInfo.find((o) => o.office_id === id || o.id === id);
       if (office) {
         setFocusedOffice(office);
-        if (office.district) {
-          setSelectedDistrict(office.district);
+        const validDistrict =
+          office.district &&
+          office.district !== "Не указан" &&
+          office.district !== "Адрес не указан" &&
+          office.district !== "Округ не определен"
+            ? office.district
+            : null;
+        if (validDistrict) {
+          setSelectedDistrict(validDistrict);
         }
       }
     }
   };
 
-  // Загрузка реальных гео-границ района через Geoapify / OSM GeoJSON
+  // Загрузка реальных гео-границ района через Geoapify / OSM GeoJSON / локальный кэш
   useEffect(() => {
     let isCancelled = false;
 
@@ -386,14 +504,22 @@ export default function Home() {
     const currentOffice = focusedOffice || selectedOffice;
     const lat = currentOffice?.latitude;
     const lon = currentOffice?.longitude;
-    const district = activeDistrict || currentOffice?.district;
+    const rawDistrict = activeDistrict || currentOffice?.district;
+    const district =
+      rawDistrict &&
+      rawDistrict !== "Не указан" &&
+      rawDistrict !== "Адрес не указан" &&
+      rawDistrict !== "Округ не определен"
+        ? rawDistrict
+        : null;
+
     const isOkrug =
       activeDistrictObj?.isOkrug ||
       (district && district.toLowerCase().includes("округ"));
     const city =
       currentOffice?.city ||
       activeDistrictObj?.city ||
-      (isOkrug || activeDistrict ? "Москва" : undefined);
+      "Москва";
 
     if (!district && (lat == null || lon == null)) {
       Promise.resolve().then(() => {
@@ -423,8 +549,8 @@ export default function Home() {
         if (!isCancelled) {
           setDistrictBoundaryData(data);
           setIsLoadingBoundary(false);
-          // Если название района определилось через Geoapify при клике на офис
-          if (data?.districtName && selectedDistrict !== data.districtName && currentOffice) {
+          // Если название района определилось по координатам офиса
+          if (data?.districtName && (!selectedDistrict || selectedDistrict === "Не указан") && currentOffice) {
             setSelectedDistrict(data.districtName);
           }
         }
@@ -937,6 +1063,48 @@ export default function Home() {
               <DatePicker value={dateFilter} onChange={setDateFilter} />
             </div>
 
+            {/* Кнопка импорта данных (файлы организаторов / системный пакет) */}
+            <button
+              type="button"
+              id="import-data-top-btn"
+              onClick={() => setIsManualEmptyModalOpen(true)}
+              style={{
+                height: "36px",
+                padding: "0 13px",
+                borderRadius: "12px",
+                background: "#1e293b",
+                border: "1px solid #334155",
+                color: "#e2e8f0",
+                fontSize: "13px",
+                fontWeight: 700,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                cursor: "pointer",
+                boxShadow: "var(--shadow-sm)",
+                transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+                whiteSpace: "nowrap",
+                userSelect: "none",
+                boxSizing: "border-box",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = "var(--beeline)";
+                e.currentTarget.style.color = "var(--beeline)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = "#334155";
+                e.currentTarget.style.color = "#e2e8f0";
+              }}
+              title="Загрузка данных (файлы организаторов или системный пакет БД)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              <span>Импорт</span>
+            </button>
+
             {/* Кнопка запуска автопланирования (FE-18) */}
             <button
               type="button"
@@ -1247,6 +1415,11 @@ export default function Home() {
             .then((list) => Array.isArray(list) && setPendingReviewsCount(list.length))
             .catch(() => null);
         }}
+      />
+
+      <EmptyDataModal
+        isOpen={isUploadModalOpen}
+        onClose={handleCloseEmptyModal}
       />
     </main>
   );

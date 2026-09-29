@@ -28,3 +28,4 @@ class OfficeRead(BaseModel):
     id: PositiveInt32
     name: str
     location_id: PositiveInt32
+    service_area_id: int | None = None
