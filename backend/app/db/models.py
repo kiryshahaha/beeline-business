@@ -33,6 +33,7 @@ from app.modules.streets.models import Street
 from app.modules.tickets.models import (
     Ticket,
     TicketAssignmentEvent,
+    TicketCompletionReview,
     TicketWorkTypeMigrationIssue,
 )
 from app.modules.users.models import (
@@ -81,6 +82,7 @@ __all__ = [
     "Ticket",
     "TicketAppliance",
     "TicketAssignmentEvent",
+    "TicketCompletionReview",
     "TicketWorkTypeMigrationIssue",
     "TicketComment",
     "User",

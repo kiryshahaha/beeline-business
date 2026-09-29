@@ -107,6 +107,8 @@ def next_state_for_event(
         if current_state != expected_previous:
             raise IllegalTransition(f"{current_state.value} -> {event_type.value}")
         return next_state
+    if event_type == WorkEventType.START_ROUTE and current_state == TicketLifecycleState.ASSIGNED:
+        return TicketLifecycleState.EN_ROUTE
     if event_type == WorkEventType.CANCEL:
         if current_state not in _CANCELLABLE:
             raise IllegalTransition(f"{current_state.value} -> cancel")
@@ -280,6 +282,7 @@ def apply_ticket_event(
     *,
     actor_id: int,
     idempotency_key: str,
+    actor_role: str = "observer",
     compatibility: bool = False,
 ) -> ExecutionResult:
     payload = _event_payload(command)
@@ -452,6 +455,65 @@ def apply_ticket_event(
                 event_id=event_id,
                 execution_cycle=ticket["execution_cycle"],
             )
+            note = (command.payload or {}).get("completion_note")
+            if actor_role == "worker" and not note:
+                raise RequiredReason("completion_note_required")
+            review_id = session.execute(
+                text(
+                    """
+                    INSERT INTO ticket_completion_reviews
+                        (ticket_id, execution_cycle, requested_by, note,
+                         actual_duration_minutes, state, decided_by, decided_at)
+                    VALUES (:ticket_id, :cycle, :worker_id, :note, :duration, :state,
+                            CASE WHEN :state = 'confirmed' THEN :actor_id END,
+                            CASE WHEN :state = 'confirmed' THEN clock_timestamp() END)
+                    RETURNING id
+                    """
+                ),
+                {
+                    "ticket_id": ticket_id,
+                    "cycle": ticket["execution_cycle"],
+                    "worker_id": event_worker_id or actor_id,
+                    "note": note or "Завершено диспетчером",
+                    "duration": (command.payload or {}).get("actual_duration_minutes"),
+                    "state": "pending" if actor_role == "worker" else "confirmed",
+                    "actor_id": actor_id,
+                },
+            ).scalar_one()
+            from app.modules.tickets import repository as completion_repository
+
+            notification_kind = (
+                NotificationKind.TICKET_COMPLETION_REQUESTED
+                if actor_role == "worker"
+                else NotificationKind.TICKET_COMPLETION_CONFIRMED
+            )
+            recipients = (
+                completion_repository.list_observer_ids(session)
+                if actor_role == "worker"
+                else [event_worker_id]
+                if event_worker_id
+                else []
+            )
+            completion_worker = (
+                session.execute(
+                    text("SELECT id, name, surname FROM users WHERE id=:id"),
+                    {"id": event_worker_id or actor_id},
+                )
+                .mappings()
+                .one_or_none()
+            )
+            completion_repository.add_notification_events(
+                session,
+                recipients,
+                kind=notification_kind,
+                ticket_id=ticket_id,
+                data={
+                    "review_id": review_id,
+                    "worker_id": event_worker_id or actor_id,
+                    "worker": dict(completion_worker) if completion_worker else None,
+                    "note": note or "Завершено диспетчером",
+                },
+            )
         from app.modules.tickets import repository as ticket_repository
 
         if event_type != WorkEventType.ASSIGN and ticket["status"] != legacy_status.value:
@@ -465,6 +527,27 @@ def apply_ticket_event(
                     "previous_status": ticket["status"],
                     "status": legacy_status.value,
                     "actor_id": actor_id,
+                },
+            )
+        if event_type == WorkEventType.PROGRESS_DELAY and actor_role == "worker":
+            delay_worker = (
+                session.execute(
+                    text("SELECT id, name, surname FROM users WHERE id=:id"),
+                    {"id": event_worker_id},
+                )
+                .mappings()
+                .one_or_none()
+            )
+            ticket_repository.add_notification_events(
+                session,
+                ticket_repository.list_observer_ids(session),
+                kind=NotificationKind.TICKET_DELAY_REPORTED,
+                ticket_id=ticket_id,
+                data={
+                    "worker_id": event_worker_id,
+                    "worker": dict(delay_worker) if delay_worker else None,
+                    "expected_available_at": command.expected_available_at.isoformat(),
+                    "reason": command.reason,
                 },
             )
         return _result(session, ticket_id, event_id, revision, False)
@@ -656,4 +739,18 @@ def change_window(
             },
         )
         repository.attach_last_event(session, ticket_id, event_id)
+        if ticket.get("assigned_worker_id") is not None:
+            from app.modules.tickets import repository as ticket_repository
+
+            ticket_repository.add_notification_events(
+                session,
+                [ticket["assigned_worker_id"]],
+                kind=NotificationKind.TICKET_WINDOW_CHANGED,
+                ticket_id=ticket_id,
+                data={
+                    "from": ticket["visit_window_start"].isoformat(),
+                    "to": command.new_window_start.isoformat(),
+                    "reason_text": command.reason,
+                },
+            )
         return _result(session, ticket_id, event_id, revision, False)

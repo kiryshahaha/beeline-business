@@ -25,6 +25,7 @@ class WorkEventType(StrEnum):
     CANCEL = CANCEL_TICKET
     REOPEN = "reopen"
     PROGRESS_DELAY = "progress_delay"
+    PROBLEM_REPORTED = "problem_reported"
     WORKER_UNAVAILABLE = "worker_unavailable"
     WINDOW_CHANGE = "window_change"
     REDIRECT = "redirect"

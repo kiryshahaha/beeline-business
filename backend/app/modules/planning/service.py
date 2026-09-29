@@ -13,6 +13,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
+from app.modules.notifications.enums import NotificationKind
 from app.modules.notifications.schedule_updates import publish_schedule_updated
 from app.modules.planning.day_models import DayPlanRevision
 from app.modules.planning.day_plans import (
@@ -46,12 +47,46 @@ from app.modules.routing.client import GeoapifyRoutingError
 from app.modules.routing.schemas import RouteCreate
 from app.modules.routing.service import RouteValidationError, save_routes_in_transaction
 from app.modules.routing.telemetry import RoutingTelemetry
+from app.modules.tickets import repository as ticket_repository
 from app.modules.tickets.models import Ticket
 from app.modules.tickets.service import update_assignment_in_transaction
 from app.modules.users.models import User
 
 logger = logging.getLogger(__name__)
 MOSCOW = ZoneInfo("Europe/Moscow")
+
+
+def _notify_rescheduled_tickets(session: Session, revision: DayPlanRevision) -> None:
+    """Notify assigned workers when a published service start moves by >= 15 minutes."""
+    changes = (revision.diff or {}).get("changed", [])
+    reason_text = (
+        "Маршрут пересчитан из-за изменения условий"
+        if revision.reason == "event_replan"
+        else "Опубликован новый план маршрута"
+    )
+    for change in changes:
+        fields = change.get("changes", {})
+        start_change = fields.get("service_start_at")
+        if not start_change or not start_change.get("from") or not start_change.get("to"):
+            continue
+        previous = datetime.fromisoformat(start_change["from"])
+        current = datetime.fromisoformat(start_change["to"])
+        if abs((current - previous).total_seconds()) < 15 * 60:
+            continue
+        ticket = session.get(Ticket, change["ticket_id"])
+        if ticket is None or ticket.assigned_worker_id is None:
+            continue
+        ticket_repository.add_notification_events(
+            session,
+            [ticket.assigned_worker_id],
+            kind=NotificationKind.TICKET_RESCHEDULED,
+            ticket_id=ticket.id,
+            data={
+                "from": previous.isoformat(),
+                "to": current.isoformat(),
+                "reason_text": reason_text,
+            },
+        )
 
 
 def utc_now():
@@ -941,6 +976,7 @@ def apply_plan(engine, plan_id: UUID, clock=utc_now):
                     },
                 }
                 session.flush()
+                _notify_rescheduled_tickets(session, revision_row)
             applied_fingerprint = fingerprint(
                 load_snapshot(
                     session, request, policy_snapshot=recorded_policy(plan.input_snapshot)

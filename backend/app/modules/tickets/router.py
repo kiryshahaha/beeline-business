@@ -1,9 +1,10 @@
 """Ticket creation, filtered listing and retrieval by ID."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Response, status
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -96,7 +97,16 @@ def _execution_error(error: Exception) -> None:
         ) from error
     if isinstance(error, execution_service.RevisionRequired):
         raise HTTPException(status_code=422, detail="Требуется expected_revision") from error
-    if isinstance(error, (execution_service.IllegalTransition, execution_service.RequiredReason)):
+    if isinstance(error, execution_service.IllegalTransition):
+        current_state = str(error).partition(" ->")[0]
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "invalid_transition",
+                "current_state": current_state if current_state != str(error) else None,
+            },
+        ) from error
+    if isinstance(error, execution_service.RequiredReason):
         raise HTTPException(status_code=422, detail=str(error)) from error
     from app.modules.appliances.service import EquipmentConflict
 
@@ -391,6 +401,8 @@ def _apply_execution_command(
     session: Session,
     current_user: UserRead,
     idempotency_key: str | None,
+    *,
+    actor_role: str = "observer",
 ) -> TicketRead:
     try:
         return execution_service.apply_ticket_event(
@@ -400,10 +412,51 @@ def _apply_execution_command(
             data,
             actor_id=current_user.id,
             idempotency_key=_idempotency_key(idempotency_key),
+            actor_role=actor_role,
         ).ticket
     except Exception as error:
         _execution_error(error)
         raise AssertionError("unreachable")
+
+
+def _worker_command(
+    ticket_id: int,
+    data: ExecutionCommand,
+    session: Session,
+    user: UserRead,
+    *,
+    completion: bool = False,
+) -> tuple[ExecutionCommand, str]:
+    if user.role == UserRole.OBSERVER:
+        if completion:
+            payload = {
+                **(data.payload or {}),
+                "completion_note": data.note,
+                "actual_duration_minutes": data.actual_duration_minutes,
+            }
+            data = data.model_copy(update={"payload": payload})
+        return data, "observer"
+    if user.role != UserRole.WORKER:
+        raise HTTPException(status_code=403, detail="Действие доступно только исполнителю")
+    if data.worker_id is not None and data.worker_id != user.id:
+        raise HTTPException(status_code=403, detail="worker_id не совпадает с текущим исполнителем")
+    assigned = session.execute(
+        text("SELECT assigned_worker_id = :worker_id FROM tickets WHERE id = :ticket_id"),
+        {"worker_id": user.id, "ticket_id": ticket_id},
+    ).scalar_one_or_none()
+    if assigned is not True:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    if completion and not (data.note or "").strip():
+        raise HTTPException(status_code=422, detail="Для завершения требуется note")
+    payload = dict(data.payload)
+    if completion:
+        payload.update(
+            completion_note=data.note.strip(),
+            actual_duration_minutes=data.actual_duration_minutes,
+        )
+    return data.model_copy(
+        update={"worker_id": user.id, "occurred_at": datetime.now(UTC), "payload": payload}
+    ), "worker"
 
 
 @router.post("/{id}/dispatch", response_model=TicketRead)
@@ -424,11 +477,18 @@ def start_ticket_route(
     id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     data: ExecutionCommand,
     session: DatabaseSession,
-    current_user: CurrentObserver,
+    current_user: CurrentUser,
     idempotency_key: IdempotencyHeader = None,
 ) -> TicketRead:
+    data, role = _worker_command(id, data, session, current_user)
     return _apply_execution_command(
-        id, WorkEventType.START_ROUTE, data, session, current_user, idempotency_key
+        id,
+        WorkEventType.START_ROUTE,
+        data,
+        session,
+        current_user,
+        idempotency_key,
+        actor_role=role,
     )
 
 
@@ -437,11 +497,18 @@ def start_ticket_work(
     id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     data: ExecutionCommand,
     session: DatabaseSession,
-    current_user: CurrentObserver,
+    current_user: CurrentUser,
     idempotency_key: IdempotencyHeader = None,
 ) -> TicketRead:
+    data, role = _worker_command(id, data, session, current_user)
     return _apply_execution_command(
-        id, WorkEventType.START, data, session, current_user, idempotency_key
+        id,
+        WorkEventType.START,
+        data,
+        session,
+        current_user,
+        idempotency_key,
+        actor_role=role,
     )
 
 
@@ -450,11 +517,18 @@ def complete_ticket_work(
     id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     data: ExecutionCommand,
     session: DatabaseSession,
-    current_user: CurrentObserver,
+    current_user: CurrentUser,
     idempotency_key: IdempotencyHeader = None,
 ) -> TicketRead:
+    data, role = _worker_command(id, data, session, current_user, completion=True)
     return _apply_execution_command(
-        id, WorkEventType.COMPLETE, data, session, current_user, idempotency_key
+        id,
+        WorkEventType.COMPLETE,
+        data,
+        session,
+        current_user,
+        idempotency_key,
+        actor_role=role,
     )
 
 
@@ -476,13 +550,20 @@ def delay_ticket(
     id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     data: ExecutionCommand,
     session: DatabaseSession,
-    current_user: CurrentObserver,
+    current_user: CurrentUser,
     idempotency_key: IdempotencyHeader = None,
 ) -> TicketRead:
     if data.expected_available_at is None:
         raise HTTPException(status_code=422, detail="Требуется expected_available_at")
+    data, role = _worker_command(id, data, session, current_user)
     return _apply_execution_command(
-        id, WorkEventType.PROGRESS_DELAY, data, session, current_user, idempotency_key
+        id,
+        WorkEventType.PROGRESS_DELAY,
+        data,
+        session,
+        current_user,
+        idempotency_key,
+        actor_role=role,
     )
 
 

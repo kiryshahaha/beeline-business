@@ -25,6 +25,7 @@ class DatabaseTestCase(unittest.TestCase):
             raise RuntimeError("TEST_DATABASE_URL is required for PostgreSQL integration tests")
         os.environ["DATABASE_URL"] = database_url
         from app.core.config import get_settings
+
         get_settings.cache_clear()
         parsed_url = make_url(database_url)
         if parsed_url.get_backend_name() != "postgresql" or not (
@@ -96,7 +97,8 @@ class CommittedDatabaseTestCase(DatabaseTestCase):
                     "ticket_appliances, appliance_stocks, appliances, "
                     "brigade_members, brigades, divisions, offices, notification_events, "
                     "push_subscriptions, ticket_comments, "
-                    "ticket_work_type_migration_issues, ticket_assignment_events, tickets, "
+                    "ticket_work_type_migration_issues, ticket_completion_reviews, "
+                    "ticket_assignment_events, tickets, "
                     "refresh_tokens, "
                     "calendar_tokens, worker_shift_exceptions, worker_skill_assignments, "
                     "worker_skills, workers, users, locations, entrances, "

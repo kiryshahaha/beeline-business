@@ -169,7 +169,7 @@ def get_worker_shift_for_date(
     worker_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     route_date: Annotated[date, Query(description="Дата маршрута для расчёта смены")],
     session: DatabaseSession,
-    current_user: CurrentUser,
+    _: RequireObserver,
 ) -> ShiftInterval | None:
     try:
         return service.get_worker_day_shift(session, worker_id, route_date)
@@ -188,7 +188,7 @@ def get_worker_shift_for_date(
 def list_worker_shift_exceptions(
     worker_id: Annotated[int, Path(ge=1, le=2_147_483_647)],
     session: DatabaseSession,
-    current_user: CurrentUser,
+    _: RequireObserver,
     start_date: Annotated[date | None, Query(description="Начальная дата выборки")] = None,
     end_date: Annotated[date | None, Query(description="Конечная дата выборки")] = None,
 ) -> list[WorkerShiftExceptionRead]:
