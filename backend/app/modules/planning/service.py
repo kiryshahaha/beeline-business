@@ -48,6 +48,7 @@ from app.modules.routing.schemas import RouteCreate
 from app.modules.routing.service import RouteValidationError, save_routes_in_transaction
 from app.modules.routing.telemetry import RoutingTelemetry
 from app.modules.tickets import repository as ticket_repository
+from app.modules.tickets.enums import TicketCategory
 from app.modules.tickets.models import Ticket
 from app.modules.tickets.service import update_assignment_in_transaction
 from app.modules.users.models import User
@@ -87,6 +88,17 @@ def _notify_rescheduled_tickets(session: Session, revision: DayPlanRevision) -> 
                 "reason_text": reason_text,
             },
         )
+
+
+def ticket_event_policy(category: str) -> str:
+    """Select the planning policy for a persisted ticket category."""
+    try:
+        normalized_category = TicketCategory(category)
+    except (TypeError, ValueError) as error:
+        raise PlanningError("ticket_category_invalid", 409, category=category) from error
+    return (
+        "emergency_replan" if normalized_category is TicketCategory.EMERGENCY else "regular_insert"
+    )
 
 
 def utc_now():
@@ -202,7 +214,11 @@ def _ordinary_insert_ticket_ids(snapshot):
         # The area query also sees older demand that was outside the original
         # preview. It is not a new arrival and must not turn this into insertion-only.
         return None
-    if any(ticket.get("category") == "emergency" for ticket in new_tickets):
+    if any(
+        ticket.get("category") is not None
+        and ticket_event_policy(ticket["category"]) == "emergency_replan"
+        for ticket in new_tickets
+    ):
         return None
     return {
         ticket["id"]
