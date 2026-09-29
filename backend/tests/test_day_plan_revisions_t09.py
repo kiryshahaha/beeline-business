@@ -630,7 +630,7 @@ class DayPlanRevisionApiTests(CommittedDatabaseTestCase):
                 "experimental_ticket_not_in_day",
             ),
             (
-                initial["day_revision"] - 1,
+                initial["day_revision"] + 1,
                 ticket_id,
                 "2030-01-15T08:00:00+03:00",
                 "2030-01-15T23:59:00+03:00",

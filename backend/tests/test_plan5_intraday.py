@@ -243,7 +243,9 @@ class ImportedAssignmentTests(DatabaseTestCase):
 
     def package(self, **ticket_fields):
         tables, _ = build_dataset()
-        tables["tickets"][0].update(ticket_fields)
+        tables["tickets"][0].update(
+            lifecycle_state="assigned", assigned_worker_id=9, **ticket_fields
+        )
         return parse_file(serialize(tables, "csv"), "acceptance.zip")
 
     def assert_refused(self, package, code):
@@ -266,13 +268,13 @@ class ImportedAssignmentTests(DatabaseTestCase):
         )
 
     def test_shift_is_checked_on_import(self):
-        # Worker 9 works 08:00–20:00; the visit cannot start before the evening.
+        # Worker 9 works 09:00–21:00; the visit starts after the shift.
         self.assert_refused(
             self.package(
-                visit_window_start=moscow("20:30"),
-                visit_window_end=moscow("22:00"),
-                planned_start_at=moscow("20:30"),
-                planned_end_at=moscow("21:00"),
+                visit_window_start=moscow("21:30"),
+                visit_window_end=moscow("22:30"),
+                planned_start_at=moscow("21:30"),
+                planned_end_at=moscow("22:00"),
             ),
             "outside_shift_horizon",
         )
