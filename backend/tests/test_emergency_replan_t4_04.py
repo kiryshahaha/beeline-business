@@ -67,14 +67,17 @@ class EmergencyReplanTests(unittest.TestCase):
             99: {
                 "category": "emergency",
                 "received_at": "2026-09-30T09:15:00+03:00",
+                "response_deadline_at": "2026-09-30T10:15:00+03:00",
             },
             98: {
                 "category": "emergency",
                 "received_at": "2026-09-30T08:00:00+03:00",
+                "response_deadline_at": "2026-09-30T10:00:00+03:00",
             },
             97: {
                 "category": "emergency",
                 "received_at": "2026-09-30T07:00:00+03:00",
+                "response_deadline_at": "2026-09-30T09:00:00+03:00",
             },
         }
         summary = build_emergency_replan_summary(None, after, tickets_metadata=meta)
@@ -88,6 +91,61 @@ class EmergencyReplanTests(unittest.TestCase):
 
         self.assertEqual(forecasts[97]["sla_status"], "violated")
         self.assertEqual(forecasts[97]["response_minutes"], 180)
+
+    def test_response_status_uses_each_ticket_deadline_and_reports_lateness(self):
+        after = {
+            "visits": [
+                self.visit(60, 10, 1, start="10:01:00", end="10:31:00"),
+                self.visit(120, 11, 1, start="09:30:00", end="10:00:00"),
+                self.visit(59, 12, 1, start="10:00:00", end="10:30:00"),
+                self.visit(121, 13, 1, start="10:00:00", end="10:30:00"),
+            ],
+            "unassigned_ticket_ids": [],
+        }
+        meta = {
+            60: {
+                "category": "emergency",
+                "received_at": "2026-09-30T09:00:00+03:00",
+                "response_deadline_at": "2026-09-30T10:00:00+03:00",
+            },
+            120: {
+                "category": "emergency",
+                "received_at": "2026-09-30T08:00:00+03:00",
+                "response_deadline_at": "2026-09-30T10:00:00+03:00",
+            },
+            59: {
+                "category": "emergency",
+                "received_at": "2026-09-30T09:00:00+03:00",
+                "response_deadline_at": "2026-09-30T10:00:00+03:00",
+            },
+            121: {
+                "category": "emergency",
+                "received_at": "2026-09-30T08:00:00+03:00",
+                "response_deadline_at": "2026-09-30T10:00:00+03:00",
+            },
+        }
+
+        forecasts = {
+            item["ticket_id"]: item
+            for item in build_emergency_replan_summary(None, after, tickets_metadata=meta)[
+                "emergency_sla_forecasts"
+            ]
+        }
+
+        self.assertEqual(forecasts[60]["target_minutes"], 60)
+        self.assertFalse(forecasts[60]["response_deadline_met"])
+        self.assertEqual(forecasts[60]["response_lateness_minutes"], 1)
+        self.assertEqual(forecasts[60]["sla_status"], "violated")
+        self.assertEqual(forecasts[120]["target_minutes"], 120)
+        self.assertTrue(forecasts[120]["response_deadline_met"])
+        self.assertEqual(forecasts[120]["response_lateness_minutes"], 0)
+        self.assertEqual(forecasts[120]["sla_status"], "acceptable")
+        self.assertTrue(forecasts[59]["response_deadline_met"])
+        self.assertEqual(forecasts[59]["response_minutes"], 60)
+        self.assertEqual(forecasts[59]["sla_status"], "on_time")
+        self.assertTrue(forecasts[121]["response_deadline_met"])
+        self.assertEqual(forecasts[121]["response_minutes"], 120)
+        self.assertEqual(forecasts[121]["sla_status"], "acceptable")
 
     def test_diff_states_includes_emergency_summary(self):
         before = {

@@ -84,6 +84,7 @@ class TicketEventRead(BaseModel):
     shifted_ticket_ids: list[PositiveInt32] = Field(default_factory=list)
     preserved_current_stage: list[dict] = Field(default_factory=list)
     candidate_reasons: list[dict] = Field(default_factory=list)
+    selection_reason: dict[str, object] | None = None
     sla_forecast: EmergencyResponseEstimate | None = None
     reason: str | None = None
 
@@ -377,10 +378,22 @@ class EmergencyResponseEstimate(BaseModel):
     arrival_at: datetime | None
     service_start_at: datetime | None
     service_end_at: datetime | None
+    visit_window_start: datetime | None
+    visit_window_end: datetime | None
     reaction_to_arrival_minutes: int | None
     reaction_to_service_start_minutes: int | None
+    response_deadline_at: datetime | None
+    response_target_minutes: int | None
+    response_deadline_met: bool | None
+    response_lateness_minutes: int | None
+    response_timeline_valid: bool | None
+    response_sla_status: Literal[
+        "on_time", "acceptable", "violated", "unknown", "invalid_timeline", "unassigned"
+    ]
     within_60_minutes_to_arrival: bool | None
     within_120_minutes_to_arrival: bool | None
+    within_60_minutes_to_service_start: bool | None
+    within_120_minutes_to_service_start: bool | None
     service_deadline_at: datetime | None
     service_deadline_met: bool | None
     status: Literal["scheduled", "unassigned", "received_at_missing"]

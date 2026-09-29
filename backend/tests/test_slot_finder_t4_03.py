@@ -264,7 +264,103 @@ class SlotFinderTests(unittest.TestCase):
 
         self.assertEqual(result.status, "slot_found")
         self.assertEqual(result.selected.insertion_sequence, 2)
-        self.assertEqual(result.selected.added_travel_minutes, 0)
+        self.assertEqual(result.selected.replaced_travel_minutes, 15)
+        self.assertEqual(result.selected.added_travel_minutes, -11)
+
+    def test_first_slot_replaces_existing_office_leg(self):
+        self.now = self.shift_start
+        baseline = {
+            "visits": [
+                {
+                    "ticket_id": 1,
+                    "worker_id": 10,
+                    "sequence": 1,
+                    "location_id": 101,
+                    "service_start_at": "2026-09-30T10:00:00+03:00",
+                    "service_end_at": "2026-09-30T10:30:00+03:00",
+                }
+            ]
+        }
+        travel = {(100, 101): 20, (100, 102): 5, (102, 101): 5}
+        result = find_regular_ticket_slot(
+            ticket={
+                "id": 99,
+                "location_id": 102,
+                "estimated_duration_minutes": 30,
+                "visit_window_start": "2026-09-30T08:00:00+03:00",
+                "visit_window_end": "2026-09-30T09:00:00+03:00",
+            },
+            candidate_workers=[self.worker_1],
+            baseline_state=baseline,
+            lifecycle_by_ticket={1: "assigned"},
+            travel_time_fn=lambda source, target, mode: (
+                0 if source == target else travel.get((source, target), 15)
+            ),
+            office_location_id=100,
+            now=self.now,
+        )
+        self.assertEqual(result.status, "slot_found")
+        self.assertEqual(result.selected.insertion_sequence, 1)
+        self.assertEqual(result.selected.replaced_travel_minutes, 20)
+        self.assertEqual(result.selected.added_travel_minutes, -10)
+
+    def test_existing_worker_precedes_idle_worker_in_objective(self):
+        baseline = {
+            "visits": [
+                {
+                    "ticket_id": 1,
+                    "worker_id": 10,
+                    "sequence": 1,
+                    "location_id": 101,
+                    "visit_window_start": "2026-09-30T09:00:00+03:00",
+                    "visit_window_end": "2026-09-30T10:00:00+03:00",
+                    "service_start_at": "2026-09-30T09:00:00+03:00",
+                    "service_end_at": "2026-09-30T09:30:00+03:00",
+                }
+            ]
+        }
+        result = find_regular_ticket_slot(
+            ticket={
+                "id": 99,
+                "location_id": 200,
+                "estimated_duration_minutes": 30,
+                "visit_window_start": "2026-09-30T12:00:00+03:00",
+                "visit_window_end": "2026-09-30T13:00:00+03:00",
+            },
+            candidate_workers=[self.worker_1, {**self.worker_2, "office_location_id": 200}],
+            baseline_state=baseline,
+            lifecycle_by_ticket={1: "assigned"},
+            travel_time_fn=self.travel_fn,
+            office_location_id=100,
+            now=self.now,
+            return_to_office=False,
+        )
+        self.assertEqual(result.status, "slot_found")
+        self.assertEqual(result.selected.worker_id, 10)
+        self.assertEqual(result.selected.insertion_sequence, 2)
+
+    def test_open_end_can_finish_at_shift_end_without_return_trip(self):
+        self.now = self.shift_end - timedelta(minutes=45)
+        ticket = {
+            "id": 99,
+            "location_id": 200,
+            "estimated_duration_minutes": 30,
+            "visit_window_start": "2026-09-30T19:30:00+03:00",
+            "visit_window_end": "2026-09-30T20:00:00+03:00",
+        }
+        kwargs = dict(
+            ticket=ticket,
+            candidate_workers=[self.worker_1],
+            baseline_state={"visits": []},
+            lifecycle_by_ticket={},
+            travel_time_fn=self.travel_fn,
+            office_location_id=100,
+            now=self.now,
+        )
+        self.assertEqual(find_regular_ticket_slot(**kwargs).status, "not_insertable")
+        open_result = find_regular_ticket_slot(**kwargs, return_to_office=False)
+        self.assertEqual(open_result.status, "slot_found")
+        self.assertEqual(open_result.selected.service_end_at, self.shift_end)
 
     def test_safe_point_prevents_inserting_before_in_progress_stop(self):
         baseline = {

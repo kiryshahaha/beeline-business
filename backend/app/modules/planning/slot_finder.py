@@ -56,6 +56,7 @@ def find_regular_ticket_slot(
     travel_time_fn: Callable[[int, int, str], int],
     office_location_id: int,
     now: datetime,
+    return_to_office: bool = True,
 ) -> InsertionResult:
     """Find the best feasible slot for an incoming regular ticket across day workers.
 
@@ -174,7 +175,7 @@ def find_regular_ticket_slot(
                 next_v = route_visits[insert_idx]
                 next_loc = next_v.get("location_id", worker_office_location_id)
             else:
-                next_loc = worker_office_location_id
+                next_loc = worker_office_location_id if return_to_office else ticket_loc
 
             # Leg 1: prev -> ticket
             travel_to = travel_time_fn(prev_loc, ticket_loc, w_transport)
@@ -247,7 +248,11 @@ def find_regular_ticket_slot(
             if not cascade_ok:
                 continue
 
-            return_leg = travel_time_fn(current_sim_loc, worker_office_location_id, w_transport)
+            return_leg = (
+                travel_time_fn(current_sim_loc, worker_office_location_id, w_transport)
+                if return_to_office
+                else 0
+            )
             if current_sim_time + timedelta(minutes=return_leg) > shift_end:
                 rejection_reasons_worker.append(
                     f"pos_{insert_idx}: return to office exceeds shift end"
@@ -257,10 +262,10 @@ def find_regular_ticket_slot(
             # Calculate added travel time: travel_to + travel_from - original_leg
             orig_leg = (
                 travel_time_fn(prev_loc, next_loc, w_transport)
-                if (insert_idx > 0 and insert_idx < num_existing)
+                if num_existing and (insert_idx < num_existing or return_to_office)
                 else 0
             )
-            added_travel = max(0, travel_to + travel_from - orig_leg)
+            added_travel = travel_to + travel_from - orig_leg
 
             # Build proposed_state
             new_ticket_visit = {
@@ -333,11 +338,11 @@ def find_regular_ticket_slot(
                 proposed_state=proposed_state,
             )
 
-            # Keep candidate with smallest added_travel_minutes
-            if (
-                worker_best_slot is None
-                or candidate.added_travel_minutes < worker_best_slot.added_travel_minutes
-            ):
+            # Keep the best slot for this worker by the same travel tie-breakers.
+            if worker_best_slot is None or (
+                candidate.added_travel_minutes,
+                candidate.service_start_at,
+            ) < (worker_best_slot.added_travel_minutes, worker_best_slot.service_start_at):
                 worker_best_slot = candidate
 
         if worker_best_slot is not None:
@@ -359,10 +364,15 @@ def find_regular_ticket_slot(
             summary_message="Заявка не может быть добавлена без изменения назначений",
         )
 
-    # Choose slot with minimal added_travel_minutes, tie-break by earlier service_start_at
+    # A new active worker outranks a shorter drive in the planner's objective order.
     best = min(
         feasible_slots,
-        key=lambda s: (s.added_travel_minutes, s.service_start_at),
+        key=lambda s: (
+            not bool(visits_by_worker.get(s.worker_id)),
+            s.added_travel_minutes,
+            s.service_start_at,
+            s.worker_id,
+        ),
     )
 
     return InsertionResult(

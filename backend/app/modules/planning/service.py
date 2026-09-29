@@ -43,6 +43,7 @@ from app.modules.planning.models import PlanningPlan, PlanningPlanRoute
 from app.modules.planning.policy import execution_policy, policy_snapshot, snapshot_policy
 from app.modules.planning.reasons import legacy_public
 from app.modules.planning.repository import TICKET_LOCAL_DAY, load_snapshot
+from app.modules.planning.response_sla import response_sla
 from app.modules.planning.schemas import PreviewRequest
 from app.modules.planning.slot_finder import find_regular_ticket_slot
 from app.modules.planning.snapshot import fingerprint, normalize
@@ -448,6 +449,7 @@ async def find_regular_ticket_insertion(
         travel_time_fn=travel_time,
         office_location_id=office_location_id,
         now=clock(),
+        return_to_office=snapshot_policy(snapshot).route_end == "return_to_brigade_office",
     )
     return result, prepared, None
 
@@ -826,6 +828,8 @@ async def preview(
                 "category": ticket.get("category"),
                 "received_at": ticket.get("received_at"),
                 "response_deadline_at": ticket.get("response_deadline_at"),
+                "visit_window_start": ticket.get("visit_window_start"),
+                "visit_window_end": ticket.get("visit_window_end"),
             }
             for ticket in snapshot.get("tickets", [])
         }
@@ -926,15 +930,14 @@ def emergency_response_estimates(snapshot: dict, public: dict) -> list[dict]:
             else None
         )
         arrival_minutes = (
-            max(0, ceil((arrival - received).total_seconds() / 60))
+            ceil((arrival - received).total_seconds() / 60)
             if arrival is not None and received is not None
             else None
         )
-        service_minutes = (
-            max(0, ceil((service_start - received).total_seconds() / 60))
-            if service_start is not None and received is not None
-            else None
-        )
+        response = response_sla(received, ticket.get("response_deadline_at"), service_start)
+        if stop is None and ticket.get("response_deadline_at") is not None:
+            response["response_deadline_met"] = False
+            response["response_sla_status"] = "unassigned"
         estimates.append(
             {
                 "ticket_id": ticket["id"],
@@ -942,13 +945,15 @@ def emergency_response_estimates(snapshot: dict, public: dict) -> list[dict]:
                 "arrival_at": arrival,
                 "service_start_at": service_start,
                 "service_end_at": service_end,
+                "visit_window_start": ticket.get("visit_window_start"),
+                "visit_window_end": ticket.get("visit_window_end"),
                 "reaction_to_arrival_minutes": arrival_minutes,
-                "reaction_to_service_start_minutes": service_minutes,
+                **response,
                 "within_60_minutes_to_arrival": (
-                    arrival_minutes <= 60 if arrival_minutes is not None else None
+                    0 <= arrival_minutes <= 60 if arrival_minutes is not None else None
                 ),
                 "within_120_minutes_to_arrival": (
-                    arrival_minutes <= 120 if arrival_minutes is not None else None
+                    0 <= arrival_minutes <= 120 if arrival_minutes is not None else None
                 ),
                 "service_deadline_at": deadline,
                 "service_deadline_met": (
@@ -996,18 +1001,34 @@ def build_ticket_event_result(ticket_event, snapshot, prepared, public, event_in
             can_apply = False
         else:
             response_minutes = (forecast or {}).get("reaction_to_service_start_minutes")
-            if (forecast or {}).get("service_deadline_met") is False:
+            response_deadline_met = (forecast or {}).get("response_deadline_met")
+            if response_deadline_met is False:
                 outcome_code = "sla_violation"
-            elif response_minutes is not None and response_minutes > 120:
+            elif (
+                response_deadline_met is None
+                and response_minutes is not None
+                and response_minutes > 120
+            ):
                 outcome_code = "sla_violation"
             elif response_minutes is not None and response_minutes > 60:
                 outcome_code = "sla_risk"
             else:
                 outcome_code = "emergency_replan_ready"
             can_apply = True
+        selection_reason = (
+            {
+                "code": "emergency_response_priority",
+                "selected_worker_id": stop["worker_id"],
+                "selected_sequence": stop["sequence"],
+                "objective_components": public.get("objective_components"),
+            }
+            if stop is not None
+            else None
+        )
     else:
         outcome_code = "insertion_ready"
         can_apply = stop is not None and event_insertion is not None
+        selection_reason = None
 
     selected_slot = None
     road_contribution = None
@@ -1125,6 +1146,7 @@ def build_ticket_event_result(ticket_event, snapshot, prepared, public, event_in
             "shifted_ticket_ids": sorted(changed_ids),
             "preserved_current_stage": frozen,
             "candidate_reasons": candidates,
+            "selection_reason": selection_reason,
             "sla_forecast": forecast,
             "reason": (rejection or {}).get("reason", {}).get("code"),
         }
