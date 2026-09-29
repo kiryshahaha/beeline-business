@@ -653,5 +653,97 @@
   margin-top: 1px;
 }
 
+.assignPreviewBox {
+  margin-top: 6px;
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 1.35;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
 
+.assignPreviewEligible {
+  border-color: rgba(48, 209, 88, 0.35);
+  background: rgba(48, 209, 88, 0.08);
+}
 
+.assignPreviewIneligible {
+  border-color: rgba(255, 69, 58, 0.35);
+  background: rgba(255, 69, 58, 0.08);
+}
+
+.assignPreviewTitle {
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.assignPreviewStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.assignPinnedRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  user-select: none;
+}
+
+.assignPinnedCheckbox {
+  cursor: pointer;
+  accent-color: #ffc800;
+}
+
+.assignConfirmBtn {
+  margin-top: 4px;
+  width: 100%;
+  background: #ffc800;
+  color: #000000;
+  font-weight: 700;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.assignConfirmBtn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.assignConfirmBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.assignCancelBtn {
+  margin-top: 4px;
+  width: 100%;
+  background: rgba(255, 69, 58, 0.15);
+  color: #ff453a;
+  border: 1px solid rgba(255, 69, 58, 0.3);
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.assignCancelBtn:hover:not(:disabled) {
+  background: rgba(255, 69, 58, 0.25);
+}

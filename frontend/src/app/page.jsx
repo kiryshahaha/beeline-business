@@ -8,6 +8,9 @@ import Notifications from "@/components/Notifications/Notifications";
 import Layers from "@/components/Layers/Layers";
 import Menu from "@/components/Menu/Menu";
 import CreateTicketModal from "@/components/Modals/CreateTicketModal";
+import PlanningModal from "@/components/Modals/PlanningModal";
+import CompletionReviewsModal from "@/components/Modals/CompletionReviewsModal";
+import DatePicker from "@/components/ui/DatePicker/DatePicker";
 import StarrySky from "@/components/StarrySky/StarrySky";
 import { useTickets } from "@/hooks/useTickets";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -17,6 +20,7 @@ import { useUsers } from "@/hooks/useUsers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useWorkerTasksRoute } from "@/hooks/useWorkerTasksRoute";
 import { useBrigades } from "@/hooks/useBrigades";
+import { useServiceAreas } from "@/hooks/useServiceAreas";
 import { fetchRealDistrictBoundary, isPointInPolygon } from "@/utils/districtGeometry";
 import { isTicketUrgent } from "@/utils/ticketUtils";
 import { apiFetch } from "@/lib/apiFetch";
@@ -42,85 +46,62 @@ export default function Home() {
   const mapRef = useRef(null);
   const [selectedBrigade, setSelectedBrigade] = useState(null);
   const [selectedWorker, setSelectedWorker] = useState(null);
+
+  const todayMsk = useMemo(() => {
+    return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Moscow" });
+  }, []);
+  const [dateFilter, setDateFilter] = useState({
+    mode: "single",
+    date: todayMsk,
+    from: todayMsk,
+    to: todayMsk,
+  });
+  const selectedServiceAreaId = null;
+  const [isPlanningModalOpen, setIsPlanningModalOpen] = useState(false);
+  const [isCompletionReviewsModalOpen, setIsCompletionReviewsModalOpen] = useState(false);
+  const [pendingReviewsCount, setPendingReviewsCount] = useState(0);
+
+  useEffect(() => {
+    let isSubscribed = true;
+    const loadReviews = async () => {
+      try {
+        const res = await apiFetch("/tickets/completion-reviews?state=pending&limit=50");
+        if (res.ok && isSubscribed) {
+          const list = await res.json();
+          setPendingReviewsCount(Array.isArray(list) ? list.length : 0);
+        }
+      } catch {
+        // silent
+      }
+    };
+    loadReviews();
+    const interval = setInterval(loadReviews, 30000);
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   const { tickets, ticketsData } = useTickets({
-    limit: 100,
-    offset: 0,
+    fetchAll: true,
+    date: dateFilter.mode === "single" ? (dateFilter.date || undefined) : undefined,
+    date_from: dateFilter.mode === "range" ? (dateFilter.from || undefined) : undefined,
+    date_to: dateFilter.mode === "range" ? (dateFilter.to || undefined) : undefined,
+    service_area_id: selectedServiceAreaId || undefined,
     ...(selectedBrigade ? { brigade_id: selectedBrigade.id } : {}),
   });
-  const [createdTickets, setCreatedTickets] = useState(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const cached = JSON.parse(localStorage.getItem("beeline_created_tickets_cache") || "[]");
-      if (Array.isArray(cached) && cached.length > 0) return cached;
-    } catch {}
-    return [
-      {
-        id: 3010,
-        title: "тест123",
-        description: null,
-        work_type_id: 9,
-        work_type: "Работы на подключение и дозаказы",
-        category: "repair",
-        priority: 3,
-        status: "planned",
-        location_id: 1011,
-        location: {
-          id: 1011,
-          city: "Москва",
-          district: "Тверской",
-          street: "Тверская",
-          building_number: "1",
-          latitude: 55.7558,
-          longitude: 37.6173,
-          address: "Москва, Тверской, Тверская, д. 1",
-        },
-      },
-    ];
-  });
 
-  // Восстановление созданных заявок пользователя
-  useEffect(() => {
-    if (!token) return;
-    try {
-      const savedIds = JSON.parse(localStorage.getItem("beeline_created_ticket_ids") || "[]");
-      const allKnownIds = [...new Set([3010, 3009, ...(Array.isArray(savedIds) ? savedIds : [])])];
-      if (allKnownIds.length > 0) {
-        Promise.all(
-          allKnownIds.slice(0, 25).map((id) =>
-            apiFetch(`/tickets/${id}`)
-              .then((res) => (res.ok ? res.json() : null))
-              .catch(() => null)
-          )
-        ).then((fetched) => {
-          const valid = fetched.filter(Boolean);
-          if (valid.length > 0) {
-            setCreatedTickets((prev) => {
-              const map = new Map(prev.map((t) => [t.id, t]));
-              valid.forEach((t) => map.set(t.id, t));
-              const updated = Array.from(map.values());
-              try {
-                localStorage.setItem("beeline_created_tickets_cache", JSON.stringify(updated.slice(0, 50)));
-              } catch {}
-              return updated;
-            });
-          }
-        });
-      }
-    } catch (e) {
-      console.warn("Failed to restore created tickets:", e);
-    }
-  }, [token]);
-
-  const allTickets = useMemo(() => {
-    if (!createdTickets.length) return tickets;
-    const existingIds = new Set(tickets.map((t) => t.id));
-    const newOnes = createdTickets.filter((t) => !existingIds.has(t.id));
-    return [...newOnes, ...tickets];
-  }, [tickets, createdTickets]);
+  const allTickets = tickets;
   const { offices, officesData } = useOffices();
   const { users, usersData } = useUsers({ role: "worker" });
   const { brigades = [] } = useBrigades();
-  const { routes, routesData } = useRoutes({ limit: 100 });
+  const { serviceAreas = [] } = useServiceAreas();
+  const { routes, routesData } = useRoutes({
+    route_date: dateFilter.mode === "single" ? (dateFilter.date || undefined) : undefined,
+    date_from: dateFilter.mode === "range" ? (dateFilter.from || undefined) : undefined,
+    date_to: dateFilter.mode === "range" ? (dateFilter.to || undefined) : undefined,
+    limit: 100,
+  });
   const [selectedObject, setSelectedObject] = useState(null);
   const [visibleLayers, setVisibleLayers] = useState({
     tickets: true,
@@ -232,6 +213,25 @@ export default function Home() {
       }
     });
 
+    // Зоны обслуживания из бэкенда (FE-09)
+    (serviceAreas || []).forEach((sa) => {
+      const name = sa.name;
+      if (!name) return;
+      if (!districtMap.has(name)) {
+        districtMap.set(name, {
+          name,
+          service_area_id: sa.id,
+          city: sa.city || "Москва",
+          office: null,
+          ticketsCount: 0,
+        });
+      } else {
+        const existing = districtMap.get(name);
+        existing.service_area_id = sa.id;
+        if (sa.city) existing.city = sa.city;
+      }
+    });
+
     // Административные округа Москвы
     MOSCOW_ADMIN_OKRUGS.forEach((okrug) => {
       const office = officesFullInfo.find((o) => {
@@ -265,7 +265,7 @@ export default function Home() {
     });
 
     return Array.from(districtMap.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
-  }, [officesFullInfo, allTickets, locationById]);
+  }, [officesFullInfo, allTickets, locationById, serviceAreas]);
 
   // Выбранный офис (если тип объекта — office или сохранен фокус)
   const selectedOffice = useMemo(() => {
@@ -371,7 +371,8 @@ export default function Home() {
       (district && district.toLowerCase().includes("округ"));
     const city =
       currentOffice?.city ||
-      (isOkrug ? "Москва" : (activeDistrict ? "Санкт-Петербург" : undefined));
+      activeDistrictObj?.city ||
+      (isOkrug ? "Москва" : undefined);
 
     if (!district && (lat == null || lon == null)) {
       Promise.resolve().then(() => {
@@ -418,7 +419,7 @@ export default function Home() {
     return () => {
       isCancelled = true;
     };
-  }, [activeDistrict, activeDistrictObj?.isOkrug, focusedOffice, selectedOffice, selectedDistrict]);
+  }, [activeDistrict, activeDistrictObj?.isOkrug, activeDistrictObj?.city, focusedOffice, selectedOffice, selectedDistrict]);
 
   const deselectObject = () => {
     setSelectedObject(null);
@@ -532,9 +533,8 @@ export default function Home() {
     const geom = districtBoundaryData?.geometry;
 
     return allTickets.filter((t) => {
-      // Всегда сохраняем выбранную, зафиксированную или только что созданную заявку!
+      // Всегда сохраняем выбранную или зафиксированную заявку!
       if (t.id === pinnedTicketId || t.id === selectedObject?.id) return true;
-      if (createdTickets.some((ct) => ct.id === t.id)) return true;
 
       const loc = t.location || locationById.get(t.location_id);
       if (!loc) return false;
@@ -576,7 +576,6 @@ export default function Home() {
     locationById,
     pinnedTicketId,
     selectedObject,
-    createdTickets,
   ]);
 
   // 3.1. Реальные GeoJSON границы и bounds района
@@ -650,19 +649,11 @@ export default function Home() {
     }
 
     // Гарантируем присутствие выбранной пользователем заявки в списке (чтобы отображался ее маркер)
+    // Гарантируем присутствие выбранной пользователем заявки в списке (чтобы отображался ее маркер)
     if (selectedObject?.type === "ticket") {
       const selectedTicket = allTickets.find((t) => t.id === selectedObject.id) || selectedObject.ticket;
       if (selectedTicket && !result.some((t) => t.id === selectedObject.id)) {
         result = [selectedTicket, ...result];
-      }
-    }
-
-    // Гарантируем присутствие недавно созданных заявок, если не выбрана отдельная бригада
-    if (createdTickets.length > 0 && !selectedBrigade && !selectedWorker) {
-      const existingIds = new Set(result.map((t) => t.id));
-      const missingCreated = createdTickets.filter((t) => !existingIds.has(t.id));
-      if (missingCreated.length > 0) {
-        result = [...missingCreated, ...result];
       }
     }
 
@@ -678,7 +669,6 @@ export default function Home() {
     userById,
     brigadeById,
     selectedObject,
-    createdTickets,
   ]);
 
   // Задачи выбранного воркера для расчета его маршрута
@@ -783,13 +773,19 @@ export default function Home() {
 
   const mapPoints = [
     ...(visibleLayers.tickets
-      ? filteredTickets.map((ticket) => [ticket.location?.longitude, ticket.location?.latitude])
+      ? filteredTickets
+          .filter((t) => t?.location?.longitude != null && t?.location?.latitude != null)
+          .map((ticket) => [ticket.location.longitude, ticket.location.latitude])
       : []),
     ...(visibleLayers.workers
-      ? displayedWorkers.map((worker) => [worker.location.longitude, worker.location.latitude])
+      ? displayedWorkers
+          .filter((w) => w?.location?.longitude != null && w?.location?.latitude != null)
+          .map((worker) => [worker.location.longitude, worker.location.latitude])
       : []),
     ...(visibleLayers.offices
-      ? officesFullInfo.map((office) => [office.longitude, office.latitude])
+      ? officesFullInfo
+          .filter((o) => o?.longitude != null && o?.latitude != null)
+          .map((office) => [office.longitude, office.latitude])
       : []),
     ...routePoints,
   ];
@@ -882,8 +878,8 @@ export default function Home() {
           zIndex: 2000,
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div style={{ pointerEvents: "auto", display: "flex", gap: "8px", alignItems: "flex-start" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ pointerEvents: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
             <Search
               searchQuery={searchQuery}
               onSearchChange={handleSearchChange}
@@ -896,12 +892,14 @@ export default function Home() {
               selectedDistrict={activeDistrict}
               onSelectDistrict={(districtName) => {
                 if (!districtName) {
+                  setSelectedServiceAreaId(null);
                   resetDistrictFocus();
                 } else {
                   setSelectedDistrict(districtName);
                   const targetDist = districtsList.find(
                     (d) => d.name.toLowerCase() === districtName.toLowerCase()
                   );
+                  setSelectedServiceAreaId(targetDist?.service_area_id || null);
                   if (targetDist?.office) {
                     setFocusedOffice(targetDist.office);
                     selectObject("office", targetDist.office.office_id);
@@ -912,6 +910,81 @@ export default function Home() {
                 }
               }}
             />
+            {/* Гибкий брендовый выбор даты и периода (Single / Range / All) */}
+            <div style={{ pointerEvents: "auto", display: "flex", alignItems: "center" }}>
+              <DatePicker value={dateFilter} onChange={setDateFilter} />
+            </div>
+
+            {/* Кнопка запуска автопланирования (FE-18) */}
+            <button
+              type="button"
+              id="auto-planning-top-btn"
+              onClick={() => setIsPlanningModalOpen(true)}
+              style={{
+                height: "36px",
+                padding: "0 14px",
+                borderRadius: "12px",
+                background: "#1e293b",
+                border: "1px solid #334155",
+                color: "#ffc800",
+                fontSize: "13px",
+                fontWeight: 700,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                cursor: "pointer",
+                boxShadow: "var(--shadow-sm)",
+                transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+                whiteSpace: "nowrap",
+                userSelect: "none",
+                boxSizing: "border-box",
+              }}
+              title="Запустить расчет расписания и маршрутов OR-Tools"
+            >
+              <span>⚡</span>
+              <span>Автоплан</span>
+            </button>
+            <button
+              type="button"
+              id="completion-reviews-top-btn"
+              onClick={() => setIsCompletionReviewsModalOpen(true)}
+              style={{
+                height: "36px",
+                padding: "0 13px",
+                borderRadius: "12px",
+                background: pendingReviewsCount > 0 ? "rgba(255, 69, 58, 0.15)" : "#1e293b",
+                border: pendingReviewsCount > 0 ? "1px solid rgba(255, 69, 58, 0.4)" : "1px solid #334155",
+                color: pendingReviewsCount > 0 ? "#ff453a" : "#e2e8f0",
+                fontSize: "13px",
+                fontWeight: 700,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                cursor: "pointer",
+                boxShadow: "var(--shadow-sm)",
+                transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+                whiteSpace: "nowrap",
+                userSelect: "none",
+                boxSizing: "border-box",
+              }}
+              title="Заявки, ожидающие проверки выполнения"
+            >
+              <span>Проверка</span>
+              {pendingReviewsCount > 0 && (
+                <span
+                  style={{
+                    background: "#ff453a",
+                    color: "#ffffff",
+                    borderRadius: "10px",
+                    padding: "1px 6px",
+                    fontSize: "10px",
+                    fontWeight: 800,
+                  }}
+                >
+                  {pendingReviewsCount}
+                </span>
+              )}
+            </button>
             <button
               type="button"
               id="create-ticket-top-btn"
@@ -920,13 +993,13 @@ export default function Home() {
                 setIsCreateModalOpen(true);
               }}
               style={{
-                height: "32px",
-                padding: "0 13px",
+                height: "36px",
+                padding: "0 14px",
                 borderRadius: "12px",
                 background: "var(--beeline)",
                 border: "1px solid rgba(0, 0, 0, 0.12)",
                 color: "#111111",
-                fontSize: "12.5px",
+                fontSize: "13px",
                 fontWeight: 700,
                 display: "inline-flex",
                 alignItems: "center",
@@ -936,6 +1009,7 @@ export default function Home() {
                 transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
                 whiteSpace: "nowrap",
                 userSelect: "none",
+                boxSizing: "border-box",
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = "var(--beeline-hover)";
@@ -1109,22 +1183,6 @@ export default function Home() {
           setCreateModalCoords(null);
         }}
         onTicketCreated={(newTicket) => {
-          setCreatedTickets((prev) => [newTicket, ...prev.filter((t) => t.id !== newTicket.id)]);
-          try {
-            const savedCache = JSON.parse(localStorage.getItem("beeline_created_tickets_cache") || "[]");
-            localStorage.setItem(
-              "beeline_created_tickets_cache",
-              JSON.stringify([newTicket, ...savedCache.filter((t) => t.id !== newTicket.id)].slice(0, 50))
-            );
-            const saved = JSON.parse(localStorage.getItem("beeline_created_ticket_ids") || "[]");
-            if (!saved.includes(newTicket.id)) {
-              localStorage.setItem(
-                "beeline_created_ticket_ids",
-                JSON.stringify([newTicket.id, ...saved].slice(0, 50))
-              );
-            }
-          } catch {}
-
           const coords = [
             newTicket.location?.longitude ?? 37.6173,
             newTicket.location?.latitude ?? 55.7558,
@@ -1143,6 +1201,24 @@ export default function Home() {
               coordinates: coords,
             });
           }
+        }}
+      />
+
+      <PlanningModal
+        isOpen={isPlanningModalOpen}
+        onClose={() => setIsPlanningModalOpen(false)}
+        defaultDate={dateFilter.date || todayMsk}
+      />
+
+      <CompletionReviewsModal
+        isOpen={isCompletionReviewsModalOpen}
+        onClose={() => {
+          setIsCompletionReviewsModalOpen(false);
+          // Обновляем счетчик после закрытия модалки
+          apiFetch("/tickets/completion-reviews?state=pending&limit=50")
+            .then((r) => r.ok && r.json())
+            .then((list) => Array.isArray(list) && setPendingReviewsCount(list.length))
+            .catch(() => null);
         }}
       />
     </main>

@@ -83,6 +83,7 @@ class TicketExportApiTests(DatabaseTestCase):
                 "format": "csv",
                 "status": "completed",
                 "city_id": self.ids["cities"]["1"],
+                "profile": "raw",
             },
             headers=self.observer,
         )
@@ -139,10 +140,34 @@ class TicketExportApiTests(DatabaseTestCase):
         self.assertTrue(all(row["status"] == "completed" for row in rows))
         self.assertTrue(all(row["city_id"] == str(self.ids["cities"]["1"]) for row in rows))
 
+    def test_human_export_and_tickets_count_endpoint(self):
+        # 1. Test count endpoint
+        count_res = self.client.get(
+            "/api/v1/reports/tickets/count",
+            params={"status": "completed"},
+            headers=self.observer,
+        )
+        self.assertEqual(count_res.status_code, 200)
+        self.assertIn("count", count_res.json())
+        self.assertGreater(count_res.json()["count"], 0)
+
+        # 2. Test default human CSV export (semicolon delimited, Russian columns)
+        csv_res = self.client.get(
+            "/api/v1/reports/tickets/export",
+            params={"format": "csv", "status": "completed"},
+            headers=self.observer,
+        )
+        self.assertEqual(csv_res.status_code, 200)
+        decoded = csv_res.content.decode("utf-8-sig")
+        rows = list(csv.DictReader(io.StringIO(decoded), delimiter=";"))
+        self.assertGreater(len(rows), 0)
+        self.assertEqual(tuple(rows[0].keys()), service.HUMAN_COLUMNS)
+        self.assertTrue(all(row["Статус"] == "Выполнена" for row in rows))
+
     def test_xlsx_export_returns_workbook_and_applies_service_area_filter(self):
         response = self.client.get(
             "/api/v1/reports/tickets/export",
-            params={"format": "xlsx", "service_area_id": self.ids["service_areas"]["101"]},
+            params={"format": "xlsx", "service_area_id": self.ids["service_areas"]["101"], "profile": "raw"},
             headers=self.observer,
         )
 
@@ -182,7 +207,7 @@ class TicketExportApiTests(DatabaseTestCase):
         brigade_id = self.ids["brigades"]["1"]
         response = self.client.get(
             "/api/v1/reports/tickets/export",
-            params={"format": "csv", "brigade_id": brigade_id},
+            params={"format": "csv", "brigade_id": brigade_id, "profile": "raw"},
             headers=self.observer,
         )
 
@@ -302,6 +327,7 @@ class TicketExportSafetyTests(DatabaseTestCase):
             return ticket.id
 
     def export(self, **params):
+        params.setdefault("profile", "raw")
         return self.client.get(EXPORT, params=params, headers=self.observer)
 
     def test_formula_like_text_is_literal_in_every_text_field(self):

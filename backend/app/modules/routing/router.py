@@ -157,12 +157,23 @@ def list_routes(
     viewer: Viewer,
     worker_id: Annotated[int | None, Query(ge=1, le=2_147_483_647)] = None,
     route_date: date | None = None,
+    route_date_from: date | None = None,
+    route_date_to: date | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0, le=2_147_483_647)] = 0,
 ):
     """Список сохранённых маршрутов с фильтрацией."""
 
-    return service.list_routes(session, viewer, worker_id, route_date, limit, offset)
+    return service.list_routes(
+        session,
+        viewer,
+        worker_id,
+        route_date,
+        limit,
+        offset,
+        route_date_from=route_date_from,
+        route_date_to=route_date_to,
+    )
 
 
 @router.get("/{route_id}", response_model=RouteRead)

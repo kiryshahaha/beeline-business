@@ -414,6 +414,9 @@ def find_tickets(
     brigade_id: int | None = None,
     foreman_id: int | None = None,
     worker_id: int | None = None,
+    target_date: object | None = None,
+    date_from: object | None = None,
+    date_to: object | None = None,
 ) -> list[RowMapping]:
     conditions = []
     parameters: dict[str, object] = {"limit": limit, "offset": offset}
@@ -426,6 +429,16 @@ def find_tickets(
     if service_area_id is not None:
         conditions.append("COALESCE(t.service_area_id, b.service_area_id) = :service_area_id")
         parameters["service_area_id"] = service_area_id
+    if target_date is not None:
+        conditions.append("(COALESCE(t.planned_start_at, t.visit_window_start) AT TIME ZONE 'Europe/Moscow')::date = :target_date")
+        parameters["target_date"] = target_date
+    else:
+        if date_from is not None:
+            conditions.append("(COALESCE(t.planned_start_at, t.visit_window_start) AT TIME ZONE 'Europe/Moscow')::date >= :date_from")
+            parameters["date_from"] = date_from
+        if date_to is not None:
+            conditions.append("(COALESCE(t.planned_start_at, t.visit_window_start) AT TIME ZONE 'Europe/Moscow')::date <= :date_to")
+            parameters["date_to"] = date_to
     if brigade_id is not None:
         conditions.append("""
             (

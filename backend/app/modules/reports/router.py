@@ -1,5 +1,6 @@
 """HTTP endpoints for downloadable reports."""
 
+from datetime import date
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_session
 from app.modules.auth.dependencies import require_roles
 from app.modules.planning.router import get_clock
-from app.modules.reports import plans, service
+from app.modules.reports import plans, repository, service
 from app.modules.reports.errors import ReportError
 from app.modules.reports.tables import (
     CSV_MEDIA_TYPE,
@@ -49,6 +50,39 @@ def download(exported: ExportFile) -> StreamingResponse:
     )
 
 
+@router.get("/tickets/count")
+def count_tickets(
+    session: DatabaseSession,
+    _observer: Observer,
+    status: Annotated[TicketStatus | None, Query(description="Фильтр по статусу заявки.")] = None,
+    city_id: Annotated[
+        int | None, Query(ge=1, le=2_147_483_647, description="ID города места выполнения.")
+    ] = None,
+    service_area_id: Annotated[
+        int | None, Query(ge=1, le=2_147_483_647, description="ID района места выполнения.")
+    ] = None,
+    brigade_id: Annotated[
+        int | None,
+        Query(ge=1, le=2_147_483_647, description="ID бригады назначенных исполнителей."),
+    ] = None,
+    date_from: Annotated[date | None, Query(description="Начало периода (МСК)")] = None,
+    date_to: Annotated[date | None, Query(description="Конец периода (МСК)")] = None,
+    exclude_cancelled: Annotated[bool, Query(description="Исключить отмененные заявки")] = False,
+) -> dict[str, int]:
+    """Получить количество заявок, удовлетворяющих фильтрам отчета."""
+    count = repository.count_tickets(
+        session,
+        status=status.value if status is not None else None,
+        city_id=city_id,
+        service_area_id=service_area_id,
+        brigade_id=brigade_id,
+        date_from=date_from,
+        date_to=date_to,
+        exclude_cancelled=exclude_cancelled,
+    )
+    return {"count": count}
+
+
 @router.get(
     "/tickets/export",
     response_class=Response,
@@ -75,6 +109,10 @@ def export_tickets(
         int | None,
         Query(ge=1, le=2_147_483_647, description="ID бригады назначенных исполнителей."),
     ] = None,
+    date_from: Annotated[date | None, Query(description="Начало периода")] = None,
+    date_to: Annotated[date | None, Query(description="Конец периода")] = None,
+    exclude_cancelled: Annotated[bool, Query(description="Исключить отмененные заявки")] = False,
+    profile: Annotated[Literal["human", "raw"], Query(description="Схема колонок: human (понятные русские) или raw (БД)")] = "human",
 ) -> StreamingResponse:
     """Download all tickets matching the supplied filters."""
 
@@ -86,6 +124,10 @@ def export_tickets(
             city_id=city_id,
             service_area_id=service_area_id,
             brigade_id=brigade_id,
+            date_from=date_from,
+            date_to=date_to,
+            exclude_cancelled=exclude_cancelled,
+            profile=profile,
         )
     except ReportError as error:
         raise HTTPException(error.status, detail=error.detail) from error

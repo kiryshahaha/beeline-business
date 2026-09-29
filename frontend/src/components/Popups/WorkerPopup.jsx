@@ -33,7 +33,7 @@ export default function WorkerPopup({
     });
   }, [worker]);
 
-  if (!worker || !worker.location) return null;
+  if (!worker || worker.location?.longitude == null || worker.location?.latitude == null) return null;
 
   const fullName = [worker.surname, worker.name, worker.lastname]
     .filter(Boolean)
@@ -67,10 +67,10 @@ export default function WorkerPopup({
       }
 
       setIsOnLine(targetStatus);
-      // Инвалидируем кэш для обновления маркеров на карте
-      queryClient.invalidateQueries({ queryKey: ["users"] });
-      queryClient.invalidateQueries({ queryKey: ["workers"] });
-      queryClient.invalidateQueries({ queryKey: ["fast-stats"] });
+      // Инвалидируем кэш для обновления маркеров на карте (FE-04)
+      queryClient.invalidateQueries({ queryKey: ["usersList"] });
+      queryClient.invalidateQueries({ queryKey: ["fastStats"] });
+      queryClient.invalidateQueries({ queryKey: ["brigadesWorkload"] });
     } catch (err) {
       setErrorMessage(err.message || "Ошибка обновления");
     } finally {

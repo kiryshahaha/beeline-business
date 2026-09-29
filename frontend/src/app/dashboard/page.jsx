@@ -47,6 +47,7 @@ const Dashboard = () => {
     // Пресеты: 'all' (за весь период датасета), 'today' (сегодня), 'week' (неделя), 'month' (месяц), 'custom' (конкретная дата)
     const [selectedPreset, setSelectedPreset] = useState("all");
     const [customDate, setCustomDate] = useState("2026-09-21");
+    const [dashboardSearch, setDashboardSearch] = useState("");
     const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
     const popoverRef = React.useRef(null);
 
@@ -66,9 +67,37 @@ const Dashboard = () => {
     }, [isDatePopoverOpen]);
 
     // Определяем параметры для запросов
-    // 'all' -> period="month", date="2026-09-21" (отображает все 1500 заявок и загрузку бригад активного плана)
+    const todayMsk = React.useMemo(() => {
+        return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Moscow" });
+    }, []);
+
+    const { workloadDate, workloadDateFrom, workloadDateTo } = React.useMemo(() => {
+        if (selectedPreset === "custom") {
+            return { workloadDate: customDate, workloadDateFrom: undefined, workloadDateTo: undefined };
+        }
+        if (selectedPreset === "today") {
+            return { workloadDate: todayMsk, workloadDateFrom: undefined, workloadDateTo: undefined };
+        }
+        if (selectedPreset === "week") {
+            const [y, m, d] = todayMsk.split("-").map(Number);
+            const dt = new Date(Date.UTC(y, m - 1, d));
+            dt.setUTCDate(dt.getUTCDate() - 6);
+            const from = dt.toISOString().slice(0, 10);
+            return { workloadDate: undefined, workloadDateFrom: from, workloadDateTo: todayMsk };
+        }
+        if (selectedPreset === "month") {
+            const [y, m, d] = todayMsk.split("-").map(Number);
+            const dt = new Date(Date.UTC(y, m - 1, d));
+            dt.setUTCDate(dt.getUTCDate() - 29);
+            const from = dt.toISOString().slice(0, 10);
+            return { workloadDate: undefined, workloadDateFrom: from, workloadDateTo: todayMsk };
+        }
+        // "all" - передаем undefined, чтобы бэкенд рассчитал среднее по всем дням с активностью
+        return { workloadDate: undefined, workloadDateFrom: undefined, workloadDateTo: undefined };
+    }, [selectedPreset, customDate, todayMsk]);
+
     const queryPeriod = selectedPreset === "all" ? "month" : (selectedPreset === "custom" ? "today" : selectedPreset);
-    const queryDate = selectedPreset === "all" ? "2026-09-21" : (selectedPreset === "custom" ? customDate : undefined);
+    const queryDate = selectedPreset === "custom" ? customDate : undefined;
 
     const { stats, dataUpdatedAt: statsUpdatedAt, refetch: refetchStats, isLoading: isStatsLoading } = useFastStats();
     const { summary, summaryData } = useTicketsSummary({ period: queryPeriod, date: queryDate });
@@ -113,8 +142,14 @@ const Dashboard = () => {
 
     // Выбираем самое свежее время обновления
     const latestUpdate = Math.max(statsUpdatedAt || 0, summaryData?.dataUpdatedAt || 0);
-    const formattedDate = latestUpdate ? formatUpdateDate(latestUpdate) : "28 сентября, 14:32";
-    const currentTime = latestUpdate ? extractHoursMinutes(latestUpdate) : "14:32";
+    const fallbackMskDate = new Date().toLocaleDateString("ru-RU", {
+        timeZone: "Europe/Moscow",
+        day: "numeric",
+        month: "long",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+    const formattedDate = latestUpdate ? formatUpdateDate(latestUpdate) : fallbackMskDate;
 
     const avgDelay = stats?.average_delay_minutes || 0;
     const isWarn = avgDelay > 0 || (stats?.at_risk_tickets_count || 0) > 0;
@@ -140,7 +175,11 @@ const Dashboard = () => {
             {/* Верхняя панель */}
             <div className={styles.topPanel}>
                 <div className={styles.searchGroup}>
-                    <Search />
+                    <Search
+                        searchQuery={dashboardSearch}
+                        onSearchChange={setDashboardSearch}
+                        onClear={() => setDashboardSearch("")}
+                    />
                     <button
                         type="button"
                         className={styles.refreshBtn}
@@ -280,10 +319,10 @@ const Dashboard = () => {
                     <SmallStatsCard
                         header="Всего заявок"
                         num={totalTickets}
-                        trend="-8,4%"
+                        trend=""
                         trendType="neutral"
                         svg="/icons/tasksSum.svg"
-                        footer="За текущий период"
+                        footer={selectedPreset === "today" ? "За сегодня" : selectedPreset === "week" ? "За 7 дней" : "За выбранный период"}
                         loading={isSummaryLoading}
                     />
                 </div>
@@ -292,22 +331,22 @@ const Dashboard = () => {
                     <SmallStatsCard
                         header="Выполнено"
                         num={completedTickets}
-                        trend="+12,6%"
+                        trend={`${completedPercent}%`}
                         trendType="positive"
                         svg="/icons/comletedTasks.svg"
-                        footer={`${completedPercent}% от всех заявок за период`}
+                        footer={`${completedPercent}% выполнено от общего числа`}
                         loading={isSummaryLoading}
                     />
                 </div>
 
                 <div className={styles.kpiCol}>
                     <SmallStatsCard
-                        header="Просрочено"
+                        header="Под угрозой SLA"
                         num={atRiskCount}
-                        trend="+3"
-                        trendType="negative"
+                        trend={avgDelay > 0 ? `+${avgDelay}м` : "В норме"}
+                        trendType={atRiskCount > 0 ? "negative" : "positive"}
                         svg="/icons/expiredTasks.svg"
-                        footer={`${atRiskCount} заявок требуют внимания`}
+                        footer={`${atRiskCount} заявок с угрозой задержки`}
                         loading={isStatsLoading}
                     />
                 </div>
@@ -319,7 +358,7 @@ const Dashboard = () => {
                         trend="км/день"
                         trendType="neutral"
                         svg="/icons/person.svg"
-                        footer="Среднее расстояние за 14 дней"
+                        footer="Средний пробег по маршрутам"
                         loading={isStatsLoading}
                     />
                 </div>
@@ -327,7 +366,10 @@ const Dashboard = () => {
                 {/* 2. Средний ряд: Загрузка бригад (7 колонок) */}
                 <div className={styles.workloadCol}>
                     <BrigadesWorkloadCard
-                        date={queryDate}
+                        date={workloadDate}
+                        date_from={workloadDateFrom}
+                        date_to={workloadDateTo}
+                        periodLabel={getFilterLabel()}
                         onOpenJournal={() => setIsJournalModalOpen(true)}
                         onUploadClick={() => setManualOpenModal(true)}
                     />
@@ -343,7 +385,7 @@ const Dashboard = () => {
 
                 {/* 4. Нижний блок: Выгрузка отчётов (12 колонок) */}
                 <div className={styles.reportsCol}>
-                    <ReportsExportSection currentTime={currentTime} />
+                    <ReportsExportSection />
                 </div>
             </div>
 
@@ -357,6 +399,11 @@ const Dashboard = () => {
             <BrigadesJournalModal
                 isOpen={isJournalModalOpen}
                 onClose={() => setIsJournalModalOpen(false)}
+                date={workloadDate}
+                date_from={workloadDateFrom}
+                date_to={workloadDateTo}
+                periodLabel={getFilterLabel()}
+                initialSearch={dashboardSearch}
             />
 
             {/* Модальное окно журнала событий */}

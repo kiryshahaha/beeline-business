@@ -5,7 +5,7 @@ import path from "path";
 const GEOAPIFY_KEY =
   process.env.GEOAPIFY_API_KEY ||
   process.env.NEXT_PUBLIC_GEOAPIFY_API_KEY ||
-  "6178ae85cca24dc1a0f4bc5ae3a8d7bb";
+  "";
 
 function calculateBounds(geometry) {
   if (!geometry || !geometry.coordinates) return null;

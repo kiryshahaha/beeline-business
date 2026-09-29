@@ -21,18 +21,25 @@ export function useExportTickets() {
       city_id,
       service_area_id,
       brigade_id,
+      date_from,
+      date_to,
+      exclude_cancelled = false,
+      profile = "human",
     } = {}) => {
       setIsExporting(true);
       setExportError(null);
 
       try {
-        const urlParams = new URLSearchParams({ format });
+        const urlParams = new URLSearchParams({ format, profile });
         
-        // Передаем статус, только если выбран конкретный статус из TicketStatus
-        // (если "все, кроме отмененных" или null - бэкенд не фильтрует по status)
         if (status && status !== "all" && status !== "all_except_wont_fix") {
           urlParams.append("status", status);
         }
+        if (exclude_cancelled) {
+          urlParams.append("exclude_cancelled", "true");
+        }
+        if (date_from) urlParams.append("date_from", date_from);
+        if (date_to) urlParams.append("date_to", date_to);
         if (city_id) urlParams.append("city_id", String(city_id));
         if (service_area_id) urlParams.append("service_area_id", String(service_area_id));
         if (brigade_id) urlParams.append("brigade_id", String(brigade_id));

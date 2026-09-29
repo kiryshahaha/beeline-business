@@ -1,42 +1,80 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Beeline Business — Веб-интерфейс диспетчера (Frontend)
 
-Описание текущих файлов на русском: [src/README.md](src/README.md).
-Сейчас здесь стартовая страница Next.js, без готового интерфейса диспетчера.
-`package.json` задаёт команды dev/build/start/lint; `package-lock.json` фиксирует
-зависимости; `next.config.mjs` и `eslint.config.mjs` содержат настройки;
-`public/` — статические файлы. CI проверяет `npm ci`, `npm run lint`, `npm run build`.
+Веб-приложение для диспетчеров и координаторов выездных сервисных бригад ПАО «ВымпелКом» (Билайн). Реализовано на базе **Next.js 16 (App Router)**, **React 19**, **MapLibre GL** и **TanStack React Query v5**.
 
-## Getting Started
+---
 
-First, run the development server:
+## 🚀 Возможности
 
+- **Интерактивная карта операций**: отображение заявок с кластеризацией, зон обслуживания, выездных бригад в реальном времени и рассчитанных маршрутов.
+- **Диспетчеризация и ручное назначение**: подбор кандидатов с проверкой совместимости навыков, времени выполнения, расписания смен и резервирования оборудования (интеграция с Google OR-Tools).
+- **Пакетное автопланирование**: расчет оптимальных маршрутов и графиков для всех бригад на целевую дату с предпросмотром метрик и последующим применением.
+- **Панель аналитики (Dashboard)**: ключевые операционные метрики (SLA, загрузка бригад, просроченные заявки, динамика выездов).
+- **Экспорт отчетов**: генерация структурированных отчетов в форматах Excel (.xlsx) и CSV с фильтрацией по датам и статусам.
+- **Подтверждение завершения заявок**: интерфейс проверки фото-отчетов и результатов выполнения работ перед закрытием инцидента.
+
+---
+
+## 🔐 Роли и разграничение доступа
+
+Система авторизации использует JWT (access-токен в оперативной памяти, refresh-токен в защищенных httpOnly cookie).
+
+| Роль | Описание | Доступ в веб-панель |
+| :--- | :--- | :--- |
+| **`observer` / `admin`** | Диспетчер / Администратор | Полный доступ: создание заявок, назначение, автопланирование, экспорт отчетов, подтверждение работ. |
+| **`foreman`** | Бригадир выездной службы | Режим чтения (Read-Only): просмотр карты, списка заявок, маршрутов бригады. Действия модификации отключены. |
+| **`worker`** | Выездной специалист / мастер | Веб-интерфейс недоступен: отображается экран-заглушка с перенаправлением в мобильное приложение. |
+
+---
+
+## ⚙️ Переменные окружения
+
+Скопируйте пример файла конфигурации:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| Переменная | Обязательная | Описание | Значение по умолчанию |
+| :--- | :---: | :--- | :--- |
+| `NEXT_PUBLIC_API_URL` | **Да** | Базовый URL бэкенда FastAPI. Клиент автоматически дополняет суффикс `/api/v1`. | `http://localhost:8000` |
+| `NEXT_PUBLIC_MAPTILER_API_KEY` | Нет | API-ключ сервиса MapTiler для отображения векторных подложек и геокодинга адресов. | _(Пусто)_ |
+| `NEXT_PUBLIC_GEOAPIFY_API_KEY` | Нет | API-ключ Geoapify для запроса геометрий административных границ районов. | _(Пусто)_ |
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🛠️ Локальный запуск
 
-## Learn More
+1. **Установка зависимостей**:
+   ```bash
+   npm ci
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+2. **Запуск сервера разработки**:
+   ```bash
+   npm run dev
+   ```
+   Приложение доступно по адресу [http://localhost:3000](http://localhost:3000).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+3. **Проверка линтером**:
+   ```bash
+   npm run lint
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+4. **Сборка production-бандла**:
+   ```bash
+   npm run build
+   ```
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 🐳 Запуск через Docker
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Фронтенд собирается в многоэтапном образе (`Dockerfile`) в режиме `standalone`:
+```bash
+docker build -t beeline-frontend --build-arg NEXT_PUBLIC_API_URL=http://localhost:8000 .
+docker run -p 3000:3000 beeline-frontend
+```
+Либо в составе общего стека:
+```bash
+docker compose up -d frontend
+```

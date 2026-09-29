@@ -140,16 +140,23 @@ export default function SettingsPage() {
     setIsPinging(true);
     const start = performance.now();
     try {
-      const res = await apiFetch("/tickets?limit=1");
+      const res = await apiFetch("/ready");
       const end = performance.now();
       const latency = Math.round(end - start);
       if (res.ok) {
-        setBackendPing({ status: "online", latency });
+        const readyData = await res.json().catch(() => ({}));
+        setBackendPing({ status: readyData.database ? "online" : "degraded", latency });
+        setPlannerPing({
+          status: readyData.planner ? "online" : "offline",
+          version: "OR-Tools Engine",
+        });
       } else {
         setBackendPing({ status: "degraded", latency });
+        setPlannerPing({ status: "offline", version: "OR-Tools Engine" });
       }
     } catch {
       setBackendPing({ status: "offline", latency: null });
+      setPlannerPing({ status: "offline", version: "OR-Tools Engine" });
     } finally {
       setIsPinging(false);
     }
@@ -174,29 +181,6 @@ export default function SettingsPage() {
     } catch {}
   };
 
-  // Quick switch demo user
-  const handleSwitchAccount = async (username, password, roleName) => {
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_ENDPOINT}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ username, password }),
-      });
-      if (!res.ok) throw new Error("Не удалось переключить профиль");
-      const data = await res.json();
-      login(data.access_token);
-      showToast(`Профиль переключён на ${roleName}`);
-      // Re-fetch profile
-      const meRes = await apiFetch("/users/me");
-      if (meRes.ok) {
-        const meData = await meRes.json();
-        setUserProfile(meData);
-      }
-    } catch (err) {
-      showToast(err.message || "Ошибка переключения");
-    }
-  };
 
   // Reset all local preferences
   const handleResetDefaults = () => {
@@ -686,33 +670,6 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              {/* Quick Role Switcher for Testing */}
-              <div className={styles.settingsList}>
-                <div className={styles.settingRow}>
-                  <div className={styles.settingInfo}>
-                    <span className={styles.settingLabel}>Быстрое переключение тестовых профилей</span>
-                    <span className={styles.settingExplanation}>
-                      Смена роли между Диспетчером и Бригадиром в один клик для проверки прав доступа
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", gap: "10px" }}>
-                    <button
-                      type="button"
-                      className={`${styles.btn} ${styles.btnSecondary}`}
-                      onClick={() => handleSwitchAccount("demo_observer", "ObserverSecret123!", "Диспетчер")}
-                    >
-                      Войти как Observer
-                    </button>
-                    <button
-                      type="button"
-                      className={`${styles.btn} ${styles.btnSecondary}`}
-                      onClick={() => handleSwitchAccount("demo_foreman", "ForemanSecret123!", "Бригадир")}
-                    >
-                      Войти как Foreman
-                    </button>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 

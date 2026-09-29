@@ -2,6 +2,14 @@ import React from 'react';
 import styles from './Menu.module.css';
 import Image from 'next/image';
 import { useUsers } from '@/hooks/useUsers';
+import { useTickets } from '@/hooks/useTickets';
+
+const ROLE_LABELS = {
+    foreman: 'Бригадир',
+    worker: 'Инженер',
+    observer: 'Диспетчер',
+    admin: 'Администратор',
+};
 
 export const BrigadeDetailsPanel = ({
     brigade,
@@ -11,6 +19,7 @@ export const BrigadeDetailsPanel = ({
     onClose
 }) => {
     const { users = [] } = useUsers({ brigade_id: brigade.id });
+    const { tickets = [] } = useTickets({ limit: 100 });
     const [searchQuery, setSearchQuery] = React.useState('');
 
     // Filter users by search query
@@ -54,7 +63,7 @@ export const BrigadeDetailsPanel = ({
             </div>
 
             <div className={styles.detailsSubheader}>
-                {users.length} сотрудников
+                {users.length} специалистов
             </div>
 
             <div className={styles.brigadesContent}>
@@ -62,11 +71,18 @@ export const BrigadeDetailsPanel = ({
                     <div className={styles.emptyState}>Нет сотрудников</div>
                 )}
                 {filteredUsers.map(user => {
-                    // Mocking workload for now, as we don't have this in UserRead
-                    const currentTasks = user.id % 6; // random looking number 0-5
-                    const maxTasks = 5;
-                    const isActive = currentTasks > 0;
+                    const assignedTickets = tickets.filter(t => t.assigned_worker_id === user.id);
+                    const activeTickets = assignedTickets.filter(
+                        t => t.status !== "completed" && t.status !== "wont_fix"
+                    );
+                    const completedTickets = assignedTickets.filter(t => t.status === "completed");
+                    const isOnline = user.worker_profile?.is_on_line !== false;
+                    const isActive = activeTickets.length > 0;
                     const isSelected = selectedWorker?.id === user.id;
+
+                    const roleLabel = ROLE_LABELS[user.role] || 'Инженер';
+                    const maxCapacity = 5;
+                    const fillPercent = Math.min(100, Math.round((activeTickets.length / maxCapacity) * 100));
 
                     return (
                         <div
@@ -83,12 +99,12 @@ export const BrigadeDetailsPanel = ({
                                     <div className={styles.workerText}>
                                         <div className={styles.workerName}>{formatName(user.name, user.surname)}</div>
                                         <div className={styles.workerRole}>
-                                            {user.role === 'foreman' ? 'Бригадир' : 'Старший техник'}
+                                            {roleLabel}
                                         </div>
                                     </div>
                                 </div>
-                                <div className={`${styles.workerStatus} ${isActive ? styles.statusActive : styles.statusFree}`}>
-                                    {isActive ? 'Активен' : 'Свободен'}
+                                <div className={`${styles.workerStatus} ${!isOnline ? styles.statusFree : isActive ? styles.statusActive : styles.statusFree}`}>
+                                    {!isOnline ? 'Офлайн' : isActive ? 'В работе' : 'Свободен'}
                                 </div>
                             </div>
 
@@ -97,12 +113,18 @@ export const BrigadeDetailsPanel = ({
                             <div className={styles.workerWorkload}>
                                 <div className={styles.workloadText}>
                                     <span>Загрузка:</span>
-                                    <span><b>{currentTasks}/{maxTasks}</b> задач</span>
+                                    <span>
+                                        <b>{activeTickets.length}</b> активных
+                                        {completedTickets.length > 0 && ` · ${completedTickets.length} выполнено`}
+                                    </span>
                                 </div>
                                 <div className={styles.workloadBarBg}>
                                     <div
                                         className={styles.workloadBarFill}
-                                        style={{ width: `${(currentTasks / maxTasks) * 100}%` }}
+                                        style={{
+                                            width: `${fillPercent}%`,
+                                            background: fillPercent > 80 ? '#FF453A' : fillPercent > 50 ? '#FFC800' : '#30D158',
+                                        }}
                                     />
                                 </div>
                             </div>
@@ -120,13 +142,6 @@ export const BrigadeDetailsPanel = ({
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
-                    <div className={styles.searchDivider} />
-                    <button className={styles.filterBtn}>
-                        <div
-                            className={styles.filterIconMask}
-                            style={{ WebkitMaskImage: 'url("/icons/filters.svg")', maskImage: 'url("/icons/filters.svg")' }}
-                        />
-                    </button>
                 </div>
             </div>
         </div>

@@ -10,7 +10,7 @@ export function useLocations(ids = []) {
       queryKey: ["location", id],
 
       queryFn: async () => {
-        const res = await apiFetch(`/location/${id}`, token);
+        const res = await apiFetch(`/location/${id}`);
 
         if (!res.ok) {
           throw new Error(`Ошибка получения локации ${id}`);

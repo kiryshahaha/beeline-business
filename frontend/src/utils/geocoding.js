@@ -2,7 +2,7 @@
  * Geocoding and Reverse Geocoding helpers via MapTiler API with Geoapify fallback.
  */
 
-const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_API_KEY || "GgqQJqVNCH4XkEWcVnJs";
+const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_API_KEY || "";
 
 /**
  * Парсит компоненты адреса из ответа MapTiler feature

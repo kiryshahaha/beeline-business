@@ -1,15 +1,22 @@
 import { updateToken, getToken } from "@/lib/tokenBus";
 
-const BASE = process.env.NEXT_PUBLIC_ENDPOINT;
+const raw =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_ENDPOINT ||
+  "http://localhost:8000";
+
+export const API_BASE = raw.endsWith("/api/v1")
+  ? raw.replace(/\/+$/, "")
+  : `${raw.replace(/\/+$/, "")}/api/v1`;
 
 let refreshPromise = null;
 
 export function refreshSession() {
   if (refreshPromise) return refreshPromise;
-  
+
   refreshPromise = (async () => {
     try {
-      const res = await fetch(`${BASE}/auth/refresh`, {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: "POST",
         credentials: "include",
       });
@@ -42,7 +49,10 @@ export async function apiFetch(path, options = {}) {
     ...(options.headers || {}),
   };
 
-  let res = await fetch(`${BASE}${path}`, {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const url = `${API_BASE}${normalizedPath}`;
+
+  let res = await fetch(url, {
     ...options,
     headers,
     credentials: "include", // отправляем httpOnly cookie с каждым запросом
@@ -54,11 +64,26 @@ export async function apiFetch(path, options = {}) {
   try {
     const newToken = await refreshSession();
     const retryHeaders = { ...headers, Authorization: `Bearer ${newToken}` };
-    return fetch(`${BASE}${path}`, { ...options, headers: retryHeaders, credentials: "include" });
+    const retryRes = await fetch(url, {
+      ...options,
+      headers: retryHeaders,
+      credentials: "include",
+    });
+    if (retryRes.status === 401) {
+      updateToken(null);
+      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+        window.location.href = "/login";
+      }
+      throw new Error("Сессия истекла. Перенаправление на страницу входа.");
+    }
+    return retryRes;
   } catch (error) {
     updateToken(null);
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    if (typeof window !== "undefined") window.location.href = "/login";
+    if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.href = "/login";
+    }
     throw new Error("Сессия истекла. Перенаправление на страницу входа.");
   }
 }

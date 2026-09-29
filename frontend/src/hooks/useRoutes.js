@@ -8,19 +8,23 @@ import { apiFetch } from "@/lib/apiFetch";
 export function useRoutes({
   worker_id,
   route_date,
+  date_from,
+  date_to,
   limit = 100,
   offset = 0,
 } = {}) {
   const { token } = useAuth();
 
   const { data: routes = [], ...routesData } = useQuery({
-    queryKey: ["routesList", worker_id, route_date, limit, offset],
+    queryKey: ["routesList", worker_id, route_date, date_from, date_to, limit, offset],
     enabled: !!token,
 
     queryFn: async () => {
       const urlParams = new URLSearchParams({
         ...(worker_id != null && { worker_id: String(worker_id) }),
         ...(route_date && { route_date }),
+        ...(date_from && { route_date_from: date_from }),
+        ...(date_to && { route_date_to: date_to }),
         limit: String(limit),
         offset: String(offset),
       });

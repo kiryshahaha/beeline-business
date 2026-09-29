@@ -88,16 +88,34 @@ def brigades_workload(
         Query(
             ge=dt.date(2000, 1, 1),
             le=dt.date(2100, 12, 31),
-            description="Дата по Москве; по умолчанию сегодня.",
+            description="Дата по Москве; если задан диапазон date_from/date_to, считается среднее распределение.",
+        ),
+    ] = None,
+    date_from: Annotated[
+        dt.date | None,
+        Query(
+            ge=dt.date(2000, 1, 1),
+            le=dt.date(2100, 12, 31),
+            description="Начало периода для расчета среднего распределения загрузки бригад.",
+        ),
+    ] = None,
+    date_to: Annotated[
+        dt.date | None,
+        Query(
+            ge=dt.date(2000, 1, 1),
+            le=dt.date(2100, 12, 31),
+            description="Конец периода для расчета среднего распределения загрузки бригад.",
         ),
     ] = None,
 ) -> list[BrigadeWorkloadItem]:
-    """Загрузка бригад на дату по сменам: работа, дорога, ожидание, свободное время.
+    """Загрузка бригад на дату или среднее распределение за временной отрезок.
 
     Считается по тем же сменам, сохранённым маршрутам и отметкам недоступности, что
     использует планировщик и показывает расписание.
     """
-    return service.get_brigades_workload(session, current_user=current_user, day=date)
+    return service.get_brigades_workload(
+        session, current_user=current_user, day=date, date_from=date_from, date_to=date_to
+    )
 
 
 @router.get("/recent-activity", response_model=list[ActivityItem])

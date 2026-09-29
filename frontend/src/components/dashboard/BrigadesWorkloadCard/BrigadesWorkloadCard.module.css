@@ -98,19 +98,35 @@
 /* Направляющие горизонтальные линии шкалы */
 .yAxisGuide {
     position: absolute;
-    inset: 24px 0 54px 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
+    inset: 24px 0 58px 0;
     pointer-events: none;
     z-index: 1;
 }
 
 .guideLineRow {
+    position: absolute;
+    left: 0;
+    right: 0;
     display: flex;
     align-items: center;
     gap: 8px;
-    width: 100%;
+    transform: translateY(50%);
+}
+
+.guideLineRow100 {
+    bottom: 100%;
+}
+
+.guideLineRowOverloaded {
+    bottom: 80%;
+}
+
+.guideLineRowNorm {
+    bottom: 50%;
+}
+
+.guideLineRow0 {
+    bottom: 0%;
 }
 
 .guideLabel {
@@ -126,6 +142,10 @@
     color: #FFC800;
 }
 
+.guideLabelOverloaded {
+    color: #FF453A;
+}
+
 .guideLine {
     flex: 1;
     height: 1px;
@@ -134,7 +154,11 @@
 }
 
 .guideLineNorm {
-    border-top: 1px dashed rgba(255, 200, 0, 0.35);
+    border-top: 1px dashed rgba(255, 200, 0, 0.4);
+}
+
+.guideLineOverloaded {
+    border-top: 1px dashed rgba(255, 69, 58, 0.4);
 }
 
 /* Область столбцов */
@@ -199,7 +223,7 @@
 /* Подписи снизу */
 .colInfo {
     margin-top: 8px;
-    height: 46px;
+    height: 50px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -222,6 +246,14 @@
     font-size: 11px;
     color: #8E8E93;
     white-space: nowrap;
+    line-height: 1.2;
+}
+
+.colWorkers {
+    font-size: 10px;
+    color: #636366;
+    white-space: nowrap;
+    line-height: 1.2;
 }
 
 /* Скелетоны */
@@ -247,6 +279,12 @@
     width: 32px;
     height: 10px;
     margin-top: 4px;
+}
+
+.skeletonColSub2 {
+    width: 26px;
+    height: 9px;
+    margin-top: 3px;
 }
 
 /* Футер с кнопкой перехода */
