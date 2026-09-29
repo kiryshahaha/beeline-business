@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 from contextlib import ExitStack
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -187,14 +188,45 @@ def main():
             updated = {visit["ticket_id"]: visit for visit in current["visits"]}
             if set(updated) != set(old) | {regular_id}:
                 raise AssertionError("Regular apply changed the set of published tickets")
-            altered = [
+            reassigned = [
                 ticket_id
                 for ticket_id, previous in old.items()
                 if updated[ticket_id]["worker_id"] != previous["worker_id"]
-                or updated[ticket_id]["service_start_at"] != previous["service_start_at"]
             ]
-            if altered:
-                raise AssertionError(f"Regular apply moved published visits: {altered}")
+            if reassigned:
+                raise AssertionError(f"Regular apply reassigned published visits: {reassigned}")
+            # S05 keeps assignments and order; a later stop may start later inside its fixed
+            # window, and every such shift must be declared in the preview diff.
+            moved = sorted(
+                ticket_id
+                for ticket_id, previous in old.items()
+                if updated[ticket_id]["service_start_at"] != previous["service_start_at"]
+            )
+            undeclared = set(moved) - set(regular["event"]["shifted_ticket_ids"])
+            if undeclared:
+                raise AssertionError(f"Regular apply moved undeclared visits: {sorted(undeclared)}")
+            windows = {
+                ids["tickets"][str(case["ticket_id"])]: [
+                    datetime.fromisoformat(value) for value in case["window"]
+                ]
+                for case in scenarios["tickets"]
+            }
+            for ticket_id, visit in updated.items():
+                start = datetime.fromisoformat(visit["service_start_at"])
+                end = datetime.fromisoformat(visit["service_end_at"])
+                window_start, window_end = windows[ticket_id]
+                if start < window_start or end > window_end:
+                    raise AssertionError(f"Visit of ticket {ticket_id} left its window")
+                if ticket_id in old and start < datetime.fromisoformat(
+                    old[ticket_id]["service_start_at"]
+                ):
+                    raise AssertionError(f"Regular apply moved ticket {ticket_id} earlier")
+            inserted = updated[regular_id]
+            neighbours = [
+                v["sequence"] for v in old.values() if v["worker_id"] == inserted["worker_id"]
+            ]
+            if not neighbours or not min(neighbours) < inserted["sequence"] <= max(neighbours):
+                raise AssertionError("Regular ticket was not inserted between two stops")
             for worker_id in {visit["worker_id"] for visit in old.values()}:
                 before = [
                     v["ticket_id"]
@@ -219,6 +251,11 @@ def main():
                     "revision": current["revision"],
                     "published_visits": len(current["visits"]),
                     "old_visits_preserved": len(old),
+                    "inserted": {
+                        key: inserted[key]
+                        for key in ("worker_id", "sequence", "service_start_at", "service_end_at")
+                    },
+                    "shifted_within_windows": moved,
                     "already_applied_on_replay": replay["already_applied"],
                 }
             )
