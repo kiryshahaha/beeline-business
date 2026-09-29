@@ -63,7 +63,7 @@ services:
       PUBLIC_API_URL: ${PUBLIC_API_URL:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       # POST /api/v1/assistant/chat отвечает 503, пока помощник не включён.
-      ASSISTANT_ENABLED: ${ASSISTANT_ENABLED:-false}
+      ASSISTANT_ENABLED: ${ASSISTANT_ENABLED:-true}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
@@ -105,7 +105,7 @@ services:
     environment:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
     ports:
-      - "${OLLAMA_PORT:-11434}:11434"
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
@@ -152,7 +152,7 @@ services:
       ASSISTANT_MODEL: ${ASSISTANT_MODEL:-qwen3.5:2b}
       LLM_NUM_THREAD: ${LLM_NUM_THREAD:-}
     ports:
-      - "${ASSISTANT_PORT:-8002}:8002"
+      - "127.0.0.1:${ASSISTANT_PORT:-8002}:8002"
     depends_on:
       ollama-pull:
         condition: service_completed_successfully

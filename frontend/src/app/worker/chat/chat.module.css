@@ -44,12 +44,6 @@
   letter-spacing: -0.2px;
 }
 
-.onlineBadge {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--success);
-}
-
 .clearBtn {
   background: none;
   border: none;
@@ -62,6 +56,12 @@
 
 .clearBtn:hover {
   color: var(--text-secondary);
+}
+
+.clearBtn:disabled,
+.removeContextBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .ticketContextBanner {

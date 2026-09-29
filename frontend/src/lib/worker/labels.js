@@ -77,7 +77,7 @@ export const PROBLEM_TYPE_LABELS = Object.fromEntries(
 
 export const ASSISTANT_SOURCE_LABELS = {
   facts: "по данным системы",
-  knowledge: "по базе знаний",
+  knowledge: "со справкой по теме",
   model: "ответ модели",
 };
 

@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
+import { useAuth } from "@/providers/AuthProvider";
 import { sendAssistantChat } from "@/lib/worker/api";
 import { ASSISTANT_SOURCE_LABELS } from "@/lib/worker/labels";
 import styles from "./chat.module.css";
@@ -27,49 +28,83 @@ function createMsgId(prefix) {
   return `${prefix}-${msgSeq}`;
 }
 
+function parseTicketId(value) {
+  if (!value || !/^\d+$/.test(value)) return null;
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+function readSavedMessages(storageKey) {
+  if (!storageKey || typeof window === "undefined") return [INITIAL_MESSAGE];
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(storageKey) || "null");
+    if (!Array.isArray(saved)) return [INITIAL_MESSAGE];
+    const restored = saved
+      .filter(
+        (message) =>
+          message &&
+          (message.role === "user" || message.role === "assistant") &&
+          typeof message.content === "string"
+      )
+      .slice(-99)
+      .map((message) => ({
+        id: typeof message.id === "string" ? message.id : createMsgId(message.role[0]),
+        role: message.role,
+        content: message.content.slice(0, 4000),
+        source_type: typeof message.source_type === "string" ? message.source_type : undefined,
+      }));
+    return [INITIAL_MESSAGE, ...restored];
+  } catch {
+    return [INITIAL_MESSAGE];
+  }
+}
+
 export default function WorkerChatPage() {
+  const { user } = useAuth();
   const searchParams = useSearchParams();
   const initialTicketId = searchParams.get("ticket_id");
-
-  const [activeTicketId, setActiveTicketId] = useState(
-    initialTicketId ? parseInt(initialTicketId, 10) : null
+  return (
+    <WorkerChatConversation
+      key={user?.id ?? "guest"}
+      userId={user?.id ?? null}
+      initialTicketId={initialTicketId}
+    />
   );
+}
 
-  const [messages, setMessages] = useState(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = sessionStorage.getItem("worker_assistant_chat");
-        if (saved) return JSON.parse(saved);
-      } catch {
-        // ignore
-      }
-    }
-    return [INITIAL_MESSAGE];
-  });
+function WorkerChatConversation({ userId, initialTicketId }) {
+  const storageKey = userId != null ? `worker_assistant_chat:${userId}` : null;
+  const [detachedTicketParam, setDetachedTicketParam] = useState(null);
+  const activeTicketId =
+    detachedTicketParam === initialTicketId ? null : parseTicketId(initialTicketId);
+  const [messages, setMessages] = useState(() => readSavedMessages(storageKey));
 
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
   const messagesEndRef = useRef(null);
+  const isTypingRef = useRef(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (storageKey && typeof window !== "undefined") {
       try {
-        sessionStorage.setItem("worker_assistant_chat", JSON.stringify(messages));
+        sessionStorage.setItem(storageKey, JSON.stringify(messages.slice(-100)));
       } catch {
-        // ignore
+        // Ignore storage quota and privacy-mode errors.
       }
     }
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isTyping]);
+  }, [messages, isTyping, storageKey]);
 
   const handleSend = async (textToSend = input) => {
     const text = (textToSend || "").trim();
-    if (!text || isTyping) return;
+    if (!text || isTypingRef.current) return;
 
     setErrorMessage(null);
     setInput("");
+    isTypingRef.current = true;
+    setIsTyping(true);
 
     const userMessage = {
       id: createMsgId("u"),
@@ -80,25 +115,37 @@ export default function WorkerChatPage() {
 
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
-    setIsTyping(true);
 
-    // Prepare history: last <= 10 messages of user/assistant
-    const historyPayload = newMessages
-      .filter((m) => m.role === "user" || m.role === "assistant")
+    // The current message travels in `message`; history contains completed turns only.
+    const historyPayload = messages
+      .filter((m) => m.id !== "welcome" && (m.role === "user" || m.role === "assistant"))
       .slice(-10)
       .map((m) => ({ role: m.role, content: m.content }));
 
     try {
-      const response = await sendAssistantChat({
-        message: text,
-        history: historyPayload,
-        ticket_id: activeTicketId,
-      });
+      let response;
+      let usedTicketContext = Boolean(activeTicketId);
+      try {
+        response = await sendAssistantChat({
+          message: text,
+          history: historyPayload,
+          ticket_id: activeTicketId,
+        });
+      } catch (err) {
+        if (err.status !== 404 || !activeTicketId) throw err;
+        usedTicketContext = false;
+        setDetachedTicketParam(initialTicketId);
+        response = await sendAssistantChat({
+          message: text,
+          history: historyPayload,
+          ticket_id: null,
+        });
+      }
 
       const assistantMessage = {
         id: createMsgId("a"),
         role: "assistant",
-        content: response.answer || "Ответ получен",
+        content: `${!usedTicketContext && activeTicketId ? "Контекст заявки недоступен. Ответ дан без него.\n\n" : ""}${response.answer}`,
         source_type: response.source_type,
         sources: response.sources,
         intent: response.intent,
@@ -106,38 +153,24 @@ export default function WorkerChatPage() {
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
-      if (err.message === "Заявка снята" && activeTicketId) {
-        // Retry without ticket_id as required in specs
-        setActiveTicketId(null);
-        try {
-          const fallbackRes = await sendAssistantChat({
-            message: text,
-            history: historyPayload,
-            ticket_id: null,
-          });
-          const assistantMessage = {
-            id: createMsgId("a"),
-            role: "assistant",
-            content: fallbackRes.answer,
-            source_type: fallbackRes.source_type,
-          };
-          setMessages((prev) => [...prev, assistantMessage]);
-          return;
-        } catch (retryErr) {
-          setErrorMessage(retryErr.message);
-        }
-      } else {
-        setErrorMessage(err.message || "Помощник временно недоступен");
-      }
+      setMessages((prev) => prev.filter((message) => message.id !== userMessage.id));
+      setInput(text);
+      setErrorMessage(err.message || "Помощник временно недоступен");
     } finally {
+      isTypingRef.current = false;
       setIsTyping(false);
     }
   };
 
   const handleClearHistory = () => {
+    if (isTypingRef.current) return;
     setMessages([INITIAL_MESSAGE]);
-    if (typeof window !== "undefined") {
-      sessionStorage.removeItem("worker_assistant_chat");
+    if (storageKey && typeof window !== "undefined") {
+      try {
+        sessionStorage.removeItem(storageKey);
+      } catch {
+        // Ignore storage errors; the visible conversation is still cleared.
+      }
     }
   };
 
@@ -147,12 +180,12 @@ export default function WorkerChatPage() {
       <div className={styles.topHeader}>
         <div className={styles.titleInfo}>
           <h1 className={styles.title}>Чат-помощник</h1>
-          <span className={styles.onlineBadge}>● Онлайн</span>
         </div>
         <button
           type="button"
           className={styles.clearBtn}
           onClick={handleClearHistory}
+          disabled={isTyping}
           title="Очистить диалог"
         >
           Очистить
@@ -166,7 +199,8 @@ export default function WorkerChatPage() {
           <button
             type="button"
             className={styles.removeContextBtn}
-            onClick={() => setActiveTicketId(null)}
+            onClick={() => setDetachedTicketParam(initialTicketId)}
+            disabled={isTyping}
             title="Отвязать контекст заявки"
             aria-label="Отвязать"
           >

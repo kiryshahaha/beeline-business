@@ -183,9 +183,10 @@ export async function fetchWorkerRoutes(workerId, routeDate) {
  * POST /api/v1/assistant/chat
  */
 export async function sendAssistantChat({ message, history = [], ticket_id = null }) {
+  const previousMessages = Array.isArray(history) ? history : [];
   const body = {
     message: message.trim(),
-    history: history.slice(-10).map((m) => ({
+    history: previousMessages.slice(-10).map((m) => ({
       role: m.role,
       content: m.content.slice(0, 2000),
     })),
@@ -207,7 +208,7 @@ export async function sendAssistantChat({ message, history = [], ticket_id = nul
     } else if (res.status === 503) {
       errorMsg = "Помощник временно недоступен";
     } else if (res.status === 404 && ticket_id) {
-      errorMsg = "Заявка снята";
+      errorMsg = "Заявка недоступна";
     } else {
       errorMsg = formatApiError(data, errorMsg);
     }
@@ -215,6 +216,9 @@ export async function sendAssistantChat({ message, history = [], ticket_id = nul
     err.status = res.status;
     err.data = data;
     throw err;
+  }
+  if (!data || typeof data.answer !== "string" || !data.answer.trim()) {
+    throw new Error("Помощник вернул пустой ответ");
   }
   return data;
 }

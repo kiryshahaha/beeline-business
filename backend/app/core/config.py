@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     planning_max_snap_meters: float = Field(default=100, gt=0, le=1000)
     assistant_enabled: bool = False
     assistant_url: str = "http://assistant:8002"
-    assistant_timeout_seconds: float = Field(default=60, gt=0, le=120)
+    assistant_timeout_seconds: float = Field(default=130, gt=0, le=180)
     cors_origins: str = (
         "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000"
     )

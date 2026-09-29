@@ -858,6 +858,17 @@ async def assistant_chat(
 ) -> dict:
     """Proxy a bounded chat request with only role-visible application context."""
     started = perf_counter()
+    settings = get_settings()
+    if not settings.assistant_enabled:
+        oplog.log(
+            "assistant_chat",
+            user_id=user.id,
+            role=user.role.value,
+            status_code=503,
+            duration_ms=(perf_counter() - started) * 1000,
+        )
+        raise HTTPException(status_code=503, detail="Помощник временно недоступен")
+
     now = monotonic()
     async with _assistant_lock:
         requests = _assistant_requests[user.id]
@@ -874,23 +885,17 @@ async def assistant_chat(
             raise HTTPException(status_code=429, detail="Слишком много запросов к помощнику")
         requests.append(now)
 
-    settings = get_settings()
-    if not settings.assistant_enabled:
-        oplog.log(
-            "assistant_chat",
-            user_id=user.id,
-            role=user.role.value,
-            status_code=503,
-            duration_ms=(perf_counter() - started) * 1000,
-        )
-        raise HTTPException(status_code=503, detail="Помощник временно недоступен")
-
     context: dict = {}
     if user.role == UserRole.WORKER:
         today = datetime.now(MOSCOW).date()
         context["day"] = jsonable_encoder(get_my_day(session, user, today))
+        tomorrow_shift = get_worker_day_shift(session, user.id, today + timedelta(days=1))
         context["tomorrow_shift"] = jsonable_encoder(
-            get_my_day(session, user, today + timedelta(days=1))["shift"]
+            {
+                "is_working_day": tomorrow_shift is not None,
+                "start": tomorrow_shift.start if tomorrow_shift else None,
+                "end": tomorrow_shift.end if tomorrow_shift else None,
+            }
         )
 
     if data.ticket_id is not None:
