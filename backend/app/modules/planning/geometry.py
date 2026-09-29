@@ -34,7 +34,9 @@ class RouteBuildResult:
     corrections: list[EstimateCorrection]
 
 
-async def build_routes(prepared, problem, nodes, solution, provider, settings):
+async def build_routes(
+    prepared, problem, nodes, solution, provider, settings, *, allow_corrections: bool = True
+):
     locations = prepared["locations"]
     open_end: bool = problem.open_end
 
@@ -101,7 +103,7 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
                     distance_meters=route_meters,
                 )
 
-    if correction_by_edge:
+    if correction_by_edge and allow_corrections:
         return RouteBuildResult(
             routes=[], creates=[], corrections=list(correction_by_edge.values())
         )
@@ -170,9 +172,9 @@ async def build_routes(prepared, problem, nodes, solution, provider, settings):
                 physical_arrival_min = prev_service_end_min + conservative_travel
                 # service_start = max(physical_arrival, window_lower)
                 # The solver stores the service-start in arrival_time.
-                service_start_min = step.arrival_time
-                wait_minutes = service_start_min - physical_arrival_min
-                if wait_minutes < 0:
+                service_start_min = max(step.arrival_time, physical_arrival_min)
+                wait_minutes = max(0, step.arrival_time - physical_arrival_min)
+                if wait_minutes < 0 and allow_corrections:
                     raise PlanningError("routing_estimate_changed", 502)
                 physical_arrival = epoch + timedelta(minutes=physical_arrival_min)
                 service_start = epoch + timedelta(minutes=service_start_min)

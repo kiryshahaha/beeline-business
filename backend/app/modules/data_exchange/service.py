@@ -509,6 +509,23 @@ def import_data(session: Session, tables: dict[str, list[dict]], *, dry_run: boo
                                 inserted[name].append(dict(kept))
                                 continue
                         if name == "users":
+                            username = values.get("username")
+                            if username:
+                                existing = (
+                                    session.execute(
+                                        select(table).where(
+                                            func.lower(table.c.username) == func.lower(username)
+                                        )
+                                    )
+                                    .mappings()
+                                    .one_or_none()
+                                )
+                                if existing is not None:
+                                    if source_id is not None:
+                                        ids[name][source_id] = existing["id"]
+                                    inserted[name].append(dict(existing))
+                                    seen_references.setdefault(name, set()).add(existing["id"])
+                                    continue
                             # Imported accounts need a dispatcher to set a known password.
                             values["password_hash"] = hash_password(secrets.token_urlsafe(48))
                         if name == "routes":

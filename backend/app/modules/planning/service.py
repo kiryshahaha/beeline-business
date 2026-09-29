@@ -788,22 +788,25 @@ async def preview(
                         started = time.perf_counter()
                         try:
                             route_result = await build_routes(
-                                prepared, problem, nodes, solution, provider, settings
+                                prepared,
+                                problem,
+                                nodes,
+                                solution,
+                                provider,
+                                settings,
+                                allow_corrections=(attempt == 0),
                             )
                         finally:
                             telemetry.record_stage("route_fetch", time.perf_counter() - started)
-                        if route_result.corrections:
+                        if route_result.corrections and not attempt:
                             current_corrected_edges = {
                                 (c.profile, c.source, c.target) for c in route_result.corrections
                             }
-                            if attempt and (current_corrected_edges & previous_corrected_edges):
-                                raise PlanningError("routing_estimate_changed", 502)
                             previous_corrected_edges |= current_corrected_edges
-                            if not attempt:
-                                apply_estimate_corrections(
-                                    problem, prepared, nodes, route_result.corrections
-                                )
-                                continue
+                            apply_estimate_corrections(
+                                problem, prepared, nodes, route_result.corrections
+                            )
+                            continue
                         routes, creates = route_result.routes, route_result.creates
                         break
 
