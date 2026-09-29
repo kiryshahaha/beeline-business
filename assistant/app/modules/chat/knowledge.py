@@ -62,7 +62,7 @@ def load_chunks(root: Path) -> list[Chunk]:
             text = text.strip()
             chunks.append(
                 Chunk(
-                    path=str(path.relative_to(root)),
+                    path=path.relative_to(root).as_posix(),
                     title=title,
                     section=section.strip(),
                     text=text,

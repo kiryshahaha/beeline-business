@@ -235,6 +235,7 @@ class ScheduleApiTests(DatabaseTestCase):
                 "title": "Заявка",
                 "work_type": "Подключение клиентов Базовая",
                 "status": "planned",
+                "is_pinned": False,
                 **interval(moscow(17, 10), moscow(17, 11, 30)),
             },
         )

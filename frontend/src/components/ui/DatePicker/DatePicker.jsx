@@ -29,12 +29,14 @@ function formatHumanMskDate(dateStr) {
 export default function DatePicker({
   value, // { mode: 'single' | 'range' | 'all', date: 'YYYY-MM-DD', from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' }
   onChange,
+  singleOnly = false,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [hoverDate, setHoverDate] = useState(null);
   const wrapperRef = useRef(null);
 
   const todayStr = useMemo(() => getMskTodayStr(), []);
+  const effectiveMode = singleOnly ? "single" : (value?.mode || "single");
 
   // Текущий просматриваемый месяц в календаре (год и месяц 0..11)
   const [viewYear, setViewYear] = useState(() => {
@@ -155,9 +157,7 @@ export default function DatePicker({
 
   // Обработка клика по конкретному дню в сетке
   const handleDayClick = (dateStr) => {
-    const currentMode = value?.mode || "single";
-
-    if (currentMode === "single" || currentMode === "all") {
+    if (singleOnly || effectiveMode === "single" || effectiveMode === "all") {
       onChange({
         mode: "single",
         date: dateStr,
@@ -207,18 +207,18 @@ export default function DatePicker({
       const t = shiftDays(todayStr, 1);
       onChange({ mode: "single", date: t, from: t, to: t });
       setIsOpen(false);
-    } else if (presetKey === "week") {
+    } else if (!singleOnly && presetKey === "week") {
       const end = shiftDays(todayStr, 6);
       onChange({ mode: "range", date: todayStr, from: todayStr, to: end });
       setIsOpen(false);
-    } else if (presetKey === "month") {
+    } else if (!singleOnly && presetKey === "month") {
       const from = `${todayStr.slice(0, 7)}-01`;
       const [year, month] = todayStr.split("-").map(Number);
       const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
       const to = `${todayStr.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`;
       onChange({ mode: "range", date: from, from, to });
       setIsOpen(false);
-    } else if (presetKey === "all") {
+    } else if (!singleOnly && presetKey === "all") {
       onChange({ mode: "all", date: null, from: null, to: null });
       setIsOpen(false);
     }
@@ -226,18 +226,17 @@ export default function DatePicker({
 
   // Текст на триггере
   const triggerLabel = useMemo(() => {
-    const mode = value?.mode || "single";
-    if (mode === "all") {
+    if (effectiveMode === "all") {
       return "Все даты";
     }
-    if (mode === "single") {
+    if (effectiveMode === "single") {
       const d = value?.date || todayStr;
       if (d === todayStr) return `Сегодня, ${formatHumanMskDate(d)}`;
       if (d === shiftDays(todayStr, -1)) return `Вчера, ${formatHumanMskDate(d)}`;
       if (d === shiftDays(todayStr, 1)) return `Завтра, ${formatHumanMskDate(d)}`;
       return `${formatHumanMskDate(d)} ${d.slice(0, 4)}`;
     }
-    if (mode === "range") {
+    if (effectiveMode === "range") {
       if (value?.from && value?.to) {
         return `${formatHumanMskDate(value.from)} — ${formatHumanMskDate(value.to)}`;
       }
@@ -247,17 +246,17 @@ export default function DatePicker({
       return "Период";
     }
     return "Дата";
-  }, [value, todayStr]);
+  }, [effectiveMode, value, todayStr]);
 
   // Количество дней в диапазоне (для бейджа)
   const rangeDaysCount = useMemo(() => {
-    if (value?.mode === "range" && value?.from && value?.to) {
+    if (!singleOnly && effectiveMode === "range" && value?.from && value?.to) {
       const t1 = new Date(value.from).getTime();
       const t2 = new Date(value.to).getTime();
       return Math.round(Math.abs(t2 - t1) / (1000 * 3600 * 24)) + 1;
     }
     return null;
-  }, [value]);
+  }, [singleOnly, effectiveMode, value]);
 
   const monthNames = [
     "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -267,7 +266,7 @@ export default function DatePicker({
   return (
     <div className={styles.datePickerWrapper} ref={wrapperRef}>
       <div className={styles.triggerGroup}>
-        {value?.mode === "single" && (
+        {effectiveMode === "single" && (
           <button
             type="button"
             className={styles.stepBtn}
@@ -283,7 +282,7 @@ export default function DatePicker({
           type="button"
           className={styles.mainTriggerBtn}
           onClick={() => setIsOpen((prev) => !prev)}
-          title="Выбрать дату или период заявок"
+          title="Выбрать дату"
           aria-expanded={isOpen}
         >
           <span className={styles.calendarIcon}>
@@ -308,7 +307,7 @@ export default function DatePicker({
           </span>
         </button>
 
-        {value?.mode === "single" && (
+        {effectiveMode === "single" && (
           <button
             type="button"
             className={styles.stepBtn}
@@ -323,43 +322,49 @@ export default function DatePicker({
 
       {isOpen && (
         <div className={styles.dropdown} role="dialog" aria-label="Календарь">
-          {/* Режимы: День / Период / Все */}
-          <div className={styles.modeTabs}>
-            <button
-              type="button"
-              className={`${styles.modeTab} ${value?.mode === "single" ? styles.modeTabActive : ""}`}
-              onClick={() => onChange({ mode: "single", date: value?.date || todayStr, from: value?.date || todayStr, to: value?.date || todayStr })}
-            >
-              1 день
-            </button>
-            <button
-              type="button"
-              className={`${styles.modeTab} ${value?.mode === "range" ? styles.modeTabActive : ""}`}
-              onClick={() => {
-                const f = value?.from || value?.date || todayStr;
-                const t = value?.to || shiftDays(f, 6);
-                onChange({ mode: "range", date: f, from: f, to: t });
-              }}
-            >
-              Период
-            </button>
-            <button
-              type="button"
-              className={`${styles.modeTab} ${value?.mode === "all" ? styles.modeTabActive : ""}`}
-              onClick={() => selectPreset("all")}
-            >
-              Все
-            </button>
-          </div>
+          {/* Режимы: День / Период / Все (скрыты в режиме singleOnly) */}
+          {!singleOnly && (
+            <div className={styles.modeTabs}>
+              <button
+                type="button"
+                className={`${styles.modeTab} ${effectiveMode === "single" ? styles.modeTabActive : ""}`}
+                onClick={() => onChange({ mode: "single", date: value?.date || todayStr, from: value?.date || todayStr, to: value?.date || todayStr })}
+              >
+                1 день
+              </button>
+              <button
+                type="button"
+                className={`${styles.modeTab} ${effectiveMode === "range" ? styles.modeTabActive : ""}`}
+                onClick={() => {
+                  const f = value?.from || value?.date || todayStr;
+                  const t = value?.to || shiftDays(f, 6);
+                  onChange({ mode: "range", date: f, from: f, to: t });
+                }}
+              >
+                Период
+              </button>
+              <button
+                type="button"
+                className={`${styles.modeTab} ${effectiveMode === "all" ? styles.modeTabActive : ""}`}
+                onClick={() => selectPreset("all")}
+              >
+                Все
+              </button>
+            </div>
+          )}
 
           {/* Быстрые пресеты */}
           <div className={styles.presetsRow}>
             <button type="button" className={styles.presetChip} onClick={() => selectPreset("today")}>Сегодня</button>
             <button type="button" className={styles.presetChip} onClick={() => selectPreset("tomorrow")}>Завтра</button>
             <button type="button" className={styles.presetChip} onClick={() => selectPreset("yesterday")}>Вчера</button>
-            <button type="button" className={styles.presetChip} onClick={() => selectPreset("week")}>7 дней</button>
-            <button type="button" className={styles.presetChip} onClick={() => selectPreset("month")}>Месяц</button>
-            <button type="button" className={styles.presetChip} onClick={() => selectPreset("all")}>Сброс</button>
+            {!singleOnly && (
+              <>
+                <button type="button" className={styles.presetChip} onClick={() => selectPreset("week")}>7 дней</button>
+                <button type="button" className={styles.presetChip} onClick={() => selectPreset("month")}>Месяц</button>
+                <button type="button" className={styles.presetChip} onClick={() => selectPreset("all")}>Сброс</button>
+              </>
+            )}
           </div>
 
           {/* Шапка месяца */}
@@ -384,11 +389,11 @@ export default function DatePicker({
           <div className={styles.daysGrid} onMouseLeave={() => setHoverDate(null)}>
             {calendarDays.map(({ dateStr, dayNum, isCurrentMonth }) => {
               const isToday = dateStr === todayStr;
-              const isSingleMode = value?.mode === "single";
-              const isRangeMode = value?.mode === "range";
+              const isSingleMode = singleOnly || effectiveMode === "single";
+              const isRangeMode = !singleOnly && effectiveMode === "range";
 
               const isSelected =
-                (isSingleMode && value?.date === dateStr) ||
+                (isSingleMode && (value?.date === dateStr || (!value?.date && dateStr === todayStr))) ||
                 (isRangeMode && (value?.from === dateStr || value?.to === dateStr));
 
               // Проверка на принадлежность диапазону
@@ -440,13 +445,15 @@ export default function DatePicker({
           {/* Футер с кратким резюме */}
           <div className={styles.footer}>
             <div className={styles.footerInfo}>
-              {value?.mode === "single" && (value?.date ? `Выбран день: ${formatHumanMskDate(value.date)}` : "День не выбран")}
-              {value?.mode === "range" && (
+              {(singleOnly || effectiveMode === "single") && (
+                value?.date ? `Выбран день: ${formatHumanMskDate(value.date)}` : `Выбран день: ${formatHumanMskDate(todayStr)}`
+              )}
+              {!singleOnly && effectiveMode === "range" && (
                 value?.from && value?.to
                   ? `${formatHumanMskDate(value.from)} — ${formatHumanMskDate(value.to)} (${rangeDaysCount} дн.)`
                   : value?.from ? `С ${formatHumanMskDate(value.from)} (выберите конец)` : "Выберите период"
               )}
-              {value?.mode === "all" && "Показаны заявки за все даты"}
+              {!singleOnly && effectiveMode === "all" && "Показаны заявки за все даты"}
             </div>
             <button
               type="button"

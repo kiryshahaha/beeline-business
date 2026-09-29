@@ -7,6 +7,7 @@ import styles from "./LayoutBar.module.css";
 const icons = [
   { id: "map", src: "/icons/icon-map.svg", alt: "Карта", href: "/" },
   { id: "list", src: "/icons/icon-list.svg", alt: "Заявки", href: "/dashboard" },
+  { id: "dispatch", src: "/icons/icon-dispatch.svg", alt: "Распределение", href: "/dispatch" },
   { id: "settings", src: "/icons/icon-settings.svg", alt: "Настройки", href: "/settings" },
 ];
 
