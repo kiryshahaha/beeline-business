@@ -1,4 +1,4 @@
 backend/bruno/fixtures/source-*.csv -text
 # Acceptance manifests verify these files byte for byte on every platform.
 data/synthetic/acceptance/*.json text eol=lf
-data/synthetic/acceptance/*.csv text eol=lf
+data/synthetic/acceptance/*.csv -text
