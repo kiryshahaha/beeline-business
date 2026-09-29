@@ -878,8 +878,8 @@ export default function Home() {
           zIndex: 2000,
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ pointerEvents: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", position: "relative" }}>
+          <div style={{ pointerEvents: "auto", display: "flex", gap: "8px", alignItems: "center", flexWrap: "nowrap" }}>
             <Search
               searchQuery={searchQuery}
               onSearchChange={handleSearchChange}
@@ -1029,8 +1029,10 @@ export default function Home() {
             </button>
           </div>
 
-          <div style={{ pointerEvents: "auto" }}>
-            <Notifications />
+          <div style={{ pointerEvents: "auto", position: "relative", width: "42px", height: "42px", flexShrink: 0 }}>
+            <div style={{ position: "absolute", top: 0, right: 0, zIndex: 1100 }}>
+              <Notifications />
+            </div>
           </div>
         </div>
 

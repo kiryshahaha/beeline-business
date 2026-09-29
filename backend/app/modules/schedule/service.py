@@ -269,8 +269,9 @@ def get_schedule(
                 title=row["title"],
                 work_type=row["work_type"],
                 status=row["status"],
-                start=row["planned_start_at"].astimezone(MOSCOW),
-                end=row["planned_end_at"].astimezone(MOSCOW),
+                start=row["planned_start_at"].astimezone(MOSCOW) if row["planned_start_at"] else day_start,
+                end=row["planned_end_at"].astimezone(MOSCOW) if row["planned_end_at"] else day_end,
+                is_pinned=bool(row["is_pinned"]) if "is_pinned" in row and row["is_pinned"] is not None else False,
             )
         )
     brigade_workers: dict[int, list[ScheduleWorker]] = defaultdict(list)

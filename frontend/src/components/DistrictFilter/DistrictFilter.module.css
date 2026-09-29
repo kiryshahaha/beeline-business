@@ -26,10 +26,10 @@
   box-sizing: border-box;
 }
 
-.triggerButton:hover {
+/* .triggerButton:hover {
   background-color: var(--hover-color);
   border-color: var(--border-color);
-}
+} */
 
 .triggerButton.active {
   background-color: rgba(255, 200, 0, 0.16);
