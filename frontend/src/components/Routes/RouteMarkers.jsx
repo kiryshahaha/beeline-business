@@ -43,7 +43,6 @@ function RouteStopMarkerItem({
           e.stopPropagation();
           onSelectStop(route, stop);
         }}
-        title={`Маршрут #${route.route_number || 1}, Остановка #${stop.sequence}`}
         aria-label={`Остановка #${stop.sequence}`}
       >
         {isStart ? (

@@ -9,13 +9,14 @@ import { useBrigades } from "@/hooks/useBrigades";
 import { useUsers } from "@/hooks/useUsers";
 import { useTickets } from "@/hooks/useTickets";
 
-const ALL_FILTERS = ['бригады', 'работники', 'заявки'];
+const ALL_FILTERS = ['районы', 'бригады', 'работники', 'заявки'];
 
 const Search = ({
   searchQuery = "",
   onSearchChange,
   onSelectResult,
   onClear,
+  districts = [],
 }) => {
   const [activeFilters, setActiveFilters] = useState([]);
   const [isFocused, setIsFocused] = useState(false);
@@ -29,6 +30,26 @@ const Search = ({
   useClickOutside(containerRef, () => setIsFocused(false));
 
   const allData = [];
+  if (activeFilters.length === 0 || activeFilters.includes('районы')) {
+    (districts || []).forEach((d) => {
+      const parts = [];
+      if (d.ticketsCount != null && d.ticketsCount > 0) {
+        parts.push(`${d.ticketsCount} заяв.`);
+      }
+      if (d.office) {
+        parts.push(d.office.office_name || "Офис");
+      }
+      const labelExtra = parts.length > 0 ? ` (${parts.join(" • ")})` : "";
+      const short = d.shortName ? ` (${d.shortName})` : "";
+      const prefix = d.isOkrug || d.name.toLowerCase().includes("округ") ? "Округ" : "Район";
+      allData.push({
+        id: `district_${d.name}`,
+        title: `${prefix}: ${d.name}${short}${labelExtra}`,
+        type: 'district',
+        raw: d,
+      });
+    });
+  }
   if (activeFilters.length === 0 || activeFilters.includes('бригады')) {
     (brigades || []).forEach(b => {
       allData.push({ id: `brigade_${b.id}`, title: `Бригада: ${b.name}`, type: 'brigade', raw: b });
@@ -47,9 +68,15 @@ const Search = ({
     });
   }
 
-  const matchingData = allData.filter((result) =>
-    result.title.toLocaleLowerCase("ru").includes(searchQuery.trim().toLocaleLowerCase("ru")),
-  );
+  const matchingData = allData.filter((result) => {
+    const q = searchQuery.trim().toLocaleLowerCase("ru");
+    if (result.title.toLocaleLowerCase("ru").includes(q)) return true;
+    if (result.type === "district") {
+      if (result.raw?.shortName && result.raw.shortName.toLocaleLowerCase("ru").includes(q)) return true;
+      if (result.raw?.aliases && result.raw.aliases.some(a => a.toLowerCase().includes(q))) return true;
+    }
+    return false;
+  });
   const hasMatches = matchingData.length > 0;
 
   const showSuggestions = isFocused && searchQuery.length > 0;

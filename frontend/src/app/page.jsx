@@ -2,10 +2,12 @@
 
 import MapComponent from "@/components/MapComponent";
 import Search from "@/components/Search/Search";
+import DistrictFilter from "@/components/DistrictFilter/DistrictFilter";
 import TicketsStatuses from "@/components/TicketsStatuses/TicketsStatuses";
 import Notifications from "@/components/Notifications/Notifications";
 import Layers from "@/components/Layers/Layers";
 import Menu from "@/components/Menu/Menu";
+import CreateTicketModal from "@/components/Modals/CreateTicketModal";
 import { useTickets } from "@/hooks/useTickets";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOffices } from "@/hooks/useOffices";
@@ -14,6 +16,23 @@ import { useUsers } from "@/hooks/useUsers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useWorkerTasksRoute } from "@/hooks/useWorkerTasksRoute";
 import { useBrigades } from "@/hooks/useBrigades";
+import { fetchRealDistrictBoundary, isPointInPolygon } from "@/utils/districtGeometry";
+import { isTicketUrgent } from "@/utils/ticketUtils";
+
+export const MOSCOW_ADMIN_OKRUGS = [
+  { name: "Центральный административный округ", shortName: "ЦАО", city: "Москва", aliases: ["цао", "центр", "центральный ао"] },
+  { name: "Северный административный округ", shortName: "САО", city: "Москва", aliases: ["сао", "север"] },
+  { name: "Северо-Восточный административный округ", shortName: "СВАО", city: "Москва", aliases: ["свао", "северо-восток"] },
+  { name: "Восточный административный округ", shortName: "ВАО", city: "Москва", aliases: ["вао", "восток", "офис восток"] },
+  { name: "Юго-Восточный административный округ", shortName: "ЮВАО", city: "Москва", aliases: ["ювао", "юго-восток", "офис юго-восток"] },
+  { name: "Южный административный округ", shortName: "ЮАО", city: "Москва", aliases: ["юао", "юг", "югоцентр", "офис югоцентр"] },
+  { name: "Юго-Западный административный округ", shortName: "ЮЗАО", city: "Москва", aliases: ["юзао", "юго-запад"] },
+  { name: "Западный административный округ", shortName: "ЗАО", city: "Москва", aliases: ["зао", "запад"] },
+  { name: "Северо-Западный административный округ", shortName: "СЗАО", city: "Москва", aliases: ["сзао", "северо-запад"] },
+  { name: "Зеленоградский административный округ", shortName: "ЗелАО", city: "Москва", aliases: ["зелао", "зеленоград"] },
+  { name: "Новомосковский административный округ", shortName: "НАО", city: "Москва", aliases: ["нао", "новомосковский", "новая москва"] },
+  { name: "Троицкий административный округ", shortName: "ТАО", city: "Москва", aliases: ["тао", "троицкий", "троицк"] },
+];
 
 export default function Home() {
   const mapRef = useRef(null);
@@ -32,9 +51,19 @@ export default function Home() {
   });
   const [selectedBrigade, setSelectedBrigade] = useState(null);
   const [selectedWorker, setSelectedWorker] = useState(null);
+  const [selectedDistrict, setSelectedDistrict] = useState(null);
+  const [focusedOffice, setFocusedOffice] = useState(null);
+  const [pinnedTicketId, setPinnedTicketId] = useState(null);
+  const [showDistrictBoundary, setShowDistrictBoundary] = useState(true);
+  const [filterTicketsByDistrict, setFilterTicketsByDistrict] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchTarget, setSearchTarget] = useState(null);
   const [ticketStatusFilter, setTicketStatusFilter] = useState("all");
+  const [districtBoundaryData, setDistrictBoundaryData] = useState(null);
+  const [isLoadingBoundary, setIsLoadingBoundary] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createModalCoords, setCreateModalCoords] = useState(null);
+  const [isPinPickMode, setIsPinPickMode] = useState(false);
 
   const locationIds = [...new Set([
     ...offices.map((item) => item.location_id),
@@ -53,10 +82,128 @@ export default function Home() {
     return offices
       .map((office) => {
         const location = locationById.get(office.location_id);
-        return location ? { ...location, office_id: office.id, office_name: office.name } : null;
+        return location
+          ? {
+              ...location,
+              office_id: office.id,
+              office_name: office.name,
+              district: location.district || office.district,
+              service_area_id: location.service_area_id || office.service_area_id,
+            }
+          : { ...office, office_id: office.id, office_name: office.name };
       })
       .filter(Boolean);
   }, [offices, locationById]);
+
+  // Справочник всех районов в системе (из офисов и заявок)
+  const districtsList = useMemo(() => {
+    const districtMap = new Map();
+
+    // Из офисов
+    officesFullInfo.forEach((office) => {
+      const name = office.district;
+      if (!name) return;
+      if (!districtMap.has(name)) {
+        districtMap.set(name, {
+          name,
+          service_area_id: office.service_area_id,
+          office,
+          ticketsCount: 0,
+        });
+      } else {
+        const existing = districtMap.get(name);
+        if (!existing.office) existing.office = office;
+        if (office.service_area_id && !existing.service_area_id) {
+          existing.service_area_id = office.service_area_id;
+        }
+      }
+    });
+
+    // Из заявок
+    tickets.forEach((t) => {
+      const loc = t.location || locationById.get(t.location_id);
+      const name = t.district || loc?.district;
+      if (!name) return;
+      const saId = t.service_area_id || loc?.service_area_id;
+
+      if (!districtMap.has(name)) {
+        districtMap.set(name, {
+          name,
+          service_area_id: saId,
+          office: null,
+          ticketsCount: 1,
+        });
+      } else {
+        const existing = districtMap.get(name);
+        existing.ticketsCount += 1;
+        if (saId && !existing.service_area_id) {
+          existing.service_area_id = saId;
+        }
+      }
+    });
+
+    // Административные округа Москвы
+    MOSCOW_ADMIN_OKRUGS.forEach((okrug) => {
+      const office = officesFullInfo.find((o) => {
+        const d = (o.district || "").toLowerCase();
+        const n = (o.office_name || "").toLowerCase();
+        return (
+          d === okrug.name.toLowerCase() ||
+          okrug.aliases.some((a) => d === a || n.includes(a))
+        );
+      });
+
+      if (!districtMap.has(okrug.name)) {
+        districtMap.set(okrug.name, {
+          name: okrug.name,
+          shortName: okrug.shortName,
+          city: "Москва",
+          isOkrug: true,
+          aliases: okrug.aliases,
+          service_area_id: office?.service_area_id,
+          office: office || null,
+          ticketsCount: 0,
+        });
+      } else {
+        const existing = districtMap.get(okrug.name);
+        existing.shortName = okrug.shortName;
+        existing.city = "Москва";
+        existing.isOkrug = true;
+        existing.aliases = okrug.aliases;
+        if (office && !existing.office) existing.office = office;
+      }
+    });
+
+    return Array.from(districtMap.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  }, [officesFullInfo, tickets, locationById]);
+
+  // Выбранный офис (если тип объекта — office или сохранен фокус)
+  const selectedOffice = useMemo(() => {
+    if (selectedObject?.type === "office") {
+      return officesFullInfo.find(
+        (o) => o.office_id === selectedObject.id || o.id === selectedObject.id
+      ) || null;
+    }
+    if (focusedOffice) {
+      return officesFullInfo.find(
+        (o) => o.office_id === focusedOffice.office_id || o.id === focusedOffice.id
+      ) || focusedOffice;
+    }
+    return null;
+  }, [officesFullInfo, selectedObject, focusedOffice]);
+
+  // Активный район: выбран через поиск/фильтр ИЛИ выведен из клика по офису
+  const activeDistrict = useMemo(() => {
+    if (selectedDistrict) return selectedDistrict;
+    if (focusedOffice?.district) return focusedOffice.district;
+    if (selectedOffice?.district) return selectedOffice.district;
+    return null;
+  }, [selectedDistrict, focusedOffice, selectedOffice]);
+
+  const activeDistrictObj = useMemo(() => {
+    if (!activeDistrict) return null;
+    return districtsList.find((d) => d.name.toLowerCase() === activeDistrict.toLowerCase()) || null;
+  }, [activeDistrict, districtsList]);
 
   const workersFullInfo = useMemo(() => {
     return users
@@ -67,8 +214,6 @@ export default function Home() {
       }))
       .filter((user) => user.location);
   }, [users, locationById]);
-
-
 
   const locationsError = locationQueries.some((query) => query.isError);
 
@@ -85,15 +230,131 @@ export default function Home() {
             ? "routes"
             : "offices";
     setSelectedObject({ type, id, ...(extra || {}) });
-    setVisibleLayers((current) => ({ ...current, [layer]: true }));
+    setVisibleLayers((current) => ({
+      ...current,
+      [layer]: true,
+      routes: type === "route" ? true : current.routes,
+    }));
+
+    if (type === "ticket") {
+      setPinnedTicketId(id);
+    }
+
+    // При клике на офис автоматически активируем его район и фиксируем фокус офиса
+    if (type === "office") {
+      const office = officesFullInfo.find((o) => o.office_id === id || o.id === id);
+      if (office) {
+        setFocusedOffice(office);
+        if (office.district) {
+          setSelectedDistrict(office.district);
+        }
+      }
+    }
+  };
+
+  // Загрузка реальных гео-границ района через Geoapify / OSM GeoJSON
+  useEffect(() => {
+    let isCancelled = false;
+
+    // Определяем параметры для запроса границы
+    const currentOffice = focusedOffice || selectedOffice;
+    const lat = currentOffice?.latitude;
+    const lon = currentOffice?.longitude;
+    const district = activeDistrict || currentOffice?.district;
+    const isOkrug =
+      activeDistrictObj?.isOkrug ||
+      (district && district.toLowerCase().includes("округ"));
+    const city =
+      currentOffice?.city ||
+      (isOkrug ? "Москва" : (activeDistrict ? "Санкт-Петербург" : undefined));
+
+    if (!district && (lat == null || lon == null)) {
+      Promise.resolve().then(() => {
+        if (!isCancelled) {
+          setDistrictBoundaryData(null);
+          setIsLoadingBoundary(false);
+        }
+      });
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    Promise.resolve().then(() => {
+      if (!isCancelled) {
+        setIsLoadingBoundary(true);
+      }
+    });
+
+    fetchRealDistrictBoundary({
+      district: district || undefined,
+      city,
+      lat: lat != null && Number.isFinite(Number(lat)) ? Number(lat) : undefined,
+      lon: lon != null && Number.isFinite(Number(lon)) ? Number(lon) : undefined,
+    })
+      .then((data) => {
+        if (!isCancelled) {
+          setDistrictBoundaryData(data);
+          setIsLoadingBoundary(false);
+          // Если название района определилось через Geoapify при клике на офис
+          if (data?.districtName && selectedDistrict !== data.districtName && currentOffice) {
+            setSelectedDistrict(data.districtName);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load district boundary:", err);
+        if (!isCancelled) {
+          setDistrictBoundaryData(null);
+          setIsLoadingBoundary(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeDistrict, activeDistrictObj?.isOkrug, focusedOffice, selectedOffice, selectedDistrict]);
+
+  const deselectObject = () => {
+    setSelectedObject(null);
+  };
+
+  const resetDistrictFocus = () => {
+    setSelectedObject(null);
+    setFocusedOffice(null);
+    setSelectedDistrict(null);
+    setPinnedTicketId(null);
+    setDistrictBoundaryData(null);
+    if (searchTarget?.type === "district") {
+      setSearchTarget(null);
+      setSearchQuery("");
+    }
   };
 
   const handleSelectResult = (result) => {
+    if (result.type === "district") {
+      const districtName = result.raw.name;
+      setSearchTarget({ type: "district", id: districtName, title: result.title, raw: result.raw });
+      setSearchQuery(result.title);
+      setSelectedDistrict(districtName);
+      setSelectedBrigade(null);
+      setSelectedWorker(null);
+
+      // Если в этом районе есть офис, выделяем его
+      if (result.raw.office) {
+        setFocusedOffice(result.raw.office);
+        selectObject("office", result.raw.office.office_id);
+      } else {
+        setFocusedOffice(null);
+        setSelectedObject(null);
+      }
+      return true;
+    }
+
     if (result.type === "ticket") {
       if (result.raw.location?.longitude == null || result.raw.location?.latitude == null) return false;
       setSearchTarget({ type: "ticket", id: result.raw.id, title: result.title, raw: result.raw });
       setSearchQuery(result.title);
-      // При выборе заявки остальные не исчезают, а камера перемещается на неё и открывается попап
       setSelectedBrigade(null);
       setSelectedWorker(null);
       setTicketStatusFilter("all");
@@ -128,10 +389,14 @@ export default function Home() {
       setSearchTarget(null);
       setSelectedBrigade(null);
       setSelectedWorker(null);
+      resetDistrictFocus();
     } else if (searchTarget && newQuery !== searchTarget.title) {
       setSearchTarget(null);
       setSelectedBrigade(null);
       setSelectedWorker(null);
+      if (searchTarget.type === "district") {
+        resetDistrictFocus();
+      }
     }
   };
 
@@ -140,17 +405,77 @@ export default function Home() {
     setSearchTarget(null);
     setSelectedBrigade(null);
     setSelectedWorker(null);
+    resetDistrictFocus();
   };
 
   const toggleLayer = (layer) => {
     setVisibleLayers((current) => ({ ...current, [layer]: !current[layer] }));
   };
 
-  // 3.1. Фильтрация тасок по выбранному воркеру, бригаде или поисковому запросу
+  // 3.0. Фильтрация тасок по активному району (при клике на офис, выборе из поиска или фильтра)
+  // Используется РЕАЛЬНОЕ вхождение точки в GeoJSON-полигон Geoapify (isPointInPolygon)
+  // и проверка по названию района/service_area_id.
+  const districtFilteredTickets = useMemo(() => {
+    if (!filterTicketsByDistrict) return tickets;
+    const currentOffice = focusedOffice || selectedOffice;
+    if (!activeDistrict && !currentOffice) return tickets;
+
+    const lowerDistrict = (activeDistrict || currentOffice?.district || "").trim().toLowerCase();
+    const saId = activeDistrictObj?.service_area_id || currentOffice?.service_area_id;
+    const geom = districtBoundaryData?.geometry;
+
+    return tickets.filter((t) => {
+      const loc = t.location || locationById.get(t.location_id);
+      if (!loc) return false;
+
+      // 1. Пространственная проверка: находится ли точка внутри официального GeoJSON-полигона
+      if (geom && Number.isFinite(loc.longitude) && Number.isFinite(loc.latitude)) {
+        if (isPointInPolygon([loc.longitude, loc.latitude], geom)) {
+          return true;
+        }
+      }
+
+      // 2. Проверка по совпадению названия района
+      const tDistrict = (t.district || loc?.district || "").trim().toLowerCase();
+      if (lowerDistrict && tDistrict && tDistrict === lowerDistrict) return true;
+      if (
+        districtBoundaryData?.districtName &&
+        tDistrict &&
+        tDistrict === districtBoundaryData.districtName.trim().toLowerCase()
+      ) {
+        return true;
+      }
+
+      // 3. Проверка по service_area_id
+      if (saId != null) {
+        const tSaId = t.service_area_id ?? loc?.service_area_id;
+        if (tSaId != null && Number(tSaId) === Number(saId)) return true;
+      }
+
+      return false;
+    });
+  }, [
+    tickets,
+    filterTicketsByDistrict,
+    activeDistrict,
+    activeDistrictObj,
+    focusedOffice,
+    selectedOffice,
+    districtBoundaryData,
+    locationById,
+  ]);
+
+  // 3.1. Реальные GeoJSON границы и bounds района
+  const districtBoundary = districtBoundaryData?.featureCollection || null;
+  const districtBounds = districtBoundaryData?.bounds || null;
+
+  // 3.2. Фильтрация тасок по выбранному воркеру, бригаде или поисковому запросу
   const displayedTickets = useMemo(() => {
+    const baseTickets = districtFilteredTickets;
+
     // Если выбран инженер (через меню или поиск) -> показываем ТОЛЬКО его таски
     if (selectedWorker) {
-      return tickets.filter((t) => t.assigned_worker_id === selectedWorker.id);
+      return baseTickets.filter((t) => t.assigned_worker_id === selectedWorker.id);
     }
 
     // Если выбрана бригада (через меню или поиск) -> показываем ТОЛЬКО её таски
@@ -162,7 +487,7 @@ export default function Home() {
         }
       });
 
-      return tickets.filter((t) => {
+      return baseTickets.filter((t) => {
         if (t.brigade_id != null && Number(t.brigade_id) === Number(selectedBrigade.id)) {
           return true;
         }
@@ -175,14 +500,19 @@ export default function Home() {
 
     // Если в поиске выбрана конкретная заявка — все остальные НЕ исчезают
     if (searchTarget?.type === "ticket") {
-      return tickets;
+      return baseTickets;
+    }
+
+    // Если в поиске выбран район — показываем таски этого района
+    if (searchTarget?.type === "district") {
+      return baseTickets;
     }
 
     // Фильтрация вывода тасок под условия ввода в поиске
     const q = searchQuery.trim().toLowerCase();
-    if (q) {
+    if (q && !q.startsWith("район:")) {
       const qClean = q.replace(/^#/, "");
-      return tickets.filter((t) => {
+      return baseTickets.filter((t) => {
         if (String(t.id).includes(qClean)) return true;
         if (t.title && t.title.toLowerCase().includes(q)) return true;
         if (t.description && t.description.toLowerCase().includes(q)) return true;
@@ -206,9 +536,9 @@ export default function Home() {
       });
     }
 
-    return tickets;
+    return baseTickets;
   }, [
-    tickets,
+    districtFilteredTickets,
     selectedBrigade,
     selectedWorker,
     searchTarget,
@@ -285,11 +615,14 @@ export default function Home() {
     }
   }, [selectedBrigade, selectedWorker, displayedTickets, mapRef]);
 
-  const filteredTickets = displayedTickets.filter((ticket) => {
-    if (ticketStatusFilter === "urgent") return ticket.status === "planned" && !ticket.assigned_worker_id;
-    if (ticketStatusFilter === "completed") return ticket.status === "completed";
-    return true;
-  });
+  const filteredTickets = useMemo(() => {
+    return displayedTickets.filter((ticket) => {
+      if (ticketStatusFilter === "urgent") return isTicketUrgent(ticket);
+      if (ticketStatusFilter === "in_progress") return ticket.status === "in_progress";
+      if (ticketStatusFilter === "completed") return ticket.status === "completed";
+      return true;
+    });
+  }, [displayedTickets, ticketStatusFilter]);
   const mappedTicketCount = filteredTickets.filter(
     (ticket) => ticket.location?.latitude != null && ticket.location?.longitude != null,
   ).length;
@@ -323,10 +656,80 @@ export default function Home() {
     ...routePoints,
   ];
 
-  const clearSelection = () => setSelectedObject(null);
+  const activeRouteTicket = useMemo(() => {
+    const id = selectedObject?.type === "ticket" ? selectedObject.id : pinnedTicketId;
+    if (!id) return null;
+    return tickets.find((t) => t.id === id) || null;
+  }, [selectedObject, pinnedTicketId, tickets]);
+
+  const handleFitDistrict = () => {
+    const map = mapRef?.current?.getMap?.() || mapRef?.current;
+    if (!map) return;
+    if (districtBounds) {
+      map.fitBounds(districtBounds, {
+        padding: { top: 90, right: 380, bottom: 90, left: 100 },
+        duration: 750,
+      });
+    } else {
+      const currentOffice = focusedOffice || selectedOffice;
+      if (currentOffice?.longitude != null && currentOffice?.latitude != null) {
+        map.flyTo({
+          center: [currentOffice.longitude, currentOffice.latitude],
+          zoom: 13,
+          duration: 750,
+        });
+      }
+    }
+  };
 
   return (
-    <main style={{ height: "100dvh", position: "relative" }}>
+    <main
+      style={{
+        position: "fixed",
+        inset: 0,
+        width: "100vw",
+        height: "100dvh",
+        overflow: "hidden",
+        overscrollBehavior: "none",
+      }}
+    >
+      {/* Баннер режима выбора точки на карте */}
+      {isPinPickMode && (
+        <div
+          style={{
+            position: "absolute",
+            top: 24,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 3500,
+            background: "#FFC800",
+            color: "#1C1C1E",
+            padding: "9px 20px",
+            borderRadius: "30px",
+            boxShadow: "0 10px 32px rgba(0, 0, 0, 0.55)",
+            fontWeight: 700,
+            fontSize: "13px",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            cursor: "pointer",
+            userSelect: "none",
+          }}
+          onClick={() => setIsPinPickMode(false)}
+          title="Нажмите, чтобы отменить выбор точки на карте"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="22" y1="12" x2="18" y2="12"></line>
+            <line x1="6" y1="12" x2="2" y2="12"></line>
+            <line x1="12" y1="6" x2="12" y2="2"></line>
+            <line x1="12" y1="22" x2="12" y2="18"></line>
+          </svg>
+          <span>Кликните на карте, чтобы поставить заявку</span>
+          <span style={{ opacity: 0.65, fontSize: "11px", textDecoration: "underline" }}>[Отмена]</span>
+        </div>
+      )}
+
       <div
         style={{
           position: "absolute",
@@ -335,18 +738,81 @@ export default function Home() {
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          zIndex: 10,
+          zIndex: 2000,
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div style={{ pointerEvents: "auto" }}>
+          <div style={{ pointerEvents: "auto", display: "flex", gap: "8px", alignItems: "flex-start" }}>
             <Search
               searchQuery={searchQuery}
               onSearchChange={handleSearchChange}
               onSelectResult={handleSelectResult}
               onClear={handleClearSearch}
+              districts={districtsList}
             />
+            <DistrictFilter
+              districts={districtsList}
+              selectedDistrict={activeDistrict}
+              onSelectDistrict={(districtName) => {
+                if (!districtName) {
+                  resetDistrictFocus();
+                } else {
+                  setSelectedDistrict(districtName);
+                  const targetDist = districtsList.find(
+                    (d) => d.name.toLowerCase() === districtName.toLowerCase()
+                  );
+                  if (targetDist?.office) {
+                    setFocusedOffice(targetDist.office);
+                    selectObject("office", targetDist.office.office_id);
+                  } else {
+                    setFocusedOffice(null);
+                    setSelectedObject(null);
+                  }
+                }
+              }}
+            />
+            <button
+              type="button"
+              id="create-ticket-top-btn"
+              onClick={() => {
+                setCreateModalCoords(null);
+                setIsCreateModalOpen(true);
+              }}
+              style={{
+                height: "38px",
+                padding: "0 14px",
+                borderRadius: "10px",
+                background: "#2C2C2E",
+                border: "1px solid rgba(255, 255, 255, 0.12)",
+                color: "#FFC800",
+                fontSize: "12px",
+                fontWeight: 700,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                cursor: "pointer",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.35)",
+                transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+                whiteSpace: "nowrap",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#38383C";
+                e.currentTarget.style.borderColor = "rgba(255, 200, 0, 0.35)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "#2C2C2E";
+                e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.12)";
+              }}
+              title="Создать новую заявку на обслуживание"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>Заявка</span>
+            </button>
           </div>
+
           <div style={{ pointerEvents: "auto" }}>
             <Notifications />
           </div>
@@ -366,6 +832,16 @@ export default function Home() {
                 }}
                 onToggleLayer={toggleLayer}
                 points={mapPoints}
+                activeDistrict={activeDistrict}
+                focusedOffice={focusedOffice || selectedOffice}
+                showDistrictBoundary={showDistrictBoundary}
+                onToggleDistrictBoundary={() => setShowDistrictBoundary((prev) => !prev)}
+                filterTicketsByDistrict={filterTicketsByDistrict}
+                onToggleFilterTicketsByDistrict={() => setFilterTicketsByDistrict((prev) => !prev)}
+                activeRouteTicket={activeRouteTicket}
+                onClearRoute={() => setPinnedTicketId(null)}
+                onFitDistrict={handleFitDistrict}
+                onClearDistrict={resetDistrictFocus}
                 error={
                   ticketsData.isError ? "Не удалось загрузить заявки"
                     : officesData.isError ? "Не удалось загрузить офисы"
@@ -430,8 +906,10 @@ export default function Home() {
             <TicketsStatuses
               filter={ticketStatusFilter}
               onFilterChange={setTicketStatusFilter}
+              tickets={displayedTickets}
+              selectedDistrict={activeDistrict}
+              onClearDistrict={resetDistrictFocus}
               onSelectTicket={(ticket) => {
-                setTicketStatusFilter("all");
                 selectObject("ticket", ticket.id);
               }}
             />
@@ -448,10 +926,24 @@ export default function Home() {
         workerRoute={workerRoute}
         locationById={locationById}
         selectedObject={effectiveSelectedObject}
+        pinnedTicketId={pinnedTicketId}
+        districtBoundary={districtBoundary}
+        districtBounds={districtBounds}
+        showDistrictBoundary={showDistrictBoundary}
         ticketStatusFilter={ticketStatusFilter}
         visibleLayers={visibleLayers}
         onSelectObject={selectObject}
-        onClearSelection={clearSelection}
+        onClearSelection={deselectObject}
+        onMapContextMenu={(coords) => {
+          setCreateModalCoords(coords);
+          setIsCreateModalOpen(true);
+        }}
+        isPinPickMode={isPinPickMode}
+        onPinPick={(coords) => {
+          setCreateModalCoords(coords);
+          setIsPinPickMode(false);
+          setIsCreateModalOpen(true);
+        }}
         isDataReady={
           !ticketsData.isLoading
           && !officesData.isLoading
@@ -459,6 +951,36 @@ export default function Home() {
           && !routesData.isLoading
           && locationQueries.every((query) => !query.isLoading)
         }
+      />
+
+      <CreateTicketModal
+        isOpen={isCreateModalOpen}
+        initialCoordinates={createModalCoords}
+        onStartPickOnMap={() => {
+          setIsCreateModalOpen(false);
+          setIsPinPickMode(true);
+        }}
+        onClose={() => {
+          setIsCreateModalOpen(false);
+          setCreateModalCoords(null);
+        }}
+        onTicketCreated={(newTicket) => {
+          const coords = [newTicket.location?.longitude, newTicket.location?.latitude];
+          const map = mapRef.current?.getMap?.() || mapRef.current;
+          if (coords[0] && coords[1] && map?.flyTo) {
+            map.flyTo({
+              center: coords,
+              zoom: 14,
+              duration: 800,
+            });
+          }
+          if (newTicket?.id) {
+            selectObject("ticket", newTicket.id, {
+              ticket: newTicket,
+              coordinates: coords,
+            });
+          }
+        }}
       />
     </main>
   );

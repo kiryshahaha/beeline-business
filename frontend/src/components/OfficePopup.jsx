@@ -9,7 +9,8 @@ export default function OfficePopup({ data, longitude, latitude, onClose }) {
     <Popup
       longitude={longitude}
       latitude={latitude}
-      offset={16}
+      offset={28}
+      maxWidth="340px"
       closeButton
       closeOnClick={false}
       onClose={onClose}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Map, Source, Layer } from "@vis.gl/react-maplibre";
+import { Map, Source, Layer, Marker } from "@vis.gl/react-maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ClusterComponent } from "./ClusterComponent";
@@ -14,6 +14,7 @@ import RouteStopPopup from "./Routes/RouteStopPopup";
 import { calculateRouteDistanceKm } from "./Routes/routeUtils";
 import { useRouteGeoJson } from "@/hooks/useRoutes";
 import { useTicketRouteLeg } from "@/hooks/useTicketRouteLeg";
+import { isTicketUrgent } from "@/utils/ticketUtils";
 import styles from "./MapComponent.module.css";
 import routeStyles from "./Routes/Routes.module.css";
 
@@ -42,10 +43,17 @@ export default function MapComponent({
   workerRoute = null,
   locationById,
   selectedObject,
+  pinnedTicketId = null,
+  districtBoundary = null,
+  districtBounds = null,
+  showDistrictBoundary = true,
   ticketStatusFilter,
   visibleLayers,
   onSelectObject,
   onClearSelection,
+  onMapContextMenu,
+  isPinPickMode = false,
+  onPinPick,
   isDataReady,
 }) {
   const didFitBounds = useRef(false);
@@ -119,13 +127,15 @@ export default function MapComponent({
   const { data: serverRouteGeoJson } = useRouteGeoJson(selectedRouteId);
 
   // 1.1. Интерактивный расчёт маршрута к выбранной пользователем заявке от предыдущей точки
-  const selectedTicket = useMemo(() => {
-    if (selectedObject?.type !== "ticket") return null;
-    return tickets.find((t) => t.id === selectedObject.id) || null;
-  }, [selectedObject, tickets]);
+  // Если попап закрыт, но маршрут зафиксирован (pinnedTicketId), маршрут продолжает отображаться на карте!
+  const activeTicket = useMemo(() => {
+    const id = selectedObject?.type === "ticket" ? selectedObject.id : pinnedTicketId;
+    if (!id) return null;
+    return tickets.find((t) => t.id === id) || null;
+  }, [selectedObject, pinnedTicketId, tickets]);
 
   const { routeLeg: activeLegRoute, isLoadingRoute } = useTicketRouteLeg(
-    selectedTicket,
+    activeTicket,
     tickets,
     workers,
     offices,
@@ -138,7 +148,7 @@ export default function MapComponent({
       geometry: activeLegRoute.geometry,
       properties: {
         routeId: "active-leg-route",
-        color: "#FFC800",
+        color: "#EA580C", // Яркий контрастный навигационный оранжевый цвет, отлично видимый на светлых картах
         isSelected: true,
         isDimmed: false,
         distanceKm: activeLegRoute.distanceKm,
@@ -155,7 +165,22 @@ export default function MapComponent({
       const isAnyRouteSelected = selectedObject?.type === "route";
 
       const lineFeatures = parsedRoutes
-        .filter((r) => r.lineGeometry != null)
+        .filter((r) => {
+          if (!r.lineGeometry) return false;
+          // Если выбран конкретный маршрут — показываем только его
+          if (selectedRouteId) return r.id === selectedRouteId;
+          // Если выбран конкретный инженер — показываем только его маршруты
+          if (selectedObject?.type === "worker") return r.worker_id === selectedObject.id;
+          // Если активен район/границы — показываем маршруты, имеющие точки в границах района
+          if (districtBounds && r.allCoordinates?.length > 0) {
+            const [[minLng, minLat], [maxLng, maxLat]] = districtBounds;
+            return r.allCoordinates.some(
+              ([lng, lat]) => lng >= minLng && lng <= maxLng && lat >= minLat && lat <= maxLat
+            );
+          }
+          // Не спамим нерелевантными тестовыми маршрутами из базы данных
+          return false;
+        })
         .map((r) => {
           const isSelected = selectedRouteId === r.id;
           const isDimmed = isAnyRouteSelected && !isSelected;
@@ -221,6 +246,7 @@ export default function MapComponent({
     visibleLayers.routes,
     activeLegFeature,
     workerRoute,
+    districtBounds,
   ]);
 
   // 3. Подготовка статических объектов (заявки, работники, офисы)
@@ -228,7 +254,8 @@ export default function MapComponent({
     const items = [];
     if (visibleLayers.tickets) {
       tickets.forEach((ticket) => {
-        if (ticketStatusFilter === "urgent" && (ticket.status !== "planned" || ticket.assigned_worker_id)) return;
+        if (ticketStatusFilter === "urgent" && !isTicketUrgent(ticket)) return;
+        if (ticketStatusFilter === "in_progress" && ticket.status !== "in_progress") return;
         if (ticketStatusFilter === "completed" && ticket.status !== "completed") return;
         items.push({
           id: ticket.id,
@@ -303,6 +330,8 @@ export default function MapComponent({
   // Анимация камеры при выборе объекта
   useEffect(() => {
     if (!selectedItem) return;
+    // Если выбран офис и есть границы района, камера будет подогнана под границы района
+    if (selectedItem.type === "office" && districtBounds) return;
     const map = mapRef?.current?.getMap?.() || mapRef?.current;
     if (!map) return;
     map.flyTo({
@@ -311,7 +340,20 @@ export default function MapComponent({
       duration: 550,
       essential: true,
     });
-  }, [mapRef, selectedItem]);
+  }, [mapRef, selectedItem, districtBounds]);
+
+  // Анимация камеры при выборе района или офиса с границами
+  useEffect(() => {
+    if (!districtBounds) return;
+    const map = mapRef?.current?.getMap?.() || mapRef?.current;
+    if (!map) return;
+
+    map.fitBounds(districtBounds, {
+      padding: { top: 90, right: 380, bottom: 120, left: 90 },
+      maxZoom: 15,
+      duration: 650,
+    });
+  }, [districtBounds, mapRef]);
 
   // Анимация камеры при выборе маршрута или конкретной остановки
   useEffect(() => {
@@ -453,6 +495,11 @@ export default function MapComponent({
 
   // Клик по карте (выбор линии маршрута без лишнего попапа-дубля)
   const handleMapClick = (event) => {
+    if (isPinPickMode) {
+      onPinPick?.({ lat: event.lngLat.lat, lng: event.lngLat.lng });
+      return;
+    }
+
     const feature = event.features && event.features[0];
     if (
       feature &&
@@ -561,6 +608,13 @@ export default function MapComponent({
   return (
     <Map
       className={styles.map}
+      style={{
+        position: "fixed",
+        inset: 0,
+        width: "100vw",
+        height: "100dvh",
+        overflow: "hidden",
+      }}
       ref={mapRef}
       initialViewState={{ longitude: 35, latitude: 55, zoom: 1 }}
       mapStyle={`https://api.maptiler.com/maps/01a0a53f-a24b-7778-b5e1-b59ba3d6f612/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`}
@@ -574,7 +628,12 @@ export default function MapComponent({
       reuseMaps
       keyboard
       hash
+      cursor={isPinPickMode ? "crosshair" : undefined}
       onClick={handleMapClick}
+      onContextMenu={(e) => {
+        if (e.originalEvent) e.originalEvent.preventDefault();
+        onMapContextMenu?.({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+      }}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
@@ -627,8 +686,113 @@ export default function MapComponent({
         </Source>
       )}
 
+      {/* 0.1. Границы района при выборе офиса или района */}
+      {districtBoundary && showDistrictBoundary && (
+        <Source id="district-boundary-source" type="geojson" data={districtBoundary}>
+          {/* Полупрозрачная заливка района: благородный сапфировый оттенок, улицы и дома на белой карте остаются кристально четкими */}
+          <Layer
+            id="district-boundary-fill"
+            type="fill"
+            paint={{
+              "fill-color": "#2563EB",
+              "fill-opacity": 0.08,
+            }}
+          />
+          {/* Контрастная темная подложка границы для четкого визуального разделения */}
+          <Layer
+            id="district-boundary-casing"
+            type="line"
+            paint={{
+              "line-color": "#0F172A",
+              "line-width": 4.5,
+              "line-opacity": 0.35,
+            }}
+          />
+          {/* Основная яркая пунктирная линия границы */}
+          <Layer
+            id="district-boundary-line"
+            type="line"
+            paint={{
+              "line-color": "#1D4ED8",
+              "line-width": 2.5,
+              "line-dasharray": [5, 2.5],
+              "line-opacity": 0.95,
+            }}
+          />
+        </Source>
+      )}
+
       {/* 1. Векторные линии маршрутов (Source + Layers) */}
       <RouteLines routesGeoJson={routesGeoJson} />
+
+      {/* 1.1. Индикаторы старта и финиша для активного маршрута к заявке */}
+      {activeLegRoute && (
+        <>
+          {activeLegRoute.origin?.longitude != null && activeLegRoute.origin?.latitude != null && (
+            <Marker
+              longitude={activeLegRoute.origin.longitude}
+              latitude={activeLegRoute.origin.latitude}
+              anchor="bottom"
+            >
+              <div
+                style={{
+                  background: "rgba(28, 28, 30, 0.94)",
+                  color: "#E2E8F0",
+                  border: "1.5px solid rgba(255, 255, 255, 0.2)",
+                  borderRadius: "10px",
+                  padding: "3px 8px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  pointerEvents: "none",
+                }}
+              >
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#94A3B8" }} />
+                <span>{activeLegRoute.origin.label}</span>
+              </div>
+            </Marker>
+          )}
+
+          {activeLegRoute.destination?.longitude != null && activeLegRoute.destination?.latitude != null && (
+            <Marker
+              longitude={activeLegRoute.destination.longitude}
+              latitude={activeLegRoute.destination.latitude}
+              anchor="top"
+            >
+              <div
+                style={{
+                  background: "rgba(28, 28, 30, 0.95)",
+                  color: "#FFFFFF",
+                  border: "1.5px solid var(--beeline)",
+                  borderRadius: "10px",
+                  padding: "3px 9px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  boxShadow: "0 6px 16px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 200, 0, 0.3)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  cursor: "pointer",
+                  marginTop: "6px",
+                }}
+                onClick={() => onSelectObject("ticket", activeLegRoute.destination.id)}
+                title="Нажмите, чтобы открыть карточку заявки"
+              >
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--beeline)" }} />
+                <span>Заявка #{activeLegRoute.destination.id}</span>
+                {activeLegRoute.distanceKm && (
+                  <span style={{ opacity: 0.75, fontSize: "10px", fontWeight: 500 }}>
+                    · {activeLegRoute.distanceKm} км · {activeLegRoute.durationMin} мин
+                  </span>
+                )}
+              </div>
+            </Marker>
+          )}
+        </>
+      )}
 
       {/* 2. Маркеры последовательности визитов (1, 2, 3...) — только для активного маршрута */}
       {visibleLayers.routes && (
@@ -670,6 +834,7 @@ export default function MapComponent({
       {selectedItem?.type === "ticket" && (
         <TicketPopup
           ticket={selectedItem.data}
+          workers={workers}
           selectedTicketRoute={selectedTicketRoute}
           activeLegRoute={activeLegRoute}
           isLoadingRoute={isLoadingRoute}

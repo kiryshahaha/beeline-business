@@ -3,6 +3,10 @@
 import { useState } from "react";
 import {
   IconCheck,
+  IconUrgent,
+  IconWrench,
+  IconTicket,
+  IconClose,
   IconCar,
   IconBicycle,
   IconWalk,
@@ -30,9 +34,11 @@ export const ClusterPoint = ({
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
-  // 1. Отображение суперкластера
+  // 1. Отображение суперкластера (ТОЛЬКО здесь отображаются цифры — количество объектов в группе)
   if (isCluster) {
     const hasUrgent = urgentCount > 0;
+    const clusterSizeClass =
+      count >= 30 ? styles.clusterMarker_large : count >= 10 ? styles.clusterMarker_medium : "";
 
     return (
       <div
@@ -42,40 +48,40 @@ export const ClusterPoint = ({
       >
         <button
           type="button"
-          className={`${styles.clusterMarker} ${selected ? styles.selectedMarker : ""}`}
+          className={`${styles.clusterMarker} ${clusterSizeClass} ${selected ? styles.selectedMarker : ""}`}
           data-urgent={hasUrgent}
-          aria-label={`Кластер из ${count} объектов`}
+          aria-label={`Группа из ${count} объектов`}
         >
           {count}
         </button>
 
         {isHovered && !hasActiveSelection && (
           <PointTooltip
-            tag={`${count}`}
-            tagVariant="stop"
+            tag={`Группа (${count})`}
+            tagVariant={hasUrgent ? "urgent" : "stop"}
             text={`Объектов в группе: ${count}`}
-            subtext={hasUrgent ? `(${urgentCount} срочных)` : undefined}
+            subtext={hasUrgent ? `${urgentCount} требуют срочного внимания` : "Нажмите для приближения"}
           />
         )}
       </div>
     );
   }
 
-  // 2. Отображение индивидуальной точки
+  // 2. Отображение индивидуальной точки (БЕЗ цифр-ID, ТОЛЬКО понятные иконки статуса и типа)
   let displayContent = null;
   let tagVariant = "planned";
-  let tag = "Ожидает";
-  const ticketNum = label?.match(/#(\d+)/)?.[1] || id;
+  let tag = "Заявка";
+  const ticketIdLabel = label?.startsWith("#") ? label : `#${id}`;
 
   if (type === "ticket") {
     if (isUrgent) {
       tagVariant = "urgent";
       tag = "Срочно";
-      displayContent = ticketNum;
+      displayContent = <IconUrgent size={14} />;
     } else if (status === "in_progress") {
       tagVariant = "in_progress";
       tag = "В работе";
-      displayContent = ticketNum;
+      displayContent = <IconWrench size={13} />;
     } else if (status === "completed") {
       tagVariant = "completed";
       tag = "Выполнено";
@@ -83,11 +89,11 @@ export const ClusterPoint = ({
     } else if (status === "wont_fix") {
       tagVariant = "wont_fix";
       tag = "Отменена";
-      displayContent = ticketNum;
+      displayContent = <IconClose size={12} />;
     } else {
       tagVariant = "planned";
-      tag = "Ожидает";
-      displayContent = ticketNum;
+      tag = "Запланирована";
+      displayContent = <IconTicket size={13} />;
     }
   } else if (type === "worker") {
     tagVariant = "worker";
@@ -105,8 +111,10 @@ export const ClusterPoint = ({
   } else if (type === "office") {
     tagVariant = "office";
     tag = "Офис";
-    displayContent = <IconOffice size={14} />;
+    displayContent = <IconOffice size={15} />;
   }
+
+  const tooltipTag = type === "ticket" ? `${ticketIdLabel} • ${tag}` : tag;
 
   return (
     <div
@@ -123,14 +131,13 @@ export const ClusterPoint = ({
         data-urgent={Boolean(isUrgent)}
         data-online={Boolean(isOnLine)}
         aria-label={label || title}
-        title={label || title}
       >
         {displayContent}
       </button>
 
       {isHovered && !selected && !hasActiveSelection && (
         <PointTooltip
-          tag={tag}
+          tag={tooltipTag}
           tagVariant={tagVariant}
           text={title || label}
           subtext={address}

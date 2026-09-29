@@ -6,11 +6,14 @@ import Status from "./Status"
 import { useClickOutside } from "@/hooks/useClickOutside"
 import { useTickets } from "@/hooks/useTickets"
 
+import { isTicketUrgent, STATUS_LABELS as UTILS_STATUS_LABELS } from "@/utils/ticketUtils";
+
 const STATUS_LABELS = {
-    planned: "Ожидание", // По макету
-    in_progress: "В пути", // По макету
+    planned: "Ожидание",
+    in_progress: "В работе",
     completed: "Выполнено",
-    wont_fix: "Отменена"
+    wont_fix: "Отменена",
+    ...UTILS_STATUS_LABELS,
 };
 
 const ClockIcon = () => (
@@ -40,8 +43,16 @@ const formatAddress = (loc) => {
     return parts.join(', ') || loc.address;
 };
 
-const TicketsStatuses = ({ onFilterChange, onSelectTicket, filter }) => {
-    const { tickets, ticketsData } = useTickets({ limit: 100 });
+const TicketsStatuses = ({
+    onFilterChange,
+    onSelectTicket,
+    filter,
+    tickets: propTickets,
+    selectedDistrict = null,
+    onClearDistrict = null,
+}) => {
+    const { tickets: fetchedTickets, ticketsData } = useTickets({ limit: 100 });
+    const tickets = propTickets ?? fetchedTickets;
     const [isOpen, setIsOpen] = useState(false);
     const [localFilter, setLocalFilter] = useState("all");
     const activeFilter = filter ?? localFilter;
@@ -51,15 +62,20 @@ const TicketsStatuses = ({ onFilterChange, onSelectTicket, filter }) => {
     const changeFilter = (nextFilter) => {
         setLocalFilter(nextFilter);
         onFilterChange?.(nextFilter);
+        if (!isOpen) {
+            setIsOpen(true);
+        }
     };
 
-    // Считаем статусы напрямую из списка загруженных тикетов, чтобы цифры сходились
+    // Считаем статусы напрямую из переданных заявок района/поиска
     const allCount = tickets.length;
-    const urgentCount = tickets.filter(t => t.status === "planned" && !t.assigned_worker_id).length;
+    const urgentCount = tickets.filter(isTicketUrgent).length;
+    const inProgressCount = tickets.filter(t => t.status === "in_progress").length;
     const completedCount = tickets.filter(t => t.status === "completed").length;
 
     const displayedTickets = tickets.filter(t => {
-        if (activeFilter === "urgent") return t.status === "planned" && !t.assigned_worker_id;
+        if (activeFilter === "urgent") return isTicketUrgent(t);
+        if (activeFilter === "in_progress") return t.status === "in_progress";
         if (activeFilter === "completed") return t.status === "completed";
         return true;
     });
@@ -71,11 +87,33 @@ const TicketsStatuses = ({ onFilterChange, onSelectTicket, filter }) => {
             onClick={() => !isOpen && setIsOpen(true)}
         >
             <div className={styles.pillsWrapper}>
+                {selectedDistrict && (
+                    <div className={styles.districtPill} title={`Выбран район: ${selectedDistrict}`}>
+                        <span>{selectedDistrict}</span>
+                        {onClearDistrict && (
+                            <button
+                                type="button"
+                                className={styles.clearDistrictButton}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onClearDistrict();
+                                }}
+                                title="Сбросить район"
+                                aria-label="Сбросить район"
+                            >
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
+                        )}
+                    </div>
+                )}
                 <Status 
                     label="Все" 
                     count={allCount} 
                     variant="all" 
-                    isInteractive={isOpen}
+                    isInteractive={true}
                     isInactive={isOpen && activeFilter !== "all"}
                     onClick={() => changeFilter("all")}
                 />
@@ -83,15 +121,23 @@ const TicketsStatuses = ({ onFilterChange, onSelectTicket, filter }) => {
                     label="Срочные" 
                     count={urgentCount} 
                     variant="urgent" 
-                    isInteractive={isOpen}
+                    isInteractive={true}
                     isInactive={isOpen && activeFilter !== "urgent"}
                     onClick={() => changeFilter("urgent")}
+                />
+                <Status 
+                    label="В работе" 
+                    count={inProgressCount} 
+                    variant="in_progress" 
+                    isInteractive={true}
+                    isInactive={isOpen && activeFilter !== "in_progress"}
+                    onClick={() => changeFilter("in_progress")}
                 />
                 <Status 
                     label="Выполнено" 
                     count={completedCount} 
                     variant="completed" 
-                    isInteractive={isOpen}
+                    isInteractive={true}
                     isInactive={isOpen && activeFilter !== "completed"}
                     onClick={() => changeFilter("completed")}
                 />

@@ -1,6 +1,9 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Popup } from "@vis.gl/react-maplibre";
+import { useQueryClient } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/apiFetch";
 import styles from "../MapComponent.module.css";
 import routeStyles from "../Routes/Routes.module.css";
 import { IconPin, IconClock } from "../Markers/MapIcons";
@@ -14,20 +17,108 @@ const STATUS_LABELS = {
 
 export default function TicketPopup({
   ticket,
+  workers = [],
   selectedTicketRoute,
   activeLegRoute,
   isLoadingRoute,
   onSelectRouteStop,
   onClose,
 }) {
+  const queryClient = useQueryClient();
+  const [currentStatus, setCurrentStatus] = useState(ticket?.status || "planned");
+  const [assignedWorkerId, setAssignedWorkerId] = useState(ticket?.assigned_worker_id || "");
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [isUpdatingAssignee, setIsUpdatingAssignee] = useState(false);
+  const [actionMessage, setActionMessage] = useState(null);
+  const [errorMessage, setErrorMessage] = useState(null);
+
+  useEffect(() => {
+    setCurrentStatus(ticket?.status || "planned");
+    setAssignedWorkerId(ticket?.assigned_worker_id || "");
+    setActionMessage(null);
+    setErrorMessage(null);
+  }, [ticket]);
+
   if (!ticket) return null;
+
+  const handleStatusChange = async (newStatus) => {
+    if (newStatus === currentStatus || isUpdatingStatus) return;
+    setIsUpdatingStatus(true);
+    setErrorMessage(null);
+    setActionMessage(null);
+
+    try {
+      const res = await apiFetch(`/tickets/${ticket.id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || "Не удалось изменить статус заявки");
+      }
+
+      const updated = await res.json();
+      setCurrentStatus(updated.status || newStatus);
+      ticket.status = updated.status || newStatus;
+      setActionMessage("Статус обновлен");
+      setTimeout(() => setActionMessage(null), 3000);
+
+      queryClient.invalidateQueries({ queryKey: ["tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["fast-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["tickets-summary"] });
+    } catch (err) {
+      setErrorMessage(err.message || "Ошибка смены статуса");
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const handleAssigneeChange = async (e) => {
+    const rawVal = e.target.value;
+    const workerId = rawVal ? Number(rawVal) : null;
+    if (workerId === assignedWorkerId || isUpdatingAssignee) return;
+
+    setIsUpdatingAssignee(true);
+    setErrorMessage(null);
+    setActionMessage(null);
+
+    try {
+      const res = await apiFetch(`/tickets/${ticket.id}/assignees`, {
+        method: "PUT",
+        body: JSON.stringify({
+          worker_id: workerId,
+          is_pinned: true,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || "Не удалось назначить исполнителя");
+      }
+
+      const updated = await res.json();
+      setAssignedWorkerId(workerId || "");
+      ticket.assigned_worker_id = workerId;
+      setActionMessage(workerId ? "Инженер назначен" : "Назначение снято");
+      setTimeout(() => setActionMessage(null), 3000);
+
+      queryClient.invalidateQueries({ queryKey: ["tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["routes"] });
+      queryClient.invalidateQueries({ queryKey: ["fast-stats"] });
+    } catch (err) {
+      setErrorMessage(err.message || "Ошибка назначения мастера");
+    } finally {
+      setIsUpdatingAssignee(false);
+    }
+  };
 
   return (
     <Popup
       longitude={ticket.location?.longitude}
       latitude={ticket.location?.latitude}
-      offset={16}
-      maxWidth="340px"
+      offset={28}
+      maxWidth="350px"
       closeButton
       closeOnClick={false}
       onClose={onClose}
@@ -35,8 +126,8 @@ export default function TicketPopup({
       <div className={styles.geoPopup}>
         <div className={styles.popupHeader}>
           <span className={styles.popupEyebrow}>Заявка #{ticket.id}</span>
-          <span className={`${styles.status} ${styles[`status_${ticket.status}`]}`}>
-            {STATUS_LABELS[ticket.status] || ticket.status}
+          <span className={`${styles.status} ${styles[`status_${currentStatus}`]}`}>
+            {STATUS_LABELS[currentStatus] || currentStatus}
           </span>
         </div>
 
@@ -84,7 +175,7 @@ export default function TicketPopup({
         {!isLoadingRoute && activeLegRoute && (
           <div className={styles.routeLegBox}>
             <div className={styles.routeLegHeader}>
-              <span className={styles.routeLegBadge}>🚗 Маршрут к заявке</span>
+              <span className={styles.routeLegBadge}>Маршрут к заявке</span>
               <span className={styles.routeLegStats}>
                 {activeLegRoute.distanceKm} км · ~{activeLegRoute.durationMin} мин
               </span>
@@ -117,6 +208,68 @@ export default function TicketPopup({
             В маршруте #{selectedTicketRoute.route.route_number || 1} (Ост. #{selectedTicketRoute.stop.sequence}) →
           </button>
         )}
+
+        {/* Панель действий диспетчера: сменить статус / назначить инженера */}
+        <div className={styles.actionSection}>
+          <div className={styles.actionSectionHeader}>
+            <span className={styles.actionSectionTitle}>Статус выполнения</span>
+            {actionMessage && <span className={styles.actionSuccessMsg}>{actionMessage}</span>}
+          </div>
+
+          <div className={styles.statusButtonGroup}>
+            <button
+              type="button"
+              className={`${styles.statusActionBtn} ${currentStatus === "in_progress" ? styles.statusActionBtnActive : ""}`}
+              onClick={() => handleStatusChange("in_progress")}
+              disabled={isUpdatingStatus || currentStatus === "in_progress"}
+            >
+              В работу
+            </button>
+            <button
+              type="button"
+              className={`${styles.statusActionBtn} ${currentStatus === "completed" ? styles.statusActionBtnActive : ""}`}
+              onClick={() => handleStatusChange("completed")}
+              disabled={isUpdatingStatus || currentStatus === "completed"}
+            >
+              Выполнена
+            </button>
+            <button
+              type="button"
+              className={`${styles.statusActionBtn} ${currentStatus === "wont_fix" ? styles.statusActionBtnActive : ""}`}
+              onClick={() => handleStatusChange("wont_fix")}
+              disabled={isUpdatingStatus || currentStatus === "wont_fix"}
+            >
+              Отменить
+            </button>
+          </div>
+
+          <div className={styles.assignSection}>
+            <span className={styles.actionSectionTitle}>Назначить инженера</span>
+            <div className={styles.assignSelectWrapper}>
+              <select
+                className={styles.assignSelect}
+                value={assignedWorkerId}
+                onChange={handleAssigneeChange}
+                disabled={isUpdatingAssignee}
+              >
+                <option value="">Не назначен (в пуле)</option>
+                {workers.map((w) => {
+                  const name = [w.surname, w.name].filter(Boolean).join(" ") || `Инженер #${w.id}`;
+                  const isOnline = w.worker_profile?.is_on_line;
+                  return (
+                    <option key={w.id} value={w.id}>
+                      {name} {isOnline ? "(на линии)" : "(офлайн)"}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+
+          {errorMessage && (
+            <div className={styles.actionErrorMsg}>{errorMessage}</div>
+          )}
+        </div>
       </div>
     </Popup>
   );

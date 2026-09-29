@@ -1,8 +1,17 @@
 .menu {
   width: max-content;
-  max-width: 36px;
+  max-width: 46px;
+  max-height: 46px;
   flex-direction: column-reverse;
   transform-origin: bottom left;
+  transition: max-width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+              max-height 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+              box-shadow 0.3s ease;
+}
+
+.menu.open {
+  max-width: 280px;
+  max-height: calc(100dvh - 110px);
 }
 
 .trigger {
@@ -29,9 +38,11 @@
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  width: 236px;
-  padding-top: 8px;
+  gap: 8px;
+  width: 248px;
+  padding-top: 4px;
+  padding-bottom: 2px;
+  box-sizing: border-box;
 }
 
 .quickActions,
@@ -40,85 +51,113 @@
 .objectLayers {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
 }
 
 .quickActions {
   flex-direction: row;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .zoom {
   flex-direction: row;
+  gap: 4px;
 }
 
 .quickAction,
-.zoom button,
-.styles button {
+.zoom button {
   border: 0;
   border-radius: 8px;
   color: var(--foreground);
   cursor: pointer;
 }
 
-.quickAction,
 .zoom button {
   flex: 1;
-  height: 36px;
-  background: rgba(255, 255, 255, 0.08);
-  font-size: 13px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 20px;
+  font-weight: 300;
   line-height: 1;
+  transition: all 0.15s ease;
 }
 
-.zoom button {
-  font-size: 24px;
-}
-
-.styles button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 32px;
-  padding: 5px 8px;
-  background: rgba(255, 255, 255, 0.05);
-  font-size: 13px;
-  text-align: left;
+.quickAction {
+  flex: 1;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  line-height: 1;
+  transition: all 0.15s ease;
 }
 
 .quickAction:hover,
-.zoom button:hover,
-.styles button:hover {
+.zoom button:hover {
   background: rgba(255, 255, 255, 0.14);
 }
 
-.styles button.active {
-  background: rgba(255, 200, 0, 0.14);
-  outline: 1px solid var(--beeline);
+.styleButtonsRow {
+  display: flex;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.styles button span {
+.styleBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 27px;
+  padding: 0 4px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.styleBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.styleBtn.active {
+  background: rgba(255, 200, 0, 0.2);
   color: var(--beeline);
-  font-weight: 700;
+  font-weight: 650;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
 .sectionLabel {
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 9.5px;
+  font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  padding-top: 2px;
 }
 
 .objectLayers {
-  gap: 6px;
-  padding: 10px;
+  gap: 4px;
+  padding: 8px 10px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .layerToggle {
   display: flex;
-  min-height: 30px;
+  min-height: 28px;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   padding: 0 7px;
   border: 0;
   border-radius: 7px;
@@ -128,6 +167,7 @@
   font: inherit;
   font-size: 12px;
   text-align: left;
+  transition: all 0.15s ease;
 }
 
 .layerToggle:hover,
@@ -182,6 +222,10 @@
 }
 
 .routeDot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
   background: #00d2be;
 }
 
@@ -196,16 +240,16 @@
 .statusKey {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 10px;
+  gap: 4px 8px;
   padding: 2px 4px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 9.5px;
 }
 
 .statusKey span {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 
 .heatmapDot {
@@ -217,4 +261,188 @@
   font-size: 11px;
   line-height: 1.4;
 }
+
+/* Active District & Route Controls inside Layers - Beeline Business Aesthetic */
+.districtSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 200, 0, 0.22);
+}
+
+.districtHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.districtTitle {
+  font-size: 12px;
+  font-weight: 650;
+  color: #FFFFFF;
+  line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.districtTitleText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.districtIndicator {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--beeline);
+  flex-shrink: 0;
+}
+
+.officeIndicator {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: #00D2BE;
+  flex-shrink: 0;
+}
+
+.districtSub {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.districtActions {
+  display: flex;
+  gap: 6px;
+}
+
+.districtBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.districtBtn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #FFFFFF;
+}
+
+.districtBtn.active {
+  background: rgba(255, 200, 0, 0.18);
+  color: var(--beeline);
+  outline: 1px solid rgba(255, 200, 0, 0.45);
+}
+
+.districtBtnReset {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.districtBtnReset:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #FFFFFF;
+}
+
+.districtDot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: #2563eb;
+}
+
+.routeLegItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(0, 210, 190, 0.25);
+}
+
+.routeLegIconWrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #00D2BE;
+  flex-shrink: 0;
+}
+
+.routeLegTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: #00D2BE;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.routeLegClose {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.routeLegClose:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #FFFFFF;
+}
+
+.activeBadgeDot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--beeline);
+  border: 1.5px solid #1c1c1e;
+  pointer-events: none;
+  box-shadow: 0 0 5px rgba(255, 200, 0, 0.7);
+}
+
 
