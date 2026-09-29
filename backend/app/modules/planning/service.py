@@ -13,9 +13,9 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.core.planning_guard import lock_planning_mutation
-from app.modules.notifications.enums import NotificationKind
 from app.modules.execution.enums import WorkEventType
 from app.modules.execution.models import WorkEvent
+from app.modules.notifications.enums import NotificationKind
 from app.modules.notifications.schedule_updates import publish_schedule_updated
 from app.modules.planning.day_models import DayPlanRevision
 from app.modules.planning.day_plans import (
