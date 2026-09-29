@@ -21,18 +21,35 @@
   width: 100%;
   height: 100%;
   cursor: pointer;
+  border-radius: 12px;
+  transition: background-color 0.2s ease;
 }
 
 .menu.open .header {
   padding-right: 0;
 }
 
-.trigger :global(img) {
-  display: block;
+.triggerIcon {
+  width: 19px;
+  height: 19px;
+  background-color: var(--text-primary);
+  mask-image: url("/icons/lauers.svg");
+  mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  -webkit-mask-image: url("/icons/lauers.svg");
+  -webkit-mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  transition: background-color 0.2s ease;
 }
 
 .menu.open .trigger {
   background: var(--beeline);
+}
+
+.menu.open .triggerIcon {
+  background-color: #111111;
 }
 
 .panel {
@@ -56,8 +73,8 @@
 
 .quickActions {
   flex-direction: row;
-  padding-top: 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .zoom {
@@ -67,16 +84,16 @@
 
 .quickAction,
 .zoom button {
-  border: 0;
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  color: var(--foreground);
+  color: var(--text-primary);
   cursor: pointer;
 }
 
 .zoom button {
   flex: 1;
   height: 30px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-card-subtle);
   font-size: 20px;
   font-weight: 300;
   line-height: 1;
@@ -86,24 +103,26 @@
 .quickAction {
   flex: 1;
   height: 28px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-card-subtle);
   font-size: 11px;
+  font-weight: 500;
   line-height: 1;
   transition: all 0.15s ease;
 }
 
 .quickAction:hover,
 .zoom button:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--hover-color);
+  border-color: var(--border-color);
 }
 
 .styleButtonsRow {
   display: flex;
   gap: 3px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-card-subtle);
   padding: 3px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-subtle);
 }
 
 .styleBtn {
@@ -116,7 +135,7 @@
   background: transparent;
   border: 0;
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-secondary);
   font-size: 11.5px;
   font-weight: 500;
   cursor: pointer;
@@ -125,21 +144,22 @@
 }
 
 .styleBtn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background: var(--hover-color);
+  color: var(--text-primary);
 }
 
 .styleBtn.active {
-  background: rgba(255, 200, 0, 0.2);
-  color: var(--beeline);
-  font-weight: 650;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  background: rgba(255, 200, 0, 0.22);
+  color: var(--text-primary);
+  font-weight: 700;
+  box-shadow: 0 1px 4px var(--shadow-sm);
+  border: 1px solid rgba(255, 200, 0, 0.45);
 }
 
 .sectionLabel {
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-muted);
   font-size: 9.5px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding-top: 2px;
@@ -149,8 +169,8 @@
   gap: 4px;
   padding: 8px 10px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-subtle);
 }
 
 .layerToggle {
@@ -162,7 +182,7 @@
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
@@ -172,8 +192,8 @@
 
 .layerToggle:hover,
 .layerToggle.layerEnabled {
-  background: rgba(255, 200, 0, 0.12);
-  color: var(--foreground);
+  background: rgba(255, 200, 0, 0.16);
+  color: var(--text-primary);
 }
 
 .layerToggle:focus-visible {
@@ -183,9 +203,10 @@
 
 .layerCount {
   margin-left: auto;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-muted);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 .ticketDot,
@@ -242,7 +263,7 @@
   flex-wrap: wrap;
   gap: 4px 8px;
   padding: 2px 4px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-muted);
   font-size: 9.5px;
 }
 
@@ -257,7 +278,7 @@
 }
 
 .mapError {
-  color: #ff8888;
+  color: var(--danger);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -269,8 +290,8 @@
   gap: 6px;
   padding: 8px 10px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 200, 0, 0.22);
+  background: var(--bg-card-subtle);
+  border: 1px solid rgba(255, 200, 0, 0.35);
 }
 
 .districtHeader {
@@ -283,7 +304,7 @@
 .districtTitle {
   font-size: 12px;
   font-weight: 650;
-  color: #FFFFFF;
+  color: var(--text-primary);
   line-height: 1.3;
   display: flex;
   align-items: center;
@@ -315,7 +336,7 @@
 
 .districtSub {
   font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-secondary);
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
@@ -335,10 +356,10 @@
   gap: 5px;
   height: 26px;
   padding: 0 8px;
-  border: 0;
+  border: 1px solid var(--border-subtle);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.85);
+  background: var(--bg-card);
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 550;
   cursor: pointer;
@@ -346,14 +367,16 @@
 }
 
 .districtBtn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #FFFFFF;
+  background: var(--hover-color);
+  color: var(--text-primary);
+  border-color: var(--border-color);
 }
 
 .districtBtn.active {
-  background: rgba(255, 200, 0, 0.18);
-  color: var(--beeline);
-  outline: 1px solid rgba(255, 200, 0, 0.45);
+  background: rgba(255, 200, 0, 0.2);
+  color: var(--text-primary);
+  outline: 1px solid rgba(255, 200, 0, 0.5);
+  font-weight: 650;
 }
 
 .districtBtnReset {
@@ -363,17 +386,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 0;
+  border: 1px solid var(--border-subtle);
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.55);
+  background: var(--bg-card);
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .districtBtnReset:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #FFFFFF;
+  background: var(--hover-color);
+  color: var(--text-primary);
+  border-color: var(--border-color);
 }
 
 .districtDot {
@@ -391,8 +415,8 @@
   gap: 6px;
   padding: 6px 10px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(0, 210, 190, 0.25);
+  background: var(--bg-card-subtle);
+  border: 1px solid rgba(0, 210, 190, 0.35);
 }
 
 .routeLegIconWrapper {
@@ -406,7 +430,7 @@
 .routeLegTitle {
   font-size: 11px;
   font-weight: 600;
-  color: #00D2BE;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -418,7 +442,7 @@
   border-radius: 4px;
   border: 0;
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -428,8 +452,8 @@
 }
 
 .routeLegClose:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #FFFFFF;
+  background: var(--hover-color);
+  color: var(--text-primary);
 }
 
 .activeBadgeDot {
@@ -440,7 +464,7 @@
   height: 7px;
   border-radius: 50%;
   background: var(--beeline);
-  border: 1.5px solid #1c1c1e;
+  border: 1.5px solid var(--tertiary);
   pointer-events: none;
   box-shadow: 0 0 5px rgba(255, 200, 0, 0.7);
 }

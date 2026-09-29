@@ -135,8 +135,8 @@ export default function Layers({
       className={styles.menu}
       baseSize={46}
       renderHeader={() => (
-        <div className={styles.trigger} style={{ position: "relative" }}>
-          <Image src="/icons/lauers.svg" alt="Слои" width={19} height={19} />
+        <div className={styles.trigger} style={{ position: "relative" }} title="Слои карты">
+          <div className={styles.triggerIcon} aria-label="Слои" />
           {hasActiveFocus && <span className={styles.activeBadgeDot} />}
         </div>
       )}

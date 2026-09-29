@@ -17,6 +17,7 @@ import { useTicketRouteLeg } from "@/hooks/useTicketRouteLeg";
 import { isTicketUrgent } from "@/utils/ticketUtils";
 import styles from "./MapComponent.module.css";
 import routeStyles from "./Routes/Routes.module.css";
+import { useTheme } from "@/providers/ThemeProvider";
 
 const ROUTE_PALETTE = [
   "#FFB800", // Beeline Gold
@@ -56,6 +57,7 @@ export default function MapComponent({
   onPinPick,
   isDataReady,
 }) {
+  const { actualTheme } = useTheme();
   const didFitBounds = useRef(false);
   const [hoveredRoute, setHoveredRoute] = useState(null);
 
@@ -617,7 +619,11 @@ export default function MapComponent({
       }}
       ref={mapRef}
       initialViewState={{ longitude: 35, latitude: 55, zoom: 1 }}
-      mapStyle={`https://api.maptiler.com/maps/01a0a53f-a24b-7778-b5e1-b59ba3d6f612/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`}
+      mapStyle={
+        actualTheme === "light"
+          ? `https://api.maptiler.com/maps/streets-v2/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`
+          : `https://api.maptiler.com/maps/01a0a53f-a24b-7778-b5e1-b59ba3d6f612/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`
+      }
       attributionControl={false}
       interactiveLayerIds={
         visibleLayers.routes || activeLegFeature || workerRoute?.geometry ? ["routes-hit-area", "routes-line"] : []
