@@ -88,18 +88,39 @@ export default function EmptyDataModal({ isOpen, onClose }) {
       const tickets = ticketsRes.ok ? await ticketsRes.json() : [];
       const workers = workersRes.ok ? await workersRes.json() : [];
 
-      const candidateTickets = tickets
-        .filter((t) => t.status === "planned" || !t.assigned_worker_id)
-        .map((t) => t.id)
-        .slice(0, 100);
+      const waitingTickets = tickets.filter(
+        (t) => t.status === "planned" || !t.assigned_worker_id
+      );
 
-      const candidateWorkers = workers.map((w) => w.id).slice(0, 50);
+      // Планирование строится по отдельному участку (service_area_id)
+      const firstAreaId =
+        waitingTickets.find((t) => t.service_area_id)?.service_area_id || null;
+
+      const areaTickets = firstAreaId
+        ? waitingTickets.filter((t) => t.service_area_id === firstAreaId)
+        : waitingTickets;
+
+      const candidateTickets = areaTickets.map((t) => t.id).slice(0, 100);
+
+      // Специалисты для этого участка (макс. 20 по лимиту бэкенда)
+      const areaWorkers = firstAreaId
+        ? workers.filter(
+            (w) =>
+              (w.worker_profile?.service_area_id ?? w.service_area_id) === firstAreaId ||
+              (!w.worker_profile?.service_area_id && !w.service_area_id)
+          )
+        : workers;
+
+      const candidateWorkers = (areaWorkers.length > 0 ? areaWorkers : workers)
+        .map((w) => w.id)
+        .slice(0, 20);
 
       if (candidateTickets.length > 0 && candidateWorkers.length > 0) {
         const previewRes = await apiFetch("/planning/preview", {
           method: "POST",
           body: JSON.stringify({
             route_date: targetDate,
+            ...(firstAreaId ? { service_area_id: firstAreaId } : {}),
             ticket_ids: candidateTickets,
             worker_ids: candidateWorkers,
             allow_partial: true,

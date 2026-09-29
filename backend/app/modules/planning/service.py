@@ -728,6 +728,7 @@ async def preview(
                     finally:
                         telemetry.record_stage("matrix_build", time.perf_counter() - started)
 
+                    previous_corrected_edges = set()
                     for attempt in range(2):
                         started = time.perf_counter()
                         try:
@@ -792,12 +793,17 @@ async def preview(
                         finally:
                             telemetry.record_stage("route_fetch", time.perf_counter() - started)
                         if route_result.corrections:
-                            if attempt:
+                            current_corrected_edges = {
+                                (c.profile, c.source, c.target) for c in route_result.corrections
+                            }
+                            if attempt and (current_corrected_edges & previous_corrected_edges):
                                 raise PlanningError("routing_estimate_changed", 502)
-                            apply_estimate_corrections(
-                                problem, prepared, nodes, route_result.corrections
-                            )
-                            continue
+                            previous_corrected_edges |= current_corrected_edges
+                            if not attempt:
+                                apply_estimate_corrections(
+                                    problem, prepared, nodes, route_result.corrections
+                                )
+                                continue
                         routes, creates = route_result.routes, route_result.creates
                         break
 

@@ -1,4 +1,6 @@
-"""FastAPI entry point for the solver service."""
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from fastapi import FastAPI
 
