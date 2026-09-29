@@ -197,14 +197,25 @@ export function useWorkerTasksRoute(selectedWorker, workerTickets = [], location
         // Fallback to straight lines
       }
 
-      // 3. Fallback: порядок объезда соединен прямыми отрезками
+      // 3. Fallback: порядок объезда соединен прямыми отрезками с расчетом дистанции
+      let totalDistMeters = 0;
+      for (let i = 0; i < points.length - 1; i++) {
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const dLat = (p2.latitude - p1.latitude) * 111000;
+        const dLon = (p2.longitude - p1.longitude) * 65000;
+        totalDistMeters += Math.hypot(dLat, dLon);
+      }
+      const distKm = totalDistMeters / 1000;
+      const durationMin = Math.max(1, Math.round((distKm / 30) * 60));
+
       return {
         id: `worker-route-${selectedWorker.id}`,
         workerId: selectedWorker.id,
         worker_id: selectedWorker.id,
         workerName: [selectedWorker.name, selectedWorker.surname].filter(Boolean).join(" "),
-        distanceKm: "0.0",
-        durationMin: 0,
+        distanceKm: distKm.toFixed(1),
+        durationMin,
         geometry: {
           type: "LineString",
           coordinates: points.map((p) => [p.longitude, p.latitude]),

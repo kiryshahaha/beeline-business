@@ -13,6 +13,7 @@ import BrigadesJournalModal from "@/components/dashboard/BrigadesJournalModal/Br
 import EventsJournalModal from "@/components/dashboard/EventsJournalModal/EventsJournalModal";
 import { useFastStats } from "@/hooks/useFastStats";
 import { useTicketsSummary } from "@/hooks/useTicketsSummary";
+import { useAvailableDates } from "@/hooks/useAvailableDates";
 
 const MONTH_NAMES = [
     "января", "февраля", "марта", "апреля", "мая", "июня",
@@ -39,7 +40,12 @@ function extractHoursMinutes(timestamp) {
 
 const Dashboard = () => {
     const [manualOpenModal, setManualOpenModal] = useState(false);
-    const [isDismissed, setIsDismissed] = useState(false);
+    const [isDismissed, setIsDismissed] = useState(() => {
+        if (typeof window !== "undefined") {
+            return sessionStorage.getItem("empty_data_modal_dismissed") === "1";
+        }
+        return false;
+    });
     const [isJournalModalOpen, setIsJournalModalOpen] = useState(false);
     const [isEventsModalOpen, setIsEventsModalOpen] = useState(false);
 
@@ -70,6 +76,17 @@ const Dashboard = () => {
     const todayMsk = React.useMemo(() => {
         return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Moscow" });
     }, []);
+
+    const { hasToday, closestDate } = useAvailableDates(todayMsk);
+
+    // Автоматическая подстройка под ближайший доступный день, если сегодня нет задач
+    React.useEffect(() => {
+        if (!hasToday && closestDate && closestDate !== todayMsk) {
+            queueMicrotask(() => {
+                setCustomDate(closestDate);
+            });
+        }
+    }, [hasToday, closestDate, todayMsk]);
 
     const { workloadDate, workloadDateFrom, workloadDateTo } = React.useMemo(() => {
         if (selectedPreset === "custom") {
@@ -138,6 +155,9 @@ const Dashboard = () => {
     const handleCloseModal = () => {
         setIsDismissed(true);
         setManualOpenModal(false);
+        if (typeof window !== "undefined") {
+            sessionStorage.setItem("empty_data_modal_dismissed", "1");
+        }
     };
 
     // Выбираем самое свежее время обновления

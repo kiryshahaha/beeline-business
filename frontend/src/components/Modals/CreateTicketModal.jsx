@@ -40,12 +40,6 @@ function formatApiError(errData, fallbackMessage) {
   return fallbackMessage;
 }
 
-const FALLBACK_WORK_TYPES = [
-  { id: 8, name: "Локальные работы", category: "repair", priority: 3, norm_minutes: 55 },
-  { id: 9, name: "Работы на подключение и дозаказы", category: "repair", priority: 3, norm_minutes: 55 },
-  { id: 10, name: "Аварийные работы", category: "repair", priority: 3, norm_minutes: 55 },
-];
-
 export default function CreateTicketModal({
   isOpen,
   onClose,
@@ -59,16 +53,16 @@ export default function CreateTicketModal({
   const userRole = tokenPayload?.role;
   const isObserver = !userRole || userRole === "observer";
 
-  const { workTypes: fetchedWorkTypes = [] } = useWorkTypes();
-  const workTypes = fetchedWorkTypes.length > 0 ? fetchedWorkTypes : FALLBACK_WORK_TYPES;
+  const { workTypes = [] } = useWorkTypes();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [workTypeId, setWorkTypeId] = useState(null);
 
-  const effectiveWorkTypeId = workTypeId ?? workTypes[0].id;
+  const effectiveWorkTypeId = workTypeId ?? (workTypes[0]?.id ?? null);
   const selectedWorkType = useMemo(() => {
-    return workTypes.find((w) => w.id === Number(effectiveWorkTypeId)) || workTypes[0];
+    if (!effectiveWorkTypeId || !workTypes.length) return null;
+    return workTypes.find((w) => w.id === Number(effectiveWorkTypeId)) || workTypes[0] || null;
   }, [workTypes, effectiveWorkTypeId]);
 
   // Адресные поля
@@ -79,7 +73,7 @@ export default function CreateTicketModal({
   const searchTimeoutRef = useRef(null);
 
   const [city, setCity] = useState("Москва");
-  const [district, setDistrict] = useState("Тверской");
+  const [district, setDistrict] = useState("");
   const [street, setStreet] = useState("");
   const [buildingNumber, setBuildingNumber] = useState("");
   const [latitude, setLatitude] = useState("");
@@ -90,7 +84,10 @@ export default function CreateTicketModal({
   // Временные параметры
   const [visitStart, setVisitStart] = useState("");
   const [visitEnd, setVisitEnd] = useState("");
-  const [durationMinutes, setDurationMinutes] = useState(60);
+  const [customDurationMinutes, setCustomDurationMinutes] = useState(null);
+  const durationMinutes =
+    customDurationMinutes ??
+    (selectedWorkType?.norm_minutes || selectedWorkType?.work_minutes || 60);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
@@ -102,33 +99,24 @@ export default function CreateTicketModal({
     if (initialCoordinates) {
       const lat = parseFloat(initialCoordinates.lat || initialCoordinates[1]);
       const lng = parseFloat(initialCoordinates.lng || initialCoordinates[0]);
-      queueMicrotask(() => {
-        setLatitude(lat.toFixed(5));
-        setLongitude(lng.toFixed(5));
-      });
+      if (!isNaN(lat) && !isNaN(lng)) {
+        queueMicrotask(() => {
+          setLatitude(lat.toFixed(5));
+          setLongitude(lng.toFixed(5));
+        });
 
-      // Запускаем распознавание адреса по координатам точки на карте
-      reverseGeocodeCoordinates(lat, lng).then((parsed) => {
-        if (parsed) {
-          setCity(parsed.city || "Москва");
-          setDistrict(parsed.district || "Центральный");
-          setStreet(parsed.street || "");
-          setBuildingNumber(parsed.buildingNumber || "1");
-          setFormattedAddress(parsed.formattedAddress);
-          setAddressSearchQuery(parsed.formattedAddress);
-        }
-      });
-    } else if (!latitude) {
-      queueMicrotask(() => {
-        // Центр Москвы по умолчанию
-        setLatitude("55.7558");
-        setLongitude("37.6173");
-        setStreet("Тверская");
-        setBuildingNumber("1");
-        setDistrict("Тверской");
-        setFormattedAddress("Москва, Тверская, 1");
-        setAddressSearchQuery("Москва, Тверская, 1");
-      });
+        // Запускаем распознавание адреса по координатам точки на карте
+        reverseGeocodeCoordinates(lat, lng).then((parsed) => {
+          if (parsed) {
+            setCity(parsed.city || "Москва");
+            setDistrict(parsed.district || "");
+            setStreet(parsed.street || "");
+            setBuildingNumber(parsed.buildingNumber || "");
+            setFormattedAddress(parsed.formattedAddress || "");
+            setAddressSearchQuery(parsed.formattedAddress || "");
+          }
+        });
+      }
     }
 
     // Временные окна визита (сегодня с 10:00 до 14:00)
@@ -150,7 +138,7 @@ export default function CreateTicketModal({
       setVisitEnd(formatForInput(end));
       setErrorMessage(null);
     });
-  }, [isOpen, initialCoordinates, latitude]);
+  }, [isOpen, initialCoordinates]);
 
   // Обработка живого поиска адреса с автокомплитом
   const handleAddressInputChange = (e) => {
@@ -177,13 +165,15 @@ export default function CreateTicketModal({
     const parsed = suggestion.parsed;
     if (parsed) {
       setCity(parsed.city || "Москва");
-      setDistrict(parsed.district || "Тверской");
+      setDistrict(parsed.district || "");
       setStreet(parsed.street || "");
-      setBuildingNumber(parsed.buildingNumber || "1");
-      setLatitude(Number(parsed.lat).toFixed(5));
-      setLongitude(Number(parsed.lng).toFixed(5));
-      setFormattedAddress(parsed.formattedAddress);
-      setAddressSearchQuery(parsed.formattedAddress);
+      setBuildingNumber(parsed.buildingNumber || "");
+      if (parsed.lat != null && parsed.lng != null) {
+        setLatitude(Number(parsed.lat).toFixed(5));
+        setLongitude(Number(parsed.lng).toFixed(5));
+      }
+      setFormattedAddress(parsed.formattedAddress || "");
+      setAddressSearchQuery(parsed.formattedAddress || "");
     }
     setShowSuggestions(false);
   };
@@ -194,6 +184,10 @@ export default function CreateTicketModal({
     e.preventDefault();
     if (!title.trim()) {
       setErrorMessage("Укажите название заявки");
+      return;
+    }
+    if (!selectedWorkType) {
+      setErrorMessage("Выберите вид работ");
       return;
     }
 
@@ -210,8 +204,15 @@ export default function CreateTicketModal({
         effectiveStreet = query;
       }
     }
-    if (!effectiveStreet) effectiveStreet = "Тверская";
-    if (!effectiveBuilding) effectiveBuilding = "1";
+
+    if (!effectiveStreet) {
+      setErrorMessage("Укажите улицу или выберите адрес из списка подсказок");
+      return;
+    }
+    if (!effectiveBuilding) {
+      setErrorMessage("Укажите номер дома");
+      return;
+    }
 
     const startDate = new Date(visitStart);
     let endDate = new Date(visitEnd);
@@ -228,59 +229,70 @@ export default function CreateTicketModal({
 
     try {
       // 1. Создаем или получаем локацию в БД
-      let locationId = null;
-      try {
-        const cleanDist = (district.trim() || "Тверской")
-          .replace(/\s*(район|муниципальный округ|административный округ)\s*/gi, "")
-          .trim() || "Тверской";
+      let finalLat = parseFloat(latitude);
+      let finalLng = parseFloat(longitude);
 
-        const locRes = await apiFetch("/location", {
-          method: "POST",
-          body: JSON.stringify({
-            city: city.trim() || "Москва",
-            district: cleanDist,
-            street: effectiveStreet,
-            building_number: effectiveBuilding,
-            latitude: parseFloat(latitude) || 55.7558,
-            longitude: parseFloat(longitude) || 37.6173,
-          }),
-        });
-
-        if (locRes.ok) {
-          const locData = await locRes.json();
-          locationId = locData.id;
-        } else {
-          const locErr = await locRes.json().catch(() => ({}));
-          console.warn("POST /location returned error, trying fallback:", locErr);
-        }
-      } catch (locErr) {
-        console.warn("Location network error:", locErr);
-      }
-
-      // Резервный поиск существующей локации в БД
-      if (!locationId) {
+      // Если координаты не выбраны вручную/с карты, пробуем быстро геокодировать строку адреса
+      if ((isNaN(finalLat) || isNaN(finalLng)) && query) {
         try {
-          const fallbackRes = await apiFetch("/location/511");
-          if (fallbackRes.ok) {
-            const fbData = await fallbackRes.json();
-            locationId = fbData.id;
+          const found = await searchAddressSuggestions(query);
+          if (found && found.length > 0 && found[0].parsed?.lat && found[0].parsed?.lng) {
+            finalLat = parseFloat(found[0].parsed.lat);
+            finalLng = parseFloat(found[0].parsed.lng);
+            if (!district && found[0].parsed.district) {
+              setDistrict(found[0].parsed.district);
+            }
           }
         } catch {}
-        if (!locationId) locationId = 511;
       }
 
-      // 2. Создаем заявку
+      const cleanDist = (district.trim() || "")
+        .replace(/\s*(район|муниципальный округ|административный округ)\s*/gi, "")
+        .trim();
+
+      const locPayload = {
+        city: city.trim() || "Москва",
+        district: cleanDist || "Центральный",
+        street: effectiveStreet,
+        building_number: effectiveBuilding,
+      };
+      if (!isNaN(finalLat) && !isNaN(finalLng)) {
+        locPayload.latitude = finalLat;
+        locPayload.longitude = finalLng;
+      }
+
+      const locRes = await apiFetch("/location", {
+        method: "POST",
+        body: JSON.stringify(locPayload),
+      });
+
+      if (!locRes.ok) {
+        const locErr = await locRes.json().catch(() => ({}));
+        throw new Error(formatApiError(locErr, "Не удалось сохранить адрес заявки"));
+      }
+
+      const locData = await locRes.json();
+      const locationId = locData.id;
+      const serviceAreaId = locData.service_area_id;
+
+      if (!locationId) {
+        throw new Error("Сервер не вернул идентификатор созданного адреса");
+      }
+
+      // 2. Создаем заявку с динамическими параметрами
       const ticketWorkTypeId = selectedWorkType.id;
       const ticketPayload = {
         location_id: Number(locationId),
         title: title.trim(),
         description: description.trim() || null,
         work_type_id: Number(ticketWorkTypeId),
-        service_area_id: 20,
         estimated_duration_minutes: Math.max(15, Number(durationMinutes) || selectedWorkType.norm_minutes || 60),
         visit_window_start: startDate.toISOString(),
         visit_window_end: endDate.toISOString(),
       };
+      if (serviceAreaId) {
+        ticketPayload.service_area_id = Number(serviceAreaId);
+      }
       if (selectedWorkType.category) {
         ticketPayload.category = selectedWorkType.category;
       }
@@ -300,18 +312,26 @@ export default function CreateTicketModal({
 
       const createdTicket = await ticketRes.json();
 
-      // Автоматически резервируем обязательное оборудование на созданную заявку
-      const requiredApplianceMap = { 8: 36, 9: 37, 10: 38 };
-      const reqAppId = requiredApplianceMap[Number(ticketWorkTypeId)];
-      if (reqAppId && createdTicket?.id) {
-        await apiFetch(`/tickets/${createdTicket.id}/appliances`, {
-          method: "POST",
-          body: JSON.stringify({
-            appliance_id: reqAppId,
-            quantity: 1,
-            office_id: 10,
-          }),
-        }).catch(() => null);
+      // 3. Автоматически резервируем обязательное оборудование из правил вида работ (planning-rules)
+      try {
+        const rulesRes = await apiFetch(`/work-types/${ticketWorkTypeId}/planning-rules`);
+        if (rulesRes.ok) {
+          const rulesData = await rulesRes.json();
+          const reqAppliances = rulesData?.required_appliances || [];
+          for (const req of reqAppliances) {
+            if (req.appliance_id && req.quantity > 0) {
+              await apiFetch(`/tickets/${createdTicket.id}/appliances`, {
+                method: "POST",
+                body: JSON.stringify({
+                  appliance_id: req.appliance_id,
+                  quantity: req.quantity,
+                }),
+              }).catch((e) => console.warn("Could not auto-reserve appliance:", e));
+            }
+          }
+        }
+      } catch (appErr) {
+        console.warn("Failed to fetch planning rules for appliances:", appErr);
       }
 
       // Инвалидируем кэш для немедленного обновления карты и списков (FE-04)
@@ -531,19 +551,23 @@ export default function CreateTicketModal({
               <label className={styles.label}>Вид работ</label>
               <select
                 className={styles.select}
-                value={effectiveWorkTypeId}
+                value={effectiveWorkTypeId || ""}
                 onChange={(e) => {
                   const id = Number(e.target.value);
                   setWorkTypeId(id);
-                  const wt = workTypes.find((w) => w.id === id);
-                  if (wt) setDurationMinutes(wt.norm_minutes || wt.work_minutes || wt.defaultMinutes || 60);
+                  setCustomDurationMinutes(null);
                 }}
+                disabled={workTypes.length === 0}
               >
-                {workTypes.map((wt) => (
-                  <option key={wt.id} value={wt.id}>
-                    {wt.name} ({wt.norm_minutes || wt.work_minutes || 60} мин)
-                  </option>
-                ))}
+                {workTypes.length === 0 ? (
+                  <option value="">Загрузка видов работ...</option>
+                ) : (
+                  workTypes.map((wt) => (
+                    <option key={wt.id} value={wt.id}>
+                      {wt.name} ({wt.norm_minutes || wt.work_minutes || 60} мин)
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 
@@ -556,7 +580,7 @@ export default function CreateTicketModal({
                 step="5"
                 className={styles.input}
                 value={durationMinutes}
-                onChange={(e) => setDurationMinutes(e.target.value)}
+                onChange={(e) => setCustomDurationMinutes(e.target.value)}
               />
             </div>
           </div>
@@ -608,7 +632,7 @@ export default function CreateTicketModal({
             <button type="button" className={styles.cancelBtn} onClick={onClose} disabled={isSubmitting}>
               Отмена
             </button>
-            <button type="submit" className={styles.submitBtn} disabled={isSubmitting}>
+            <button type="submit" className={styles.submitBtn} disabled={isSubmitting || workTypes.length === 0}>
               {isSubmitting ? "Создание..." : "Создать заявку"}
             </button>
           </div>

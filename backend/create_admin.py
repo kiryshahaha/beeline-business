@@ -34,7 +34,22 @@ def clear_business_data(engine, target_username: str | None = None):
                 {"u": target_username.strip()},
             )
 
-        print("[OK] Бизнес-данные успешно очищены. База полностью пустая.", flush=True)
+        # Восстанавливаем 4 канонических вида работ по регламенту кейса
+        conn.execute(
+            text(
+                """
+                INSERT INTO work_types (name, code, category, default_priority, travel_minutes, work_minutes, documents_minutes)
+                VALUES 
+                    ('Подключение клиентов Базовая', 'connection', 'connection', 2, 20, 60, 10),
+                    ('Аварий на ТКД', 'emergency', 'emergency', 1, 20, 80, 0),
+                    ('Дозаказ оборудования', 'additional', 'additional', 3, 20, 10, 10),
+                    ('Локальная заявка/ремонт у клиента', 'repair', 'repair', 3, 20, 30, 0)
+                ON CONFLICT (lower(name)) DO NOTHING;
+                """
+            )
+        )
+
+        print("[OK] Бизнес-данные очищены. Канонические виды работ инициализированы.", flush=True)
 
 
 def create_or_update_admin(

@@ -16,6 +16,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { apiFetch } from "@/lib/apiFetch";
 import DatePicker from "@/components/ui/DatePicker/DatePicker";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAvailableDates } from "@/hooks/useAvailableDates";
 
 /* ────────────────────────────────────────────
    Helpers
@@ -233,6 +234,22 @@ export default function DispatchPage() {
     from: todayStr,
     to: todayStr,
   });
+
+  const { hasToday, closestDate } = useAvailableDates(todayStr);
+
+  // Автоматический выбор ближайшего доступного дня, если на сегодня нет задач
+  useEffect(() => {
+    if (!hasToday && closestDate && closestDate !== todayStr) {
+      queueMicrotask(() => {
+        setDateValue((prev) => {
+          if (prev.mode === "single" && prev.date === todayStr) {
+            return { mode: "single", date: closestDate, from: closestDate, to: closestDate };
+          }
+          return prev;
+        });
+      });
+    }
+  }, [hasToday, closestDate, todayStr]);
   const [selectedBrigadeId, setSelectedBrigadeId] = useState("all");
   const [selectedWorkType, setSelectedWorkType] = useState("all");
   const [selectedTaskId, setSelectedTaskId] = useState(null);
@@ -840,8 +857,8 @@ export default function DispatchPage() {
         } else {
           setAssignError(null);
           await queryClient.invalidateQueries({ queryKey: ["schedule"] });
-          setLockedTaskIds((prev) => {
-            const next = new Set(prev);
+          setLockedOverrides((prev) => {
+            const next = new Map(prev);
             next.delete(taskId);
             return next;
           });

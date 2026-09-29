@@ -14,8 +14,7 @@ export function isTicketUrgent(ticket) {
   return Boolean(
     ticket.priority === 1 ||
     ticket.category === "emergency" ||
-    ticket.status === "delayed" ||
-    (ticket.status === "planned" && !ticket.assigned_worker_id)
+    ticket.status === "delayed"
   );
 }
 

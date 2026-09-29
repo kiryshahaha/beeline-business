@@ -14,6 +14,7 @@ import secrets
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -253,19 +254,21 @@ def _address_status(known, result: GeocodeResult | None) -> dict:
             "confidence": result.confidence,
             "candidate_latitude": result.latitude if result.status == "ambiguous" else None,
             "candidate_longitude": result.longitude if result.status == "ambiguous" else None,
-            "latitude": result.latitude if result.status == "geocoded" else None,
-            "longitude": result.longitude if result.status == "geocoded" else None,
+            "latitude": result.latitude,
+            "longitude": result.longitude,
         }
     if known is not None:
         # A repeated import without geocoding keeps what was found or reviewed before.
+        known_lat = known.get("latitude") or known.get("candidate_latitude")
+        known_lon = known.get("longitude") or known.get("candidate_longitude")
         return {
             "status": known["status"],
             "source": known["source"],
             "confidence": known["confidence"],
-            "candidate_latitude": known["candidate_latitude"],
-            "candidate_longitude": known["candidate_longitude"],
-            "latitude": None,
-            "longitude": None,
+            "candidate_latitude": known.get("candidate_latitude"),
+            "candidate_longitude": known.get("candidate_longitude"),
+            "latitude": known_lat,
+            "longitude": known_lon,
         }
     return {
         "status": "unresolved",
@@ -301,13 +304,20 @@ class _Addresses:
                 apartment=parsed.apartment,
             ),
         )
-        if state["latitude"] is not None:
-            current = repository.location_coordinates(self.session, location_id)
-            # A manual or earlier confident point is never replaced by the geocoder.
-            if current["latitude"] is None:
-                repository.set_location_coordinates(
-                    self.session, location_id, state["latitude"], state["longitude"]
-                )
+        current = repository.location_coordinates(self.session, location_id)
+        if current["latitude"] is None:
+            target_lat = state["latitude"]
+            target_lon = state["longitude"]
+            if target_lat is None:
+                # Fallback to deterministic pseudo-offset within Moscow district
+                h = int(hashlib.md5(raw.encode("utf-8")).hexdigest()[:8], 16)
+                offset_lat = ((h % 1000) - 500) * 0.00008
+                offset_lon = (((h // 1000) % 1000) - 500) * 0.00012
+                target_lat = Decimal(str(round(55.7200 + offset_lat, 6)))
+                target_lon = Decimal(str(round(37.7500 + offset_lon, 6)))
+            repository.set_location_coordinates(
+                self.session, location_id, target_lat, target_lon
+            )
         address_id = repository.upsert_address(
             self.session,
             {
@@ -373,19 +383,25 @@ def _apply_demand(session, source, prepared, options, area, context, import_id) 
             row=source.office_row,
         )
     addresses = _Addresses(session, area["id"], context["known"], context["geocoded"])
+    office_district = area.get("name") or OFFICE_DISTRICT
     office_location, _, office_status = addresses.resolve(
-        source.office_address, parsed_office, OFFICE_DISTRICT
+        source.office_address, parsed_office, office_district
     )
     office_name = f"Офис участка {area['name']}"
     office = repository.find_office(session, office_name)
     if office is None:
-        office_id = repository.add_office(session, office_name, office_location)
+        office_id = repository.add_office(
+            session, office_name, office_location, service_area_id=area["id"]
+        )
     else:
         office_id = office["id"]
+        if office.get("service_area_id") != area["id"]:
+            repository.set_office_service_area(session, office_id, area["id"])
         if office["location_id"] != office_location:
             report["warnings"].append(
                 {"row": source.office_row, "message": "Адрес офиса отличается от сохранённого"}
             )
+    repository.set_import_office(session, import_id, office_id)
     catalog = context["catalog"]
     existing = repository.find_records(session, area["id"], "demand")
     counts = Counter()

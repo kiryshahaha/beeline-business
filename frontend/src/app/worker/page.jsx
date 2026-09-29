@@ -3,6 +3,7 @@
 
 import React, { useState } from "react";
 import { useMyDay } from "@/hooks/worker/useMyDay";
+import { useAvailableDates } from "@/hooks/useAvailableDates";
 import {
   getTodayMsk,
   getTomorrowMsk,
@@ -17,6 +18,15 @@ export default function WorkerHomePage() {
   const todayMsk = getTodayMsk();
   const tomorrowMsk = getTomorrowMsk();
   const [selectedDate, setSelectedDate] = useState(todayMsk);
+  const { hasToday, closestDate } = useAvailableDates(todayMsk);
+
+  React.useEffect(() => {
+    if (!hasToday && closestDate && closestDate !== todayMsk) {
+      queueMicrotask(() => {
+        setSelectedDate(closestDate);
+      });
+    }
+  }, [hasToday, closestDate, todayMsk]);
 
   const {
     data: dayData,
