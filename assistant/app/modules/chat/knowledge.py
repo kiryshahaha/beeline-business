@@ -39,7 +39,7 @@ class Chunk:
     section: str
     text: str
     roles: frozenset[str]
-    work_type: str | None
+    category: str | None
     tokens: tuple[str, ...] = field(repr=False, compare=False)
 
 
@@ -67,7 +67,7 @@ def load_chunks(root: Path) -> list[Chunk]:
                     section=section.strip(),
                     text=text,
                     roles=frozenset(meta["roles"]),
-                    work_type=meta.get("work_type"),
+                    category=meta.get("category"),
                     # The title is repeated so that a query naming the topic finds every section.
                     tokens=tuple(tokenize(f"{title} {title} {section} {text}")),
                 )
@@ -101,8 +101,8 @@ class KnowledgeBase:
                 score += self._idf[term] * freq * (_BM25_K1 + 1) / (freq + _BM25_K1 * length_norm)
         return score
 
-    def search(self, query: str, role: str, k: int, work_type: str | None = None) -> list[Chunk]:
-        """Top-k sections visible to the role; sections of the open ticket's work type rank up."""
+    def search(self, query: str, role: str, k: int, category: str | None = None) -> list[Chunk]:
+        """Top-k sections visible to the role; sections of the open ticket's category rank up."""
         terms = tokenize(query)
         scored = [
             (self._bm25(index, terms), index)
@@ -110,13 +110,13 @@ class KnowledgeBase:
             if role in chunk.roles
         ]
         best = max((score for score, _ in scored), default=0.0) or 1.0
-        if work_type:
+        if category:
             # Tips for other work types mislead a small model about the open ticket.
             scored = [
                 (score + _WORK_TYPE_BOOST * best, index)
-                if self.chunks[index].work_type == work_type
+                if self.chunks[index].category == category
                 else (score * _OTHER_WORK_TYPE_PENALTY, index)
-                if self.chunks[index].work_type
+                if self.chunks[index].category
                 else (score, index)
                 for score, index in scored
             ]

@@ -21,9 +21,14 @@ class KnowledgeBaseTests(unittest.TestCase):
         self.assertTrue(found)
         self.assertNotIn("system/observer.md", {chunk.path for chunk in found})
 
-    def test_open_ticket_work_type_ranks_its_sections_first(self):
-        found = self.knowledge.search("что делать", "worker", k=2, work_type="Монтаж ВОЛС")
-        self.assertEqual({chunk.work_type for chunk in found}, {"Монтаж ВОЛС"})
+    def test_open_ticket_category_ranks_its_sections_first(self):
+        found = self.knowledge.search("что взять с собой", "worker", k=4, category="connection")
+        self.assertEqual(found[0].category, "connection")
+        self.assertEqual({chunk.category for chunk in found} - {None}, {"connection"})
+
+    def test_every_category_has_a_document(self):
+        categories = {chunk.category for chunk in self.knowledge.chunks if chunk.category}
+        self.assertEqual(categories, {"emergency", "connection", "repair", "additional"})
 
     def test_stemming_matches_word_forms(self):
         self.assertEqual(tokenize("заявки"), tokenize("заявку"))
