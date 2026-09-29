@@ -185,21 +185,23 @@ def get_brigades_workload(
             )
             cur += timedelta(days=1)
 
-        aggregated: dict[int, dict] = defaultdict(lambda: {
-            "brigade_name": "",
-            "workers": 0,
-            "available_workers": 0,
-            "tickets": 0,
-            "shift_minutes": 0,
-            "service_minutes": 0,
-            "travel_minutes": 0,
-            "waiting_minutes": 0,
-            "free_minutes": 0,
-            "overtime_minutes": 0,
-            "conflicts": 0,
-            "active_tickets": 0,
-            "completed_today": 0,
-        })
+        aggregated: dict[int, dict] = defaultdict(
+            lambda: {
+                "brigade_name": "",
+                "workers": 0,
+                "available_workers": 0,
+                "tickets": 0,
+                "shift_minutes": 0,
+                "service_minutes": 0,
+                "travel_minutes": 0,
+                "waiting_minutes": 0,
+                "free_minutes": 0,
+                "overtime_minutes": 0,
+                "conflicts": 0,
+                "active_tickets": 0,
+                "completed_today": 0,
+            }
+        )
 
         for day_items in daily_results:
             for item in day_items:
@@ -247,6 +249,7 @@ def get_brigades_workload(
 
     # Если ни date, ни date_from, ни date_to не переданы (дефолт / "Все данные")
     from sqlalchemy import text
+
     min_date_row = session.execute(
         text("""
             SELECT 
