@@ -1,115 +1,141 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "source": "deterministic_stub",
   "seed": 5025,
   "timezone": "Europe/Moscow",
   "route_date": "2030-01-15",
   "zones": [
-    "moscow_a",
-    "remote_a",
-    "moscow_b",
-    "remote_b",
-    "moscow_c",
-    "remote_c"
+    "vostok",
+    "yugo_vostok",
+    "yugotsentr",
+    "domodedovo",
+    "stupino",
+    "kashira"
   ],
+  "zone_points": {
+    "vostok": [
+      55.702267,
+      37.773852
+    ],
+    "yugo_vostok": [
+      55.601956,
+      37.664752
+    ],
+    "yugotsentr": [
+      55.665025,
+      37.615596
+    ],
+    "domodedovo": [
+      55.43,
+      37.77
+    ],
+    "stupino": [
+      54.89,
+      38.075
+    ],
+    "kashira": [
+      54.834999999999994,
+      38.205
+    ]
+  },
   "travel_minutes": {
-    "moscow_a": {
-      "moscow_a": 0,
-      "remote_a": 20,
-      "moscow_b": 32,
-      "remote_b": 44,
-      "moscow_c": 56,
-      "remote_c": 68
+    "vostok": {
+      "vostok": 0,
+      "yugo_vostok": 52,
+      "yugotsentr": 44,
+      "domodedovo": 53,
+      "stupino": 144,
+      "kashira": 156
     },
-    "remote_a": {
-      "moscow_a": 22,
-      "remote_a": 0,
-      "moscow_b": 24,
-      "remote_b": 36,
-      "moscow_c": 41,
-      "remote_c": 53
+    "yugo_vostok": {
+      "vostok": 52,
+      "yugo_vostok": 0,
+      "yugotsentr": 34,
+      "domodedovo": 38,
+      "stupino": 131,
+      "kashira": 143
     },
-    "moscow_b": {
-      "moscow_a": 36,
-      "remote_a": 19,
-      "moscow_b": 0,
-      "remote_b": 21,
-      "moscow_c": 33,
-      "remote_c": 45
+    "yugotsentr": {
+      "vostok": 44,
+      "yugo_vostok": 34,
+      "yugotsentr": 0,
+      "domodedovo": 49,
+      "stupino": 142,
+      "kashira": 155
     },
-    "remote_b": {
-      "moscow_a": 43,
-      "remote_a": 33,
-      "moscow_b": 23,
-      "remote_b": 0,
-      "moscow_c": 25,
-      "remote_c": 30
+    "domodedovo": {
+      "vostok": 61,
+      "yugo_vostok": 43,
+      "yugotsentr": 56,
+      "domodedovo": 0,
+      "stupino": 101,
+      "kashira": 114
     },
-    "moscow_c": {
-      "moscow_a": 57,
-      "remote_a": 47,
-      "moscow_b": 30,
-      "remote_b": 20,
-      "moscow_c": 0,
-      "remote_c": 22
+    "stupino": {
+      "vostok": 168,
+      "yugo_vostok": 153,
+      "yugotsentr": 166,
+      "domodedovo": 101,
+      "stupino": 0,
+      "kashira": 23
     },
-    "remote_c": {
-      "moscow_a": 64,
-      "remote_a": 54,
-      "moscow_b": 44,
-      "remote_b": 34,
-      "moscow_c": 24,
-      "remote_c": 0
+    "kashira": {
+      "vostok": 182,
+      "yugo_vostok": 168,
+      "yugotsentr": 181,
+      "domodedovo": 114,
+      "stupino": 23,
+      "kashira": 0
     }
   },
   "distance_meters": {
-    "moscow_a": {
-      "moscow_a": 0,
-      "remote_a": 9600,
-      "moscow_b": 15360,
-      "remote_b": 21120,
-      "moscow_c": 26880,
-      "remote_c": 32640
+    "vostok": {
+      "vostok": 0,
+      "yugo_vostok": 17667,
+      "yugotsentr": 14513,
+      "domodedovo": 40872,
+      "stupino": 124618,
+      "kashira": 135309
     },
-    "remote_a": {
-      "moscow_a": 10560,
-      "remote_a": 0,
-      "moscow_b": 11520,
-      "remote_b": 17280,
-      "moscow_c": 19680,
-      "remote_c": 25440
+    "yugo_vostok": {
+      "vostok": 17667,
+      "yugo_vostok": 0,
+      "yugotsentr": 10343,
+      "domodedovo": 27319,
+      "stupino": 112492,
+      "kashira": 124076
     },
-    "moscow_b": {
-      "moscow_a": 17280,
-      "remote_a": 9120,
-      "moscow_b": 0,
-      "remote_b": 10080,
-      "moscow_c": 15840,
-      "remote_c": 21600
+    "yugotsentr": {
+      "vostok": 14513,
+      "yugo_vostok": 10343,
+      "yugotsentr": 0,
+      "domodedovo": 37638,
+      "stupino": 122793,
+      "kashira": 134416
     },
-    "remote_b": {
-      "moscow_a": 20640,
-      "remote_a": 15840,
-      "moscow_b": 11040,
-      "remote_b": 0,
-      "moscow_c": 12000,
-      "remote_c": 14400
+    "domodedovo": {
+      "vostok": 40872,
+      "yugo_vostok": 27319,
+      "yugotsentr": 37638,
+      "domodedovo": 0,
+      "stupino": 85176,
+      "kashira": 96804
     },
-    "moscow_c": {
-      "moscow_a": 27360,
-      "remote_a": 22560,
-      "moscow_b": 14400,
-      "remote_b": 9600,
-      "moscow_c": 0,
-      "remote_c": 10560
+    "stupino": {
+      "vostok": 124618,
+      "yugo_vostok": 112492,
+      "yugotsentr": 122793,
+      "domodedovo": 85176,
+      "stupino": 0,
+      "kashira": 13940
     },
-    "remote_c": {
-      "moscow_a": 30720,
-      "remote_a": 25920,
-      "moscow_b": 21120,
-      "remote_b": 16320,
-      "moscow_c": 11520,
-      "remote_c": 0
+    "kashira": {
+      "vostok": 135309,
+      "yugo_vostok": 124076,
+      "yugotsentr": 134416,
+      "domodedovo": 96804,
+      "stupino": 13940,
+      "kashira": 0
     }
   },
   "peak_profile": {
@@ -120,5 +146,5 @@
       "duration_multiplier": 1.5
     }
   },
-  "note": "This directed synthetic matrix is not Geoapify output or a native planner result."
+  "note": "Directed synthetic matrix: straight-line distances between real points times 1.35, average speeds and a morning inbound delay. It is not Geoapify output or a native planner result."
 }

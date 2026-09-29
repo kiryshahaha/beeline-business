@@ -44,7 +44,10 @@ class AcceptanceDatasetTests(unittest.TestCase):
             self.assertEqual(ticket["service_area_id"], building["service_area_id"])
             by_area.setdefault(ticket["service_area_id"], set()).add(cities[building["city_id"]])
         self.assertEqual(set(by_area), {101, 102, 103})
-        self.assertTrue(all("Москва" in names and len(names) >= 2 for names in by_area.values()))
+        # As in the organizer's files: only «Юго-восток» serves Moscow-region towns.
+        self.assertEqual(by_area[101], {"Москва"})
+        self.assertEqual(by_area[102], {"Москва", "Домодедово", "Ступино", "Кашира"})
+        self.assertEqual(by_area[103], {"Москва"})
         self.assertEqual(
             tables["tickets"][36]["received_at"].isoformat(), "2030-01-15T08:10:00+03:00"
         )
@@ -53,8 +56,21 @@ class AcceptanceDatasetTests(unittest.TestCase):
             (no_slot["visit_window_end"] - no_slot["visit_window_start"]).total_seconds(),
             no_slot["estimated_duration_minutes"] * 60,
         )
-        self.assertEqual(len(tables["day_plan_revisions"]), 3)
-        self.assertTrue(all(len(row["roster"]) == 4 for row in tables["day_plan_revisions"]))
+        # The planner builds the first plan of the day; the package brings none.
+        self.assertEqual(tables["day_plan_revisions"], [])
+        self.assertEqual(tables["routes"], [])
+        self.assertTrue(all(t["assigned_worker_id"] is None for t in tables["tickets"]))
+        areas = {w["user_id"]: w["service_area_id"] for w in tables["workers"]}
+        self.assertEqual(
+            Counter(areas[w] for w in scenarios["roster_worker_ids"]), {101: 4, 102: 4, 103: 4}
+        )
+        home = next(
+            w for w in tables["workers"] if w["user_id"] == scenarios["remote_home_worker_id"]
+        )
+        home_location = next(
+            loc for loc in tables["locations"] if loc["id"] == home["start_location_id"]
+        )
+        self.assertEqual(cities[buildings[home_location["building_id"]]["city_id"]], "Кашира")
 
     def test_negative_hd_cases_match_server_classifier(self):
         with TemporaryDirectory() as temporary:
@@ -91,8 +107,8 @@ class AcceptanceDatasetTests(unittest.TestCase):
             road = json.loads((root / "road_matrix.json").read_text())
             self.assertEqual(road["source"], "deterministic_stub")
             self.assertNotEqual(
-                road["travel_minutes"]["moscow_a"]["remote_a"],
-                road["travel_minutes"]["remote_a"]["moscow_a"],
+                road["travel_minutes"]["yugo_vostok"]["kashira"],
+                road["travel_minutes"]["kashira"]["yugo_vostok"],
             )
             for name, metadata in {**files, **manifest["auxiliary_files"]}.items():
                 import hashlib
@@ -131,7 +147,7 @@ class AcceptanceImportTests(DatabaseTestCase):
             self.session.execute(text("SELECT count(*) FROM tickets")).scalar_one(), 48
         )
         self.assertEqual(
-            self.session.execute(text("SELECT count(*) FROM day_plan_revisions")).scalar_one(), 3
+            self.session.execute(text("SELECT count(*) FROM day_plan_revisions")).scalar_one(), 0
         )
 
 

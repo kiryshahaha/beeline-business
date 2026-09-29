@@ -271,7 +271,7 @@ export default function EmptyDataModal({ isOpen, onClose }) {
               <div className={styles.summaryItem}>
                 <span className={styles.summaryLabel}>Маршруты</span>
                 <span className={styles.summaryValue}>896 выездов</span>
-                <span className={styles.summarySub}>Геопривязка СПб</span>
+                <span className={styles.summarySub}>Геопривязка: Москва</span>
               </div>
               <div className={styles.summaryItem}>
                 <span className={styles.summaryLabel}>Статус SLA</span>

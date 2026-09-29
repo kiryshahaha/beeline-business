@@ -15,7 +15,7 @@ auth:bearer {
 }
 
 body:json {
-  {"worker_id": {{worker_id}}, "route_date": "2026-09-21", "stops": [{"location_id": {{primorsky_location_id}}, "ticket_id": {{primorsky_ticket_id}}, "arrival_at": "2026-09-21T11:00:00+03:00"}]}
+  {"worker_id": {{worker_id}}, "route_date": "2026-09-21", "stops": [{"location_id": {{yugo_vostok_location_id}}, "ticket_id": {{yugo_vostok_ticket_id}}, "arrival_at": "2026-09-21T11:00:00+03:00"}]}
 }
 
 assert {
@@ -23,10 +23,10 @@ assert {
 }
 
 tests {
-test("Прямое сохранение маршрута не обходит границу участка", () => { const d = res.getBody().detail; expect(d.code).to.equal("service_area_mismatch"); expect(d.worker_service_area_id).to.not.equal(d.ticket_service_area_id); expect(d.ticket_service_area_id).to.equal(Number(bru.getVar("primorsky_service_area_id"))); });
+test("Прямое сохранение маршрута не обходит границу участка", () => { const d = res.getBody().detail; expect(d.code).to.equal("service_area_mismatch"); expect(d.worker_service_area_id).to.not.equal(d.ticket_service_area_id); expect(d.ticket_service_area_id).to.equal(Number(bru.getVar("yugo_vostok_service_area_id"))); });
 }
 
 docs {
-  Инженер участка заявки 1 и заявка Приморского участка: маршрут не сохраняется,
+  Инженер участка заявки 1 («Восток») и заявка участка «Юго-восток»: маршрут не сохраняется,
   код совпадает с отказом планировщика и ручного назначения.
 }

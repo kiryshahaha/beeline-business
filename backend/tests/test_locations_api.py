@@ -43,16 +43,16 @@ class LocationsApiTests(DatabaseTestCase):
 
     def payload(self, **overrides):
         return {
-            "city": "Санкт-Петербург",
-            "district": "Невский район",
-            "street": "Искровский проспект",
-            "building_number": "4",
-            "block": "корпус 2",
+            "city": "Москва",
+            "district": "Кузьминки",
+            "street": "улица Юных Ленинцев",
+            "building_number": "44",
+            "block": "корпус 1",
             "entrance_number": "1",
-            "floor": 3,
-            "apartment": "12",
-            "latitude": 59.9156,
-            "longitude": 30.4631,
+            "floor": 2,
+            "apartment": "5",
+            "latitude": 55.700654,
+            "longitude": 37.759714,
         } | overrides
 
     def test_post_creates_full_address_hierarchy(self):
@@ -61,16 +61,16 @@ class LocationsApiTests(DatabaseTestCase):
         created = response.json()
 
         self.assertIn("id", created)
-        self.assertEqual(created["city"], "Санкт-Петербург")
-        self.assertEqual(created["district"], "Невский район")
-        self.assertEqual(created["street"], "Искровский проспект")
-        self.assertEqual(created["building_number"], "4")
-        self.assertEqual(created["block"], "корпус 2")
+        self.assertEqual(created["city"], "Москва")
+        self.assertEqual(created["district"], "Кузьминки")
+        self.assertEqual(created["street"], "улица Юных Ленинцев")
+        self.assertEqual(created["building_number"], "44")
+        self.assertEqual(created["block"], "корпус 1")
         self.assertEqual(created["entrance_number"], "1")
-        self.assertEqual(created["floor"], 3)
-        self.assertEqual(created["apartment"], "12")
-        self.assertEqual(created["latitude"], 59.9156)
-        self.assertEqual(created["longitude"], 30.4631)
+        self.assertEqual(created["floor"], 2)
+        self.assertEqual(created["apartment"], "5")
+        self.assertEqual(created["latitude"], 55.700654)
+        self.assertEqual(created["longitude"], 37.759714)
 
         # Verify db counts
         with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:

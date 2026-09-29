@@ -52,7 +52,7 @@ class TicketExportApiTests(DatabaseTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        dataset = generate_dataset(seed=803, tickets=32, workers=8, days=2)
+        cls.dataset = dataset = generate_dataset(seed=803, tickets=32, workers=8, days=2)
         normalized = parse_file(serialize(dataset, "csv"), "dataset.zip")
         with Session(cls.engine) as session:
             result = import_data(session, normalized)
@@ -189,7 +189,12 @@ class TicketExportApiTests(DatabaseTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         rows = list(csv.DictReader(io.StringIO(response.content.decode("utf-8-sig"))))
         self.assertGreater(len(rows), 0)
-        self.assertTrue(all(row["assigned_worker_id"] for row in rows))
+        expected = {
+            str(self.ids["tickets"][str(t["id"])])
+            for t in self.dataset["tickets"]
+            if t["brigade_id"] == 1
+        }
+        self.assertEqual({row["id"] for row in rows}, expected)
 
     def test_export_requires_observer_and_valid_format(self):
         self.assertEqual(

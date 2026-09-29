@@ -17,6 +17,7 @@ from app.modules.data_exchange.service import import_data
 from app.modules.routing.schemas import RouteCreate
 from app.modules.routing.service import save_routes
 from generate_synthetic import generate_dataset
+from tests.exchange_samples import add_journal_samples
 from tests.support import DatabaseTestCase
 
 
@@ -24,7 +25,9 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.dataset = generate_dataset(seed=701, tickets=32, workers=8, days=2)
+        cls.dataset = add_journal_samples(
+            generate_dataset(seed=701, tickets=32, workers=8, days=2), seed=701
+        )
         normalized = parse_file(serialize(cls.dataset, "csv"), "data.zip")
         with Session(cls.engine) as session:
             cls.receipt = import_data(session, normalized)
@@ -79,10 +82,11 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
         )
 
     def test_import_is_atomic_idempotent_and_remaps_related_ids(self):
-        data = generate_dataset(seed=702, tickets=24, workers=4, days=1)
-        # Skill names are a unique domain key: use a separate catalog for a second dataset.
-        for skill in data["worker_skills"]:
-            skill["skill"] += " 702"
+        # A second package of the same city: its streets, houses, skills, equipment and
+        # office are the ones already loaded, its people and requests are new.
+        data = add_journal_samples(
+            generate_dataset(seed=702, tickets=24, workers=4, days=1), seed=702
+        )
         before = self.session.scalar(select(func.count()).select_from(TABLES["tickets"]))
         result = self.upload(data, format="xlsx")
         self.assertEqual(result.status_code, 200, result.text)
@@ -372,14 +376,26 @@ class ExchangeAndRoutesApiTests(DatabaseTestCase):
                 )
             )
         )
-        # Ticket 1 is planned; source appliance 26 has zero stock.
+        # A planned request of the day asks for more tools than the office has.
+        planned = next(t for t in self.dataset["tickets"] if t["status"] == "planned")
+        office = next(
+            o["id"]
+            for o in self.dataset["offices"]
+            if o["service_area_id"] == planned["service_area_id"]
+        )
+        tool = next(a["id"] for a in self.dataset["appliances"] if a["type"] == "TOOL")
+        stock = next(
+            row["stock"]
+            for row in self.dataset["appliance_stocks"]
+            if (row["office_id"], row["appliance_id"]) == (office, tool)
+        )
         data = {
             "ticket_appliances": [
                 {
-                    "ticket_id": self.ids["tickets"]["1"],
-                    "appliance_id": self.ids["appliances"]["26"],
-                    "office_id": self.ids["offices"]["1"],
-                    "quantity": 1,
+                    "ticket_id": self.ids["tickets"][str(planned["id"])],
+                    "appliance_id": self.ids["appliances"][str(tool)],
+                    "office_id": self.ids["offices"][str(office)],
+                    "quantity": stock + 1,
                     "created_at": "2026-09-21T08:00:00+03:00",
                 }
             ]

@@ -16,15 +16,16 @@ class DistrictMigrationTests(DatabaseTestCase):
         config.attributes["connection"] = self.connection
         command.downgrade(config, "0001")
         statements = (
-            "INSERT INTO cities (id, name) VALUES (10, 'Тестовый город')",
-            "INSERT INTO streets (id, city_id, name) VALUES (20, 10, 'Тестовая улица')",
-            "INSERT INTO buildings (id, street_id, number, block) VALUES (30, 20, '1', 'корпус 2')",
+            "INSERT INTO cities (id, name) VALUES (10, 'Москва')",
+            "INSERT INTO streets (id, city_id, name) VALUES (20, 10, 'улица Юных Ленинцев')",
+            "INSERT INTO buildings (id, street_id, number, block) "
+            "VALUES (30, 20, '44', 'корпус 1')",
             "INSERT INTO entrances (id, building_id, number) VALUES (40, 30, '1')",
             """
             INSERT INTO locations (
                 id, building_id, entrance_id, floor, apartment, latitude, longitude
             )
-            VALUES (50, 30, 40, 3, '12', 59.9156, 30.4631)
+            VALUES (50, 30, 40, 2, '5', 55.700654, 37.759714)
             """,
             """
             INSERT INTO tickets (

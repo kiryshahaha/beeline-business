@@ -60,7 +60,8 @@ class PlanningDatasetTests(DatabaseTestCase):
                             else:
                                 self.assertEqual(prepared["unassigned"], [])
                             if scenario == "duplicate_coordinates":
-                                self.assertTrue(all(r["travel_minutes"] == 0 for r in routes))
+                                # Only the leg from the office: the visits share one entrance.
+                                self.assertTrue(all(r["travel_minutes"] == 1 for r in routes))
                                 self.assertEqual(sum(len(r["stops"]) for r in routes), 24)
                             if scenario == "night":
                                 self.assertTrue(

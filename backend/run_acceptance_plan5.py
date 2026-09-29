@@ -108,19 +108,54 @@ def main():
                 "POST",
                 "/api/v1/auth/login",
                 200,
-                json={"username": "synthetic_5025_observer_1", "password": PASSWORD},
+                json={"username": tables["users"][0]["username"], "password": PASSWORD},
             )
             client.headers.update({"Authorization": f"Bearer {login['access_token']}"})
             areas = {source: ids["service_areas"][str(source)] for source in (101, 102, 103)}
+            scenarios = json.loads((package.parent / "scenarios.json").read_text(encoding="utf-8"))
+            roster = set(scenarios["roster_worker_ids"])
+            workers = {row["user_id"]: row["service_area_id"] for row in tables["workers"]}
             initial = {}
             for source, area_id in areas.items():
+                # The package has no published day: the native planner builds the first plan
+                # from the morning requests and the area's roster.
+                morning = [
+                    ids["tickets"][str(case["ticket_id"])]
+                    for case in scenarios["tickets"]
+                    if case["phase"] == "planned" and case["service_area_id"] == source
+                ]
+                crew = [
+                    ids["workers"][str(worker)]
+                    for worker, area in sorted(workers.items())
+                    if worker in roster and area == source
+                ]
+                first = _request(
+                    client,
+                    "POST",
+                    "/api/v1/planning/preview",
+                    201,
+                    json={
+                        "route_date": "2030-01-15",
+                        "service_area_id": area_id,
+                        "ticket_ids": morning,
+                        "worker_ids": crew,
+                        "allow_partial": True,
+                    },
+                )
+                if first["unassigned"]:
+                    raise AssertionError(f"Initial plan left requests: {first['unassigned']}")
+                _request(client, "POST", f"/api/v1/planning/plans/{first['plan_id']}/apply", 200)
                 current = _request(
                     client, "GET", f"/api/v1/planning/areas/{area_id}/2030-01-15/current", 200
                 )
+                if current["revision"] != 1 or len(current["visits"]) != len(morning):
+                    raise AssertionError(f"Initial plan of area {source} was not published")
                 initial[source] = current
                 report["steps"].append(
                     {
                         "id": f"initial_{source}",
+                        "plan_id": first["plan_id"],
+                        "solver_status": first.get("solver_status"),
                         "revision": current["revision"],
                         "visits": len(current["visits"]),
                         "roster": len(current["roster"]),

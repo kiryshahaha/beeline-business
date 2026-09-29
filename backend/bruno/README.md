@@ -26,7 +26,7 @@
 | 24-source-import | Исходный файл организатора: dry-run, загрузка с геокодированием фикстурой, повтор без изменений, контрольное распределение как базовая линия, replay, адреса на проверку и ручные координаты, `409`, `422`, `403`, `401` |
 | 25-worker-app | Экран «Мой день», запрет доступа другим ролям, очередь подтверждения завершений и запрет исполнителю подтверждать завершение |
 | 22-worker-equipment | Комплект по заявкам из 16-planning, выдача, повтор по ключу, «нечего выдавать», возврат позиции заявки, журнал, роли, `401` |
-| fixtures | Небольшой полностью вымышленный пакет: 24 заявки, 4 работника; ошибочный CSV; вымышленные `source-demand.csv`/`source-control.csv` в формате выгрузки организатора |
+| fixtures | Небольшой пакет на реальных адресах Москвы: 24 заявки, 4 работника, без маршрутов; ошибочный CSV; `source-demand.csv`/`source-control.csv` в формате выгрузки организатора с реальными домами (заявки и люди вымышлены) |
 
 Из backend в отдельной тестовой БД:
 
@@ -52,6 +52,9 @@ npx --yes @usebruno/cli@4.1.0 run -r --env Local --reporter-junit ../bruno-resul
 
 ```powershell
 python generate_synthetic.py --output bruno/fixtures --seed 906 --tickets 24 --workers 4 --days 1
+python generate_planning_synthetic.py --output ../data/planning
+Copy-Item ../data/planning/mixed.zip bruno/fixtures/planning-mixed.zip
+python -c "from tests.source_fixtures import demand_csv, control_csv; open('bruno/fixtures/source-demand.csv','wb').write(demand_csv()); open('bruno/fixtures/source-control.csv','wb').write(control_csv())"
 ```
 
 CI поднимает PostgreSQL, выполняет миграции/seed, ждёт `/health`, запускает всю
@@ -72,7 +75,7 @@ T01 в 16-planning: чтение `/planning/policy` наблюдателем, `4
 со всеми выбранными инженерами, включая тех, у кого нет визитов, а diff replan не меняет
 состав; `/service-areas/consistency` перечисляет инженеров, бригады и открытые заявки с
 отсутствующим или противоречивым участком. В 13-routes прямое сохранение маршрута с
-заявкой Приморского участка отклоняется тем же кодом, что и планировщик.
+заявкой участка «Юго-восток» отклоняется тем же кодом, что и планировщик.
 
 T10 в 16-planning: preview содержит `outcome`, `metrics` и `factors` каждого визита;
 повторный расчёт уже назначенных заявок возвращает `201` с `outcome=empty`, причинами

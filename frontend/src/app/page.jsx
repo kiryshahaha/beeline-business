@@ -369,9 +369,8 @@ export default function Home() {
     const isOkrug =
       activeDistrictObj?.isOkrug ||
       (district && district.toLowerCase().includes("округ"));
-    const city =
-      currentOffice?.city ||
-      (isOkrug ? "Москва" : (activeDistrict ? "Санкт-Петербург" : undefined));
+    // Every area, district and okrug of the system is in Moscow.
+    const city = currentOffice?.city || (isOkrug || activeDistrict ? "Москва" : undefined);
 
     if (!district && (lat == null || lon == null)) {
       Promise.resolve().then(() => {

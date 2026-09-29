@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "seed": 5025,
   "timezone": "Europe/Moscow",
   "route_date": "2030-01-15",
@@ -18,465 +18,826 @@
     20
   ],
   "outside_roster_worker_id": 21,
+  "remote_home_worker_id": 16,
+  "initial_plan": "В пакете нет маршрутов и ревизий дня: первый план каждого участка строит планировщик по заявкам фазы planned и дневному составу (POST /api/v1/planning/preview с service_area_id, затем apply).",
   "tickets": [
     {
       "ticket_id": 1,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 101,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 9
+      "brigade_id": 1,
+      "received_at": "2030-01-14T09:00:00+03:00",
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T12:00:00+03:00"
+      ],
+      "request_type_hd": "Конвергенция абонента",
+      "title": "Конвергенция: интернет и ТВ для абонента мобильной связи",
+      "address": "Москва, 1-я Дубровская улица, д. 13, кв. 6"
     },
     {
       "ticket_id": 2,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 102,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 13
+      "brigade_id": 3,
+      "received_at": "2030-01-14T10:00:00+03:00",
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T12:00:00+03:00"
+      ],
+      "request_type_hd": "Конвергенция абонента",
+      "title": "Подключение домашнего интернета к мобильному тарифу",
+      "address": "Москва, Каширское шоссе, д. 44, корпус 3, кв. 19"
     },
     {
       "ticket_id": 3,
       "phase": "planned",
       "category": "repair",
       "service_area_id": 103,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 17
+      "brigade_id": 5,
+      "received_at": "2030-01-14T11:00:00+03:00",
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T12:00:00+03:00"
+      ],
+      "request_type_hd": "Переключение на Гбит/с",
+      "title": "Переключение на 1 Гбит/с",
+      "address": "Москва, Коломенская набережная, д. 6, корпус 1, кв. 32"
     },
     {
       "ticket_id": 4,
       "phase": "planned",
       "category": "repair",
       "service_area_id": 101,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 10
+      "brigade_id": 2,
+      "received_at": "2030-01-14T12:00:00+03:00",
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T12:00:00+03:00"
+      ],
+      "request_type_hd": "Разрывы",
+      "title": "Интернет пропадает несколько раз в час",
+      "address": "Москва, 1-я улица Текстильщиков, д. 12/9, кв. 45"
     },
     {
       "ticket_id": 5,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 102,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 14
+      "brigade_id": 4,
+      "received_at": "2030-01-14T13:00:00+03:00",
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T12:00:00+03:00"
+      ],
+      "request_type_hd": "Конвергенция абонента",
+      "title": "Подключение домашнего интернета к мобильному тарифу",
+      "address": "Домодедово, Каширское шоссе, д. 85, кв. 58"
     },
     {
       "ticket_id": 6,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 103,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 18
+      "brigade_id": 6,
+      "received_at": "2030-01-14T14:00:00+03:00",
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T12:00:00+03:00"
+      ],
+      "request_type_hd": "Заявка на подключение",
+      "title": "Новое подключение FTTB",
+      "address": "Москва, Варшавское шоссе, д. 72, корпус 3, кв. 14"
     },
     {
       "ticket_id": 7,
       "phase": "planned",
       "category": "repair",
       "service_area_id": 101,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 11
+      "brigade_id": 1,
+      "received_at": "2030-01-14T15:00:00+03:00",
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T12:00:00+03:00"
+      ],
+      "request_type_hd": "Работа с кабелем",
+      "title": "Работа с кабелем в квартире",
+      "address": "Москва, 6-я Кожуховская улица, д. 15, кв. 4"
     },
     {
       "ticket_id": 8,
       "phase": "planned",
       "category": "repair",
       "service_area_id": 102,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 15
+      "brigade_id": 3,
+      "received_at": "2030-01-14T16:00:00+03:00",
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T12:00:00+03:00"
+      ],
+      "request_type_hd": "Роутер. Замена техническим специалистом",
+      "title": "Замена роутера",
+      "address": "Москва, Пролетарский проспект, д. 3, кв. 97"
     },
     {
       "ticket_id": 9,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 103,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 19
+      "brigade_id": 5,
+      "received_at": "2030-01-14T17:00:00+03:00",
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T12:00:00+03:00"
+      ],
+      "request_type_hd": "Конвергенция абонента",
+      "title": "Подключение по конвергентному тарифу",
+      "address": "Москва, Нагатинская набережная, д. 46, кв. 110"
     },
     {
       "ticket_id": 10,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 101,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 12
+      "brigade_id": 2,
+      "received_at": "2030-01-14T18:00:00+03:00",
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T12:00:00+03:00"
+      ],
+      "request_type_hd": "Конвергенция абонента",
+      "title": "Подключение домашнего интернета к мобильному тарифу",
+      "address": "Москва, 8-я улица Текстильщиков, д. 7, кв. 3"
     },
     {
       "ticket_id": 11,
       "phase": "planned",
       "category": "repair",
       "service_area_id": 102,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 16
+      "brigade_id": 4,
+      "received_at": "2030-01-14T19:00:00+03:00",
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T12:00:00+03:00"
+      ],
+      "request_type_hd": "Нет линка",
+      "title": "Пропал интернет",
+      "address": "Москва, Шипиловская улица, д. 12, кв. 136"
     },
     {
       "ticket_id": 12,
       "phase": "planned",
       "category": "repair",
       "service_area_id": 103,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 20
+      "brigade_id": 6,
+      "received_at": "2030-01-14T20:00:00+03:00",
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T12:00:00+03:00"
+      ],
+      "request_type_hd": "Мониторинг",
+      "title": "Оборудование клиента недоступно по мониторингу",
+      "address": "Москва, Криворожская улица, д. 21, корпус 2, кв. 65"
     },
     {
       "ticket_id": 13,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 101,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 9
+      "brigade_id": 1,
+      "received_at": "2030-01-14T09:00:00+03:00",
+      "window": [
+        "2030-01-15T12:00:00+03:00",
+        "2030-01-15T14:00:00+03:00"
+      ],
+      "request_type_hd": "Конвергенция абонента",
+      "title": "Подключение по конвергентному тарифу",
+      "address": "Москва, Шарикоподшипниковская улица, д. 36/18, кв. 162"
     },
     {
       "ticket_id": 14,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 102,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 13
+      "brigade_id": 3,
+      "received_at": "2030-01-14T10:00:00+03:00",
+      "window": [
+        "2030-01-15T12:00:00+03:00",
+        "2030-01-15T14:00:00+03:00"
+      ],
+      "request_type_hd": "Конвергенция абонента",
+      "title": "Подключение по конвергентному тарифу",
+      "address": "Москва, улица Москворечье, д. 17, кв. 15"
     },
     {
       "ticket_id": 15,
       "phase": "planned",
       "category": "repair",
       "service_area_id": 103,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 17
+      "brigade_id": 5,
+      "received_at": "2030-01-14T11:00:00+03:00",
+      "window": [
+        "2030-01-15T12:00:00+03:00",
+        "2030-01-15T14:00:00+03:00"
+      ],
+      "request_type_hd": "Роутер. Замена техническим специалистом",
+      "title": "Замена роутера",
+      "address": "Москва, Судостроительная улица, д. 23, корпус 2, кв. 12"
     },
     {
       "ticket_id": 16,
       "phase": "planned",
       "category": "repair",
       "service_area_id": 101,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 10
+      "brigade_id": 2,
+      "received_at": "2030-01-14T12:00:00+03:00",
+      "window": [
+        "2030-01-15T12:00:00+03:00",
+        "2030-01-15T14:00:00+03:00"
+      ],
+      "request_type_hd": "TVE/ENT. Другие ошибки",
+      "title": "Нет изображения на части каналов",
+      "address": "Москва, Волжский бульвар, д. 18, корпус 1, кв. 22"
     },
     {
       "ticket_id": 17,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 102,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 14
+      "brigade_id": 4,
+      "received_at": "2030-01-14T13:00:00+03:00",
+      "window": [
+        "2030-01-15T12:00:00+03:00",
+        "2030-01-15T14:00:00+03:00"
+      ],
+      "request_type_hd": "Заказ подключения/Дозаказ оборудования",
+      "title": "Подключение с дозаказом ТВ-приставки",
+      "address": "Ступино, улица Бахарева, д. 16/73, кв. 70"
     },
     {
       "ticket_id": 18,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 103,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 18
+      "brigade_id": 6,
+      "received_at": "2030-01-14T14:00:00+03:00",
+      "window": [
+        "2030-01-15T12:00:00+03:00",
+        "2030-01-15T14:00:00+03:00"
+      ],
+      "request_type_hd": "Заказ подключения/Дозаказ оборудования",
+      "title": "Подключение и установка приставки",
+      "address": "Москва, Симферопольский проезд, д. 14, кв. 59"
     },
     {
       "ticket_id": 19,
       "phase": "planned",
-      "category": "repair",
+      "category": "additional",
       "service_area_id": 101,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 11
+      "brigade_id": 1,
+      "received_at": "2030-01-14T15:00:00+03:00",
+      "window": [
+        "2030-01-15T14:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "Дозаказ оборудования",
+      "title": "Дозаказ: умная колонка",
+      "address": "Москва, улица Сайкина, д. 19, кв. 112"
     },
     {
       "ticket_id": 20,
       "phase": "planned",
-      "category": "repair",
+      "category": "additional",
       "service_area_id": 102,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 15
+      "brigade_id": 3,
+      "received_at": "2030-01-14T16:00:00+03:00",
+      "window": [
+        "2030-01-15T14:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "Заказ подключения/Дозаказ оборудования",
+      "title": "Дозаказ ТВ-приставки для второй комнаты",
+      "address": "Москва, Бакинская улица, д. 22, кв. 126"
     },
     {
       "ticket_id": 21,
       "phase": "planned",
       "category": "repair",
       "service_area_id": 103,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 19
+      "brigade_id": 5,
+      "received_at": "2030-01-14T17:00:00+03:00",
+      "window": [
+        "2030-01-15T14:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "Нет линка",
+      "title": "Нет линка",
+      "address": "Москва, проспект Андропова, д. 9/1, кв. 73"
     },
     {
       "ticket_id": 22,
       "phase": "planned",
       "category": "repair",
       "service_area_id": 101,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 12
+      "brigade_id": 2,
+      "received_at": "2030-01-14T18:00:00+03:00",
+      "window": [
+        "2030-01-15T14:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "IP-адрес 169...",
+      "title": "Не выдаётся IP-адрес",
+      "address": "Москва, Грайвороновская улица, д. 18, корпус 2, кв. 135"
     },
     {
       "ticket_id": 23,
       "phase": "planned",
-      "category": "repair",
+      "category": "additional",
       "service_area_id": 102,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 16
+      "brigade_id": 4,
+      "received_at": "2030-01-14T19:00:00+03:00",
+      "window": [
+        "2030-01-15T14:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "Дозаказ оборудования",
+      "title": "Дозаказ: IP-камера",
+      "address": "Москва, Борисовский проезд, д. 36, корпус 1, кв. 77"
     },
     {
       "ticket_id": 24,
       "phase": "planned",
-      "category": "repair",
+      "category": "additional",
       "service_area_id": 103,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 20
+      "brigade_id": 6,
+      "received_at": "2030-01-14T20:00:00+03:00",
+      "window": [
+        "2030-01-15T14:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "Дозаказ оборудования",
+      "title": "Дозаказ: ТВ-приставка",
+      "address": "Москва, Чонгарский бульвар, д. 14, корпус 3, кв. 65"
     },
     {
       "ticket_id": 25,
       "phase": "planned",
       "category": "repair",
       "service_area_id": 101,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 9
+      "brigade_id": 1,
+      "received_at": "2030-01-14T09:00:00+03:00",
+      "window": [
+        "2030-01-15T14:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "Роутер. Замена техническим специалистом",
+      "title": "Замена роутера",
+      "address": "Москва, 1-я Дубровская улица, д. 4Б, кв. 18"
     },
     {
       "ticket_id": 26,
       "phase": "planned",
       "category": "repair",
       "service_area_id": 102,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 13
+      "brigade_id": 3,
+      "received_at": "2030-01-14T10:00:00+03:00",
+      "window": [
+        "2030-01-15T14:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "Рост ошибок на порту",
+      "title": "Ошибки CRC на порту абонента",
+      "address": "Москва, Ереванская улица, д. 15, корпус 1, кв. 11"
     },
     {
       "ticket_id": 27,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 103,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 17
+      "brigade_id": 5,
+      "received_at": "2030-01-14T11:00:00+03:00",
+      "window": [
+        "2030-01-15T14:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "Конвергенция абонента",
+      "title": "Подключение домашнего интернета к мобильному тарифу",
+      "address": "Москва, улица Новинки, д. 25, кв. 109"
     },
     {
       "ticket_id": 28,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 101,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 10
+      "brigade_id": 2,
+      "received_at": "2030-01-14T12:00:00+03:00",
+      "window": [
+        "2030-01-15T14:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "Конвергенция абонента",
+      "title": "Подключение по конвергентному тарифу",
+      "address": "Москва, Саратовская улица, д. 10, корпус 2, кв. 33"
     },
     {
       "ticket_id": 29,
       "phase": "planned",
       "category": "repair",
       "service_area_id": 102,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 14
+      "brigade_id": 4,
+      "received_at": "2030-01-14T13:00:00+03:00",
+      "window": [
+        "2030-01-15T14:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "Мониторинг",
+      "title": "Оборудование клиента недоступно по мониторингу",
+      "address": "Москва, Каширское шоссе, д. 98, корпус 2, кв. 83"
     },
     {
       "ticket_id": 30,
       "phase": "planned",
       "category": "repair",
       "service_area_id": 103,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 18
+      "brigade_id": 6,
+      "received_at": "2030-01-14T14:00:00+03:00",
+      "window": [
+        "2030-01-15T14:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "Нет линка",
+      "title": "Нет линка",
+      "address": "Москва, Артековская улица, д. 7, корпус 6, кв. 63"
     },
     {
       "ticket_id": 31,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 101,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 11
+      "brigade_id": 1,
+      "received_at": "2030-01-14T15:00:00+03:00",
+      "window": [
+        "2030-01-15T16:00:00+03:00",
+        "2030-01-15T18:00:00+03:00"
+      ],
+      "request_type_hd": "Конвергенция абонента",
+      "title": "Подключение домашнего интернета к мобильному тарифу",
+      "address": "Москва, 6-я Кожуховская улица, д. 5, кв. 76"
     },
     {
       "ticket_id": 32,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 102,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 15
+      "brigade_id": 3,
+      "received_at": "2030-01-14T16:00:00+03:00",
+      "window": [
+        "2030-01-15T16:00:00+03:00",
+        "2030-01-15T18:00:00+03:00"
+      ],
+      "request_type_hd": "Конвергенция абонента",
+      "title": "Подключение по конвергентному тарифу",
+      "address": "Москва, Кавказский бульвар, д. 29, корпус 1, кв. 157"
     },
     {
       "ticket_id": 33,
       "phase": "planned",
-      "category": "repair",
+      "category": "additional",
       "service_area_id": 103,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 19
+      "brigade_id": 5,
+      "received_at": "2030-01-14T17:00:00+03:00",
+      "window": [
+        "2030-01-15T16:00:00+03:00",
+        "2030-01-15T18:00:00+03:00"
+      ],
+      "request_type_hd": "Конвергенция абонента",
+      "title": "Дозаказ Mesh-системы по конвергентному тарифу",
+      "address": "Москва, Каширский проезд, д. 9, корпус 3, кв. 514"
     },
     {
       "ticket_id": 34,
       "phase": "planned",
-      "category": "repair",
+      "category": "additional",
       "service_area_id": 101,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 12
+      "brigade_id": 2,
+      "received_at": "2030-01-14T18:00:00+03:00",
+      "window": [
+        "2030-01-15T16:00:00+03:00",
+        "2030-01-15T18:00:00+03:00"
+      ],
+      "request_type_hd": "Дозаказ оборудования",
+      "title": "Дозаказ: ТВ-приставка",
+      "address": "Москва, улица Малышева, д. 21, кв. 9"
     },
     {
       "ticket_id": 35,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 102,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 16
+      "brigade_id": 4,
+      "received_at": "2030-01-14T19:00:00+03:00",
+      "window": [
+        "2030-01-15T16:00:00+03:00",
+        "2030-01-15T18:00:00+03:00"
+      ],
+      "request_type_hd": "Конвергенция абонента",
+      "title": "Конвергенция: интернет и ТВ для абонента мобильной связи",
+      "address": "Кашира, Садовая улица, д. 6, кв. 16"
     },
     {
       "ticket_id": 36,
       "phase": "planned",
-      "category": "repair",
+      "category": "connection",
       "service_area_id": 103,
-      "received_at": "2030-01-15T08:00:00+03:00",
-      "expected_worker_id": 20
+      "brigade_id": 6,
+      "received_at": "2030-01-14T20:00:00+03:00",
+      "window": [
+        "2030-01-15T16:00:00+03:00",
+        "2030-01-15T18:00:00+03:00"
+      ],
+      "request_type_hd": "Заявка на подключение",
+      "title": "Новое подключение FTTB",
+      "address": "Москва, Варшавское шоссе, д. 52/2, кв. 61"
     },
     {
       "ticket_id": 37,
       "phase": "new",
       "category": "repair",
       "service_area_id": 101,
+      "brigade_id": 1,
       "received_at": "2030-01-15T08:10:00+03:00",
-      "expected_worker_id": null
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T13:00:00+03:00"
+      ],
+      "request_type_hd": "Нет линка",
+      "title": "Нет интернета: нет линка на порту",
+      "address": "Москва, улица Сайкина, д. 1/2, кв. 145"
     },
     {
       "ticket_id": 38,
       "phase": "new",
       "category": "repair",
       "service_area_id": 102,
+      "brigade_id": 3,
       "received_at": "2030-01-15T09:40:00+03:00",
-      "expected_worker_id": null
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T13:00:00+03:00"
+      ],
+      "request_type_hd": "Работа с кабелем",
+      "title": "Перенос кабеля и розетки",
+      "address": "Москва, улица Москворечье, д. 41, корпус 2, кв. 3"
     },
     {
       "ticket_id": 39,
       "phase": "new",
       "category": "repair",
       "service_area_id": 103,
+      "brigade_id": 5,
       "received_at": "2030-01-15T09:40:00+03:00",
-      "expected_worker_id": null
+      "window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T13:00:00+03:00"
+      ],
+      "request_type_hd": "Нет линка",
+      "title": "Нет линка",
+      "address": "Москва, Коломенская набережная, д. 12, кв. 321"
     },
     {
       "ticket_id": 40,
       "phase": "new",
       "category": "repair",
       "service_area_id": 101,
+      "brigade_id": 1,
       "received_at": "2030-01-15T10:40:00+03:00",
-      "expected_worker_id": null
+      "window": [
+        "2030-01-15T11:00:00+03:00",
+        "2030-01-15T14:00:00+03:00"
+      ],
+      "request_type_hd": "Работа с кабелем",
+      "title": "Работа с кабелем в квартире",
+      "address": "Москва, Шарикоподшипниковская улица, д. 12, кв. 12"
     },
     {
       "ticket_id": 41,
       "phase": "new",
       "category": "repair",
       "service_area_id": 102,
+      "brigade_id": 3,
       "received_at": "2030-01-15T10:40:00+03:00",
-      "expected_worker_id": null
+      "window": [
+        "2030-01-15T11:00:00+03:00",
+        "2030-01-15T14:00:00+03:00"
+      ],
+      "request_type_hd": "Нет линка",
+      "title": "Пропал интернет",
+      "address": "Москва, Кавказский бульвар, д. 35/2, корпус 4, кв. 12"
     },
     {
       "ticket_id": 42,
       "phase": "new",
       "category": "repair",
       "service_area_id": 103,
+      "brigade_id": 5,
       "received_at": "2030-01-15T08:12:00+03:00",
-      "expected_worker_id": null
+      "window": [
+        "2030-01-15T11:00:00+03:00",
+        "2030-01-15T11:15:00+03:00"
+      ],
+      "request_type_hd": "Работа с кабелем",
+      "title": "Работа с кабелем в квартире",
+      "address": "Москва, проспект Андропова, д. 9/1, корпус 3, кв. 21"
     },
     {
       "ticket_id": 43,
       "phase": "new",
       "category": "emergency",
       "service_area_id": 101,
+      "brigade_id": 1,
       "received_at": "2030-01-15T11:40:00+03:00",
-      "expected_worker_id": null
+      "window": [
+        "2030-01-15T12:00:00+03:00",
+        "2030-01-15T15:00:00+03:00"
+      ],
+      "request_type_hd": "Авария",
+      "title": "Авария: обрыв магистрального оптического кабеля",
+      "address": "Москва, 5-я Кожуховская улица, д. 19, корпус 2"
     },
     {
       "ticket_id": 44,
       "phase": "new",
       "category": "emergency",
       "service_area_id": 102,
+      "brigade_id": 3,
       "received_at": "2030-01-15T11:40:00+03:00",
-      "expected_worker_id": null
+      "window": [
+        "2030-01-15T12:00:00+03:00",
+        "2030-01-15T15:00:00+03:00"
+      ],
+      "request_type_hd": "Авария",
+      "title": "Авария на ТКД: перегрев коммутатора",
+      "address": "Москва, Севанская улица, д. 9, корпус 2"
     },
     {
       "ticket_id": 45,
       "phase": "new",
       "category": "emergency",
       "service_area_id": 103,
+      "brigade_id": 5,
       "received_at": "2030-01-15T11:40:00+03:00",
-      "expected_worker_id": null
+      "window": [
+        "2030-01-15T12:00:00+03:00",
+        "2030-01-15T15:00:00+03:00"
+      ],
+      "request_type_hd": "Авария",
+      "title": "Авария: ошибки на магистральном порту ТКД",
+      "address": "Москва, Нагатинская набережная, д. 14, корпус 5"
     },
     {
       "ticket_id": 46,
       "phase": "new",
       "category": "emergency",
       "service_area_id": 101,
+      "brigade_id": 1,
       "received_at": "2030-01-15T12:40:00+03:00",
-      "expected_worker_id": null
+      "window": [
+        "2030-01-15T13:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "Авария",
+      "title": "Авария: повреждение кабелей в слаботочном стояке",
+      "address": "Москва, улица Трофимова, д. 28, корпус 2"
     },
     {
       "ticket_id": 47,
       "phase": "new",
       "category": "emergency",
       "service_area_id": 102,
+      "brigade_id": 3,
       "received_at": "2030-01-15T12:40:00+03:00",
-      "expected_worker_id": null
+      "window": [
+        "2030-01-15T13:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "Авария",
+      "title": "Авария: ошибки на магистральном порту ТКД",
+      "address": "Москва, Каширское шоссе, д. 26, корпус 2"
     },
     {
       "ticket_id": 48,
       "phase": "new",
       "category": "emergency",
       "service_area_id": 103,
+      "brigade_id": 5,
       "received_at": "2030-01-15T12:40:00+03:00",
-      "expected_worker_id": null
+      "window": [
+        "2030-01-15T13:00:00+03:00",
+        "2030-01-15T16:00:00+03:00"
+      ],
+      "request_type_hd": "Авария",
+      "title": "Авария: повреждение кабелей в слаботочном стояке",
+      "address": "Москва, Кленовый бульвар, д. 13, корпус 3"
     }
   ],
   "events": [
     {
-      "event_id": 1,
       "ticket_id": 37,
       "received_at": "2030-01-15T08:10:00+03:00",
-      "category": "repair"
+      "category": "repair",
+      "request_type_hd": "Нет линка",
+      "title": "Нет интернета: нет линка на порту",
+      "address": "Москва, улица Сайкина, д. 1/2, кв. 145"
     },
     {
-      "event_id": 2,
       "ticket_id": 38,
       "received_at": "2030-01-15T09:40:00+03:00",
-      "category": "repair"
+      "category": "repair",
+      "request_type_hd": "Работа с кабелем",
+      "title": "Перенос кабеля и розетки",
+      "address": "Москва, улица Москворечье, д. 41, корпус 2, кв. 3"
     },
     {
-      "event_id": 3,
       "ticket_id": 39,
       "received_at": "2030-01-15T09:40:00+03:00",
-      "category": "repair"
+      "category": "repair",
+      "request_type_hd": "Нет линка",
+      "title": "Нет линка",
+      "address": "Москва, Коломенская набережная, д. 12, кв. 321"
     },
     {
-      "event_id": 4,
       "ticket_id": 40,
       "received_at": "2030-01-15T10:40:00+03:00",
-      "category": "repair"
+      "category": "repair",
+      "request_type_hd": "Работа с кабелем",
+      "title": "Работа с кабелем в квартире",
+      "address": "Москва, Шарикоподшипниковская улица, д. 12, кв. 12"
     },
     {
-      "event_id": 5,
       "ticket_id": 41,
       "received_at": "2030-01-15T10:40:00+03:00",
-      "category": "repair"
+      "category": "repair",
+      "request_type_hd": "Нет линка",
+      "title": "Пропал интернет",
+      "address": "Москва, Кавказский бульвар, д. 35/2, корпус 4, кв. 12"
     },
     {
-      "event_id": 6,
       "ticket_id": 42,
       "received_at": "2030-01-15T08:12:00+03:00",
-      "category": "repair"
+      "category": "repair",
+      "request_type_hd": "Работа с кабелем",
+      "title": "Работа с кабелем в квартире",
+      "address": "Москва, проспект Андропова, д. 9/1, корпус 3, кв. 21"
     },
     {
-      "event_id": 7,
       "ticket_id": 43,
       "received_at": "2030-01-15T11:40:00+03:00",
-      "category": "emergency"
+      "category": "emergency",
+      "request_type_hd": "Авария",
+      "title": "Авария: обрыв магистрального оптического кабеля",
+      "address": "Москва, 5-я Кожуховская улица, д. 19, корпус 2"
     },
     {
-      "event_id": 8,
       "ticket_id": 44,
       "received_at": "2030-01-15T11:40:00+03:00",
-      "category": "emergency"
+      "category": "emergency",
+      "request_type_hd": "Авария",
+      "title": "Авария на ТКД: перегрев коммутатора",
+      "address": "Москва, Севанская улица, д. 9, корпус 2"
     },
     {
-      "event_id": 9,
       "ticket_id": 45,
       "received_at": "2030-01-15T11:40:00+03:00",
-      "category": "emergency"
+      "category": "emergency",
+      "request_type_hd": "Авария",
+      "title": "Авария: ошибки на магистральном порту ТКД",
+      "address": "Москва, Нагатинская набережная, д. 14, корпус 5"
     },
     {
-      "event_id": 10,
       "ticket_id": 46,
       "received_at": "2030-01-15T12:40:00+03:00",
-      "category": "emergency"
+      "category": "emergency",
+      "request_type_hd": "Авария",
+      "title": "Авария: повреждение кабелей в слаботочном стояке",
+      "address": "Москва, улица Трофимова, д. 28, корпус 2"
     },
     {
-      "event_id": 11,
       "ticket_id": 47,
       "received_at": "2030-01-15T12:40:00+03:00",
-      "category": "emergency"
+      "category": "emergency",
+      "request_type_hd": "Авария",
+      "title": "Авария: ошибки на магистральном порту ТКД",
+      "address": "Москва, Каширское шоссе, д. 26, корпус 2"
     },
     {
-      "event_id": 12,
       "ticket_id": 48,
       "received_at": "2030-01-15T12:40:00+03:00",
-      "category": "emergency"
+      "category": "emergency",
+      "request_type_hd": "Авария",
+      "title": "Авария: повреждение кабелей в слаботочном стояке",
+      "address": "Москва, Кленовый бульвар, д. 13, корпус 3"
     }
-  ],
-  "notes": "Маршруты — синтетические снимки; результаты событий требуют прогона."
+  ]
 }

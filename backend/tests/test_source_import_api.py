@@ -128,12 +128,12 @@ class SourceImportApiTests(DatabaseTestCase):
         self.assertEqual(first["lifecycle_state"], "waiting_assignment")
         self.assertEqual(
             (first["city"], first["street"], first["number"], first["block"], first["district"]),
-            ("Москва", "ул. Вымышленная", "1", "корп. 2", "Центральный"),
+            ("Москва", "ул. Юных Ленинцев", "44", "корп. 1", "Кузьминки"),
         )
         self.assertEqual(
             (emergency["category"], emergency["estimated_duration_minutes"]), ("emergency", 80)
         )
-        self.assertEqual(emergency["city"], "Учебногорск")
+        self.assertEqual(emergency["city"], "Кашира")
         self.assertEqual(
             emergency["visit_window_end"], datetime(2026, 9, 10, 23, 59, tzinfo=MOSCOW)
         )
@@ -144,7 +144,7 @@ class SourceImportApiTests(DatabaseTestCase):
                 "JOIN buildings b ON b.id = l.building_id JOIN streets s ON s.id = b.street_id"
             )
         ).one()
-        self.assertEqual(tuple(office), ("Офис участка Центр", "ул. Учебная"))
+        self.assertEqual(tuple(office), ("Офис участка Центр", "ул. Юных Ленинцев"))
         self.assertIn("не настроены требования планирования", report["warnings"][-1]["message"])
         saved = self.client.get(
             f"/api/v1/data/sources/imports/{report['import_id']}", headers=self.observer
@@ -305,9 +305,9 @@ class SourceImportApiTests(DatabaseTestCase):
             .all()
         )
         by_surname = {w["surname"]: w for w in workers}
-        self.assertEqual(set(by_surname), {"Тестов", "Пробный"})
+        self.assertEqual(set(by_surname), {"Сазонов", "Лаврентьев"})
         self.assertEqual(len(workers), 3)
-        tester = by_surname["Тестов"]
+        tester = by_surname["Сазонов"]
         self.assertEqual((tester["name"], tester["role"]), ("Бригада", "worker"))
         self.assertEqual(tester["skills"], ["Локальные работы", "Работы на подключение и дозаказы"])
         self.assertEqual(str(tester["workshift_start"]), "08:00:00")
@@ -343,7 +343,7 @@ class SourceImportApiTests(DatabaseTestCase):
             text(
                 "SELECT w.service_area_id, count(*) FROM users u "
                 "JOIN workers w ON w.user_id = u.id "
-                "WHERE u.surname = 'Тестов' GROUP BY 1"
+                "WHERE u.surname = 'Сазонов' GROUP BY 1"
             )
         ).all()
         self.assertEqual(len(rows), 2)
@@ -364,7 +364,7 @@ class SourceImportApiTests(DatabaseTestCase):
                         "10.09.2026 12:00",
                         "Р",
                         "Москва, ул.А, д. 1",
-                        "Бригада Тестов",
+                        "Бригада Сазонов",
                         "",
                         "Нет",
                     ],

@@ -12,10 +12,7 @@ export const REPORT_STATUS_OPTIONS = [
   { value: "wont_fix", label: "Отменено" },
 ];
 
-export const CITIES_OPTIONS = [
-  { value: 1, label: "Москва" },
-  { value: 2, label: "Санкт-Петербург" },
-];
+export const CITIES_OPTIONS = [{ value: 1, label: "Москва" }];
 
 export function useReportConfig() {
   const [selectedCityId, setSelectedCityId] = useState(1);

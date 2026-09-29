@@ -30,7 +30,8 @@ script:post-response {
     bru.setVar("planning_appliance_id", ids.appliances["1"]);
     bru.setVar("planning_office_id", ids.offices["1"]);
     bru.setVar("planning_location_id", Object.values(ids.locations)[0]);
-    bru.setVar("planning_rule_payload", JSON.stringify({service_duration_source: "ticket_estimate", required_skill_ids: [ids.worker_skills["1"]], required_appliances: [{appliance_id: ids.appliances["1"], quantity: 1}]}));
+    // A real change of the shared work type: one more skill, which every planning engineer has.
+    bru.setVar("planning_rule_payload", JSON.stringify({service_duration_source: "ticket_estimate", required_skill_ids: [ids.worker_skills["1"], ids.worker_skills["2"]], required_appliances: []}));
     bru.setVar("planning_ticket_ids", JSON.stringify(Object.values(ids.tickets)));
     bru.setVar("planning_worker_ids", JSON.stringify(Object.values(ids.workers)));
     bru.setVar(
@@ -45,6 +46,6 @@ tests {
     expect(res.getBody().dry_run).to.equal(false);
     expect(res.getBody().counts.tickets).to.equal(24);
     expect(res.getBody().counts.workers).to.equal(4);
-    expect(res.getBody().counts.work_type_planning_rules).to.equal(3);
+    expect(res.getBody().counts.work_type_planning_rules).to.equal(4);
   });
 }
