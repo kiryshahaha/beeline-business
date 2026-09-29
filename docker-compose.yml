@@ -62,6 +62,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000}
       PUBLIC_API_URL: ${PUBLIC_API_URL:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      # POST /api/v1/assistant/chat отвечает 503, пока помощник не включён.
+      ASSISTANT_ENABLED: ${ASSISTANT_ENABLED:-false}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
