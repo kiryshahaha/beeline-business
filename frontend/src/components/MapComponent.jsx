@@ -284,15 +284,32 @@ export default function MapComponent({
           if (ticketStatusFilter === "in_progress" && ticket.status !== "in_progress") return;
           if (ticketStatusFilter === "completed" && ticket.status !== "completed") return;
         }
-        const lat = ticket.location?.latitude ?? locationById?.get?.(ticket.location_id)?.latitude;
-        const lng = ticket.location?.longitude ?? locationById?.get?.(ticket.location_id)?.longitude;
+        let lat = ticket.location?.latitude ?? locationById?.get?.(ticket.location_id)?.latitude;
+        let lng = ticket.location?.longitude ?? locationById?.get?.(ticket.location_id)?.longitude;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+          const matchingOffice = offices.find(
+            (o) => o.service_area_id && Number(o.service_area_id) === Number(ticket.service_area_id)
+          );
+          if (matchingOffice && Number.isFinite(matchingOffice.latitude) && Number.isFinite(matchingOffice.longitude)) {
+            const h = (Number(ticket.id) * 9973) % 10000;
+            lat = matchingOffice.latitude + ((h % 100) - 50) * 0.0003;
+            lng = matchingOffice.longitude + (((h / 100) | 0) - 50) * 0.00045;
+          }
+        }
         items.push({
           id: ticket.id,
           type: "ticket",
           latitude: lat,
           longitude: lng,
           label: `Заявка #${ticket.id}: ${ticket.title}`,
-          data: ticket,
+          data: {
+            ...ticket,
+            location: {
+              ...(ticket.location || {}),
+              latitude: lat,
+              longitude: lng,
+            },
+          },
         });
       });
 

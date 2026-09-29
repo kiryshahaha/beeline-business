@@ -5,6 +5,7 @@ import React, { useState } from "react";
 import { useAuth } from "@/providers/AuthProvider";
 import { useMyDay } from "@/hooks/worker/useMyDay";
 import { useWorkerEquipment } from "@/hooks/worker/useWorkerEquipment";
+import { useAvailableDates } from "@/hooks/useAvailableDates";
 import { getTodayMsk, getTomorrowMsk } from "@/lib/worker/time";
 import styles from "./equipment.module.css";
 
@@ -13,6 +14,15 @@ export default function WorkerEquipmentPage() {
   const todayMsk = getTodayMsk();
   const tomorrowMsk = getTomorrowMsk();
   const [selectedDate, setSelectedDate] = useState(todayMsk);
+  const { hasToday, closestDate } = useAvailableDates(todayMsk);
+
+  React.useEffect(() => {
+    if (!hasToday && closestDate && closestDate !== todayMsk) {
+      queueMicrotask(() => {
+        setSelectedDate(closestDate);
+      });
+    }
+  }, [hasToday, closestDate, todayMsk]);
 
   const { data: dayData } = useMyDay(selectedDate);
   const { data: equipmentData, isLoading, isError, error, refetch } = useWorkerEquipment(

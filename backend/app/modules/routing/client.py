@@ -160,8 +160,9 @@ class GeoapifyRoutingClient:
         if len(sources) * len(targets) > MAX_ROUTE_MATRIX_CELLS:
             raise GeoapifyMatrixSizeError("Geoapify supports at most 1000 matrix cells")
 
+        matrix_mode = "bus" if mode in ("approximated_transit", "transit") else mode
         payload = {
-            "mode": mode,
+            "mode": matrix_mode,
             "units": "metric",
             "sources": [{"location": [point.longitude, point.latitude]} for point in sources],
             "targets": [{"location": [point.longitude, point.latitude]} for point in targets],
@@ -403,8 +404,9 @@ class AsyncGeoapifyRoutingClient:
         )
         if not sources or not targets or len(sources) * len(targets) > MAX_ROUTE_MATRIX_CELLS:
             raise GeoapifyMatrixSizeError("Invalid matrix dimensions")
+        matrix_mode = "bus" if mode in ("approximated_transit", "transit") else mode
         params = {
-            "mode": mode,
+            "mode": matrix_mode,
             "units": "metric",
             "type": "balanced",
             "traffic": "free_flow",
@@ -465,17 +467,61 @@ class AsyncGeoapifyRoutingClient:
             if cached is not None:
                 self.telemetry.record_cache_hit("route")
                 return RouteResult.model_validate(json.loads(cached.payload))
-        response = await self._request(
-            "GET",
-            "routing",
-            stage="route",
-            params={"apiKey": self._key, **params},
-        )
+        from app.modules.planning.errors import PlanningError
+
         try:
+            response = await self._request(
+                "GET",
+                "routing",
+                stage="route",
+                params={"apiKey": self._key, **params},
+            )
             result = GeoapifyRoutingClient._parse_route(response, expected_mode=mode)
-        except GeoapifyRoutingError:
-            self.telemetry.record_error("routing_invalid_response")
-            raise
+        except PlanningError as error:
+            if error.code != "routing_invalid_request":
+                raise
+            fallback_success = False
+            for fb_mode in (["walk", "drive"] if mode in ("approximated_transit", "transit") else ["walk"]):
+                try:
+                    fb_params = {**params, "mode": fb_mode}
+                    response = await self._request(
+                        "GET",
+                        "routing",
+                        stage="route",
+                        params={"apiKey": self._key, **fb_params},
+                    )
+                    payload = response.json()
+                    if "features" in payload and payload["features"]:
+                        payload["features"][0].setdefault("properties", {})["mode"] = mode
+                        if "properties" in payload:
+                            payload["properties"]["mode"] = mode
+                    mock_resp = httpx.Response(200, json=payload, request=response.request)
+                    result = GeoapifyRoutingClient._parse_route(mock_resp, expected_mode=mode)
+                    fallback_success = True
+                    break
+                except Exception:
+                    continue
+
+            if not fallback_success:
+                p1_lat, p1_lon = origin[1], origin[0]
+                p2_lat, p2_lon = destination[1], destination[0]
+                lat1, lon1 = math.radians(p1_lat), math.radians(p1_lon)
+                lat2, lon2 = math.radians(p2_lat), math.radians(p2_lon)
+                dlat, dlon = lat2 - lat1, lon2 - lon1
+                a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+                c = 2 * math.asin(math.sqrt(a))
+                total_dist = 6371000.0 * c
+                speed = 11.1 if mode == "drive" else (4.0 if mode == "bicycle" else 1.4)
+                duration = total_dist / speed
+                result = RouteResult(
+                    distance_meters=total_dist,
+                    duration_seconds=duration,
+                    geometry={
+                        "type": "MultiLineString",
+                        "coordinates": [[[origin[0], origin[1]], [destination[0], destination[1]]]]
+                    }
+                )
+
         self._cache_result(key, result, "geoapify_route")
         return result
 

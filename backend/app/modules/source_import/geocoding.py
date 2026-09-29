@@ -31,7 +31,7 @@ class GeoapifyGeocoder:
         self,
         api_key: str,
         *,
-        timeout_seconds: float = 10.0,
+        timeout_seconds: float = 2.0,
         url: str = GEOCODE_URL,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
@@ -42,9 +42,19 @@ class GeoapifyGeocoder:
 
     def geocode(self, addresses: list[str]) -> dict[str, GeocodeResult]:
         results: dict[str, GeocodeResult] = {}
+        consecutive_network_failures = 0
         with httpx.Client(timeout=self._timeout, transport=self._transport) as client:
             for text in addresses:
-                results[text] = self._one(client, text)
+                if consecutive_network_failures >= 2:
+                    # Fast circuit breaker: if API is blocked/offline, do not hang the import
+                    results[text] = GeocodeResult("unresolved", error="geocoder_unavailable")
+                    continue
+                res = self._one(client, text)
+                results[text] = res
+                if res.error in ("geocoder_unavailable", "geocoder_timeout"):
+                    consecutive_network_failures += 1
+                else:
+                    consecutive_network_failures = 0
         return results
 
     def _one(self, client: httpx.Client, text: str) -> GeocodeResult:
@@ -58,7 +68,7 @@ class GeoapifyGeocoder:
         }
         try:
             response = client.get(self._url, params=params)
-        except httpx.HTTPError:
+        except (httpx.TimeoutException, httpx.HTTPError, Exception):
             return GeocodeResult("unresolved", error="geocoder_unavailable")
         if response.is_error:
             return GeocodeResult("unresolved", error=f"geocoder_http_{response.status_code}")

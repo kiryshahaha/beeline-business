@@ -48,17 +48,42 @@ export default function PlanningModal({ isOpen, onClose, defaultDate }) {
       const tickets = tRes.ok ? await tRes.json() : [];
       const workers = wRes.ok ? await wRes.json() : [];
 
-      const candidateTickets = tickets
-        .filter((t) => t.status === "planned" || !t.assigned_worker_id)
-        .map((t) => t.id)
-        .slice(0, 100);
+      const waitingTickets = tickets.filter(
+        (t) => t.status === "planned" || !t.assigned_worker_id
+      );
 
-      const candidateWorkers = workers
+      // Планирование в OR-Tools строится в рамках одного участка (service_area_id).
+      // Если зона не выбрана, берем первую зону, где есть нераспределенные заявки.
+      let effectiveAreaId = selectedServiceAreaId ? Number(selectedServiceAreaId) : null;
+      if (!effectiveAreaId) {
+        effectiveAreaId = waitingTickets.find((t) => t.service_area_id)?.service_area_id || null;
+      }
+
+      const areaTickets = effectiveAreaId
+        ? waitingTickets.filter((t) => t.service_area_id === effectiveAreaId)
+        : waitingTickets;
+
+      const candidateTickets = areaTickets.map((t) => t.id).slice(0, 100);
+
+      // Специалисты участка (макс. 20 по лимиту бэкенда planning_max_workers)
+      const areaWorkers = effectiveAreaId
+        ? workers.filter(
+            (w) =>
+              (w.worker_profile?.service_area_id ?? w.service_area_id) === effectiveAreaId ||
+              (!w.worker_profile?.service_area_id && !w.service_area_id)
+          )
+        : workers;
+
+      const candidateWorkers = (areaWorkers.length > 0 ? areaWorkers : workers)
         .map((w) => w.id)
-        .slice(0, 50);
+        .slice(0, 20);
 
       if (candidateTickets.length === 0) {
-        throw new Error(`На дату ${planningDate} нет нераспределенных заявок со статусом "Ожидание"`);
+        throw new Error(
+          effectiveAreaId
+            ? `На дату ${planningDate} нет нераспределенных заявок в выбранной зоне обслуживания`
+            : `На дату ${planningDate} нет нераспределенных заявок со статусом "Ожидание"`
+        );
       }
       if (candidateWorkers.length === 0) {
         throw new Error("В системе нет доступных выездных специалистов");
@@ -69,7 +94,7 @@ export default function PlanningModal({ isOpen, onClose, defaultDate }) {
         ticket_ids: candidateTickets,
         worker_ids: candidateWorkers,
         allow_partial: true,
-        ...(selectedServiceAreaId ? { service_area_id: Number(selectedServiceAreaId) } : {}),
+        ...(effectiveAreaId ? { service_area_id: effectiveAreaId } : {}),
       };
 
       const res = await apiFetch("/planning/preview", {
@@ -79,9 +104,19 @@ export default function PlanningModal({ isOpen, onClose, defaultDate }) {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        const msg = errData?.detail?.code
-          ? `Ошибка планирования: ${errData.detail.code}`
-          : errData?.detail || "Не удалось рассчитать план";
+        let msg = "Не удалось рассчитать план";
+        const code = errData?.detail?.code;
+        if (code === "multiple_service_areas") {
+          msg = "Заявки принадлежат разным участкам обслуживания. Выберите конкретный участок в поле 'Зона обслуживания'.";
+        } else if (code === "planning_limit_exceeded") {
+          msg = "Превышен лимит заявок (макс. 100) или инженеров (макс. 20) на один расчет плана.";
+        } else if (code === "planning_busy") {
+          msg = "Сервер планирования сейчас занят другим расчетом. Повторите через несколько секунд.";
+        } else if (errData?.detail?.message) {
+          msg = errData.detail.message;
+        } else if (typeof errData?.detail === "string") {
+          msg = errData.detail;
+        }
         throw new Error(msg);
       }
 
@@ -107,7 +142,22 @@ export default function PlanningModal({ isOpen, onClose, defaultDate }) {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData?.detail || "Ошибка применения плана");
+        let msg = "Ошибка применения плана";
+        const code = errData?.detail?.code;
+        if (code === "plan_has_no_assignments") {
+          msg = "В плане нет сформированных маршрутов (0 назначений). Пустой план не может быть сохранён в БД.";
+        } else if (code === "plan_expired") {
+          msg = "Срок действия расчета истек. Выполните расчет плана заново.";
+        } else if (code === "plan_stale") {
+          msg = "Данные изменились с момента расчета плана. Выполните повторный расчет.";
+        } else if (code === "shift_already_started") {
+          msg = "Смена уже началась для одного из выбранных инженеров.";
+        } else if (errData?.detail?.message) {
+          msg = errData.detail.message;
+        } else if (typeof errData?.detail === "string") {
+          msg = errData.detail;
+        }
+        throw new Error(msg);
       }
 
       setApplied(true);
@@ -229,13 +279,19 @@ export default function PlanningModal({ isOpen, onClose, defaultDate }) {
                 </div>
               </div>
 
+              {((planResult.routes?.length ?? 0) === 0 && (planResult.metrics?.assigned_tickets ?? 0) === 0) && (
+                <div style={{ padding: "10px 14px", marginTop: "12px", borderRadius: "8px", background: "#fef3c7", color: "#92400e", fontSize: "13px" }}>
+                  ⚠️ Маршруты не сформированы (0 назначений). Проверьте доступность инженеров на выбранную дату (смены, график 2/2 или 5/2, зону обслуживания). Пустой план применить нельзя.
+                </div>
+              )}
+
               <div className={styles.actionButtons}>
                 {!applied ? (
                   <button
                     type="button"
                     className={styles.applyBtn}
                     onClick={handleApply}
-                    disabled={applying}
+                    disabled={applying || ((planResult.routes?.length ?? 0) === 0 && (planResult.metrics?.assigned_tickets ?? 0) === 0)}
                   >
                     {applying ? "Применение..." : "Применить план и выдать маршруты"}
                   </button>

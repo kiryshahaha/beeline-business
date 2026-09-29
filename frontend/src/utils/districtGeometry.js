@@ -110,6 +110,97 @@ export function calculateGeometryBounds(geometry) {
   ];
 }
 
+import kuzminki from "@/data/districtBoundaries/kuzminki.json";
+import biryulyovo from "@/data/districtBoundaries/biryulyovo.json";
+import nagorny from "@/data/districtBoundaries/nagorny.json";
+import tsao from "@/data/districtBoundaries/tsao.json";
+import sao from "@/data/districtBoundaries/sao.json";
+import svao from "@/data/districtBoundaries/svao.json";
+import vao from "@/data/districtBoundaries/vao.json";
+import yuvao from "@/data/districtBoundaries/yuvao.json";
+import yuao from "@/data/districtBoundaries/yuao.json";
+import yuzao from "@/data/districtBoundaries/yuzao.json";
+import zao from "@/data/districtBoundaries/zao.json";
+import szao from "@/data/districtBoundaries/szao.json";
+import zelao from "@/data/districtBoundaries/zelao.json";
+import nao from "@/data/districtBoundaries/nao.json";
+import tao from "@/data/districtBoundaries/tao.json";
+
+const MOSCOW_GEO_DISTRICTS = [kuzminki, biryulyovo, nagorny];
+const MOSCOW_GEO_OKRUGS = [
+  tsao, sao, svao, vao, yuvao, yuao, yuzao, zao, szao, zelao, nao, tao,
+];
+
+/**
+ * Finds the specific Moscow district name for a given point [longitude, latitude].
+ */
+export function findDistrictByCoordinates(lon, lat) {
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
+  // Check specific district polygons first
+  for (const item of MOSCOW_GEO_DISTRICTS) {
+    if (isPointInPolygon([lon, lat], item.geometry)) {
+      return item.districtName;
+    }
+  }
+  // Then check okrug polygons
+  for (const item of MOSCOW_GEO_OKRUGS) {
+    if (isPointInPolygon([lon, lat], item.geometry)) {
+      return item.districtName;
+    }
+  }
+  return null;
+}
+
+/**
+ * Finds the containing Moscow administrative okrug for a given point [longitude, latitude].
+ */
+export function findOkrugByCoordinates(lon, lat) {
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
+  for (const item of MOSCOW_GEO_OKRUGS) {
+    if (isPointInPolygon([lon, lat], item.geometry)) {
+      return item.districtName;
+    }
+  }
+  return null;
+}
+
+/**
+ * Searches local cache by district or okrug name/alias.
+ */
+export function findLocalDistrictByName(districtName) {
+  if (!districtName) return null;
+  const clean = districtName.trim().toLowerCase();
+  if (clean === "не указан" || clean === "адрес не указан") return null;
+
+  const all = [...MOSCOW_GEO_DISTRICTS, ...MOSCOW_GEO_OKRUGS];
+  for (const item of all) {
+    const itemName = (item.districtName || "").toLowerCase();
+    const aliases = (item.aliases || []).map((a) => a.toLowerCase());
+    if (itemName === clean || aliases.includes(clean)) {
+      return {
+        districtName: item.districtName,
+        displayName: item.displayName,
+        featureCollection: {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              geometry: item.geometry,
+              properties: {
+                name: item.districtName,
+                displayName: item.displayName,
+              },
+            },
+          ],
+        },
+        geometry: item.geometry,
+        bounds: calculateGeometryBounds(item.geometry),
+      };
+    }
+  }
+  return null;
+}
+
 const boundaryCache = new Map();
 
 /**
@@ -123,8 +214,53 @@ export async function fetchRealDistrictBoundary({ district, city, lat, lon }) {
     return boundaryCache.get(cacheKey);
   }
 
+  // 1. Быстрый синхронный локальный поиск по названию
+  const isInvalidName =
+    !district ||
+    district.trim().toLowerCase() === "не указан" ||
+    district.trim().toLowerCase() === "адрес не указан";
+
+  if (!isInvalidName) {
+    const localMatch = findLocalDistrictByName(district);
+    if (localMatch) {
+      boundaryCache.set(cacheKey, localMatch);
+      return localMatch;
+    }
+  }
+
+  // 2. Быстрый синхронный локальный поиск по координатам
+  if (Number.isFinite(lon) && Number.isFinite(lat)) {
+    // Check specific district first
+    for (const item of [...MOSCOW_GEO_DISTRICTS, ...MOSCOW_GEO_OKRUGS]) {
+      if (isPointInPolygon([lon, lat], item.geometry)) {
+        const result = {
+          districtName: item.districtName,
+          displayName: item.displayName,
+          featureCollection: {
+            type: "FeatureCollection",
+            features: [
+              {
+                type: "Feature",
+                geometry: item.geometry,
+                properties: {
+                  name: item.districtName,
+                  displayName: item.displayName,
+                },
+              },
+            ],
+          },
+          geometry: item.geometry,
+          bounds: calculateGeometryBounds(item.geometry),
+        };
+        boundaryCache.set(cacheKey, result);
+        return result;
+      }
+    }
+  }
+
+  // 3. Обращение к API эндпоинту
   const queryParams = new URLSearchParams();
-  if (district) queryParams.set("district", district);
+  if (district && !isInvalidName) queryParams.set("district", district);
   if (city) queryParams.set("city", city);
   if (lat != null && Number.isFinite(lat)) queryParams.set("lat", String(lat));
   if (lon != null && Number.isFinite(lon)) queryParams.set("lon", String(lon));
@@ -156,3 +292,4 @@ export async function fetchRealDistrictBoundary({ district, city, lat, lon }) {
     return null;
   }
 }
+

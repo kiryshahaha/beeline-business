@@ -31,7 +31,7 @@ def add_service_area(session: Session, code: str, name: str) -> int:
 def find_office(session: Session, name: str) -> RowMapping | None:
     return (
         session.execute(
-            text("SELECT id, location_id FROM offices WHERE lower(name) = lower(:name)"),
+            text("SELECT id, location_id, service_area_id FROM offices WHERE lower(name) = lower(:name)"),
             {"name": name},
         )
         .mappings()
@@ -39,11 +39,31 @@ def find_office(session: Session, name: str) -> RowMapping | None:
     )
 
 
-def add_office(session: Session, name: str, location_id: int) -> int:
+def add_office(
+    session: Session, name: str, location_id: int, service_area_id: int | None = None
+) -> int:
     return session.execute(
-        text("INSERT INTO offices (name, location_id) VALUES (:name, :location_id) RETURNING id"),
-        {"name": name, "location_id": location_id},
+        text("""
+            INSERT INTO offices (name, location_id, service_area_id)
+            VALUES (:name, :location_id, :service_area_id)
+            RETURNING id
+        """),
+        {"name": name, "location_id": location_id, "service_area_id": service_area_id},
     ).scalar_one()
+
+
+def set_office_service_area(session: Session, office_id: int, service_area_id: int) -> None:
+    session.execute(
+        text("UPDATE offices SET service_area_id = :service_area_id WHERE id = :office_id"),
+        {"office_id": office_id, "service_area_id": service_area_id},
+    )
+
+
+def set_import_office(session: Session, import_id: int, office_id: int) -> None:
+    session.execute(
+        text("UPDATE source_imports SET office_id = :office_id WHERE id = :import_id"),
+        {"import_id": import_id, "office_id": office_id},
+    )
 
 
 def work_types_by_code(session: Session) -> dict[str, RowMapping]:

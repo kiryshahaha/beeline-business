@@ -319,9 +319,14 @@ def prepare(snapshot: dict, now: datetime, *, estimate_active_stage: bool = Fals
             reason = reasons.office_without_coordinates(
                 office["id"], start_location_id or office["location_id"]
             )
-        elif replan and end <= now:
+        elif replan and day == now.date() and end <= now:
             reason = reasons.worker_shift_ended(end, now, day)
-        elif start <= now and not (day_state and day_state.get("last_location_id")) and not replan:
+        elif (
+            day == now.date()
+            and start <= now
+            and not (day_state and day_state.get("last_location_id"))
+            and not replan
+        ):
             reason = reasons.shift_already_started(start, now, day)
         elif day_state and day_state.get("current_ticket_id") and not replan:
             reason = (
