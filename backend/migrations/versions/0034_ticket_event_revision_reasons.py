@@ -1,13 +1,13 @@
 """Add separate day revision reasons for regular and emergency ticket events.
 
 Revision ID: 0034
-Revises: 0033
+Revises: 0033, 0033_worker_app_api
 """
 
 from alembic import op
 
 revision = "0034"
-down_revision = "0033"
+down_revision = ("0033", "0033_worker_app_api")
 branch_labels = None
 depends_on = None
 
