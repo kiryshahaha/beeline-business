@@ -32,7 +32,11 @@ COMPARED_METRICS = (
 VISIT_FIELDS = ("arrival_at", "service_start_at", "service_end_at")
 
 
-def build_plan_state(public: dict, route_ids: dict[int, int] | None = None) -> dict:
+def build_plan_state(
+    public: dict,
+    route_ids: dict[int, int] | None = None,
+    area_scope_tickets: list[dict] | None = None,
+) -> dict:
     """Flatten a published plan into the visits and metrics a revision keeps forever."""
     route_ids = route_ids or {}
     visits = [
@@ -49,7 +53,7 @@ def build_plan_state(public: dict, route_ids: dict[int, int] | None = None) -> d
         for stop in route.get("stops", [])
         if stop.get("ticket_id") is not None
     ]
-    return {
+    state = {
         "route_date": public.get("route_date"),
         "plan_id": public.get("plan_id"),
         "outcome": public.get("outcome"),
@@ -60,6 +64,9 @@ def build_plan_state(public: dict, route_ids: dict[int, int] | None = None) -> d
         "planning_policy": public.get("planning_policy"),
         "objective_components": public.get("objective_components"),
     }
+    if area_scope_tickets is not None:
+        state["area_scope_tickets"] = area_scope_tickets
+    return state
 
 
 def build_replan_state(
@@ -67,9 +74,10 @@ def build_replan_state(
     previous: dict | None,
     lifecycle_by_ticket: dict[int, str],
     route_ids: dict[int, int] | None = None,
+    area_scope_tickets: list[dict] | None = None,
 ) -> dict:
     """Replace the unstarted remainder while retaining execution already in motion."""
-    state = build_plan_state(public, route_ids)
+    state = build_plan_state(public, route_ids, area_scope_tickets)
     visits = _visits_by_ticket(state)
     frozen_states = {"en_route", "in_progress", "completed"}
     for visit in (previous or {}).get("visits", []):

@@ -32,6 +32,8 @@ from app.modules.planning.schemas import (
     PolicyRead,
     PreviewRequest,
     ReplanRequest,
+    WindowExperimentRead,
+    WindowExperimentRequest,
 )
 from app.modules.routing.cache import GEOAPIFY_RESULT_CACHE
 from app.modules.routing.client import AsyncGeoapifyRoutingClient
@@ -213,8 +215,70 @@ async def preview_remainder(
 
 
 @router.post(
+    "/areas/{service_area_id}/{route_date}/window-experiment",
+    response_model=WindowExperimentRead,
+)
+async def compare_window_experiment(
+    service_area_id: int,
+    route_date: date,
+    data: WindowExperimentRequest,
+    actor: Observer,
+    engine=Depends(get_planning_engine),
+    settings=Depends(planning_settings),
+    provider=Depends(get_provider_factory),
+    planner=Depends(get_planner_client),
+    clock=Depends(get_clock),
+):
+    if not _preview_slots.acquire(blocking=False):
+        raise HTTPException(503, detail={"code": "planning_busy"}, headers={"Retry-After": "5"})
+    try:
+        with oplog.operation(
+            "planning.window_experiment",
+            route_date=route_date,
+            service_area_id=service_area_id,
+            base_day_revision=data.base_day_revision,
+            overridden_tickets=len(data.windows),
+        ) as fields:
+            request, snapshot = await asyncio.to_thread(
+                service.read_replan_snapshot,
+                engine,
+                service_area_id,
+                route_date,
+                data,
+                execution_policy(settings),
+                max_tickets=settings.planning_max_tickets,
+                max_workers=settings.planning_max_workers,
+            )
+            result = await service.compare_window_experiment(
+                engine,
+                request,
+                data.windows,
+                actor.id,
+                settings,
+                provider,
+                planner,
+                clock,
+                snapshot=snapshot,
+            )
+            metrics = result["experiment"].get("metrics") or {}
+            oplog.merge_stages((metrics.get("routing") or {}).get("stages"))
+            fields.update(
+                plan_outcome=result["experiment"]["outcome"],
+                baseline_outcome=result["baseline"]["outcome"],
+            )
+        return result
+    except (PlanningError, OperationalError) as error:
+        fail(error)
+    except TimeoutError:
+        raise HTTPException(504, detail={"code": "planning_timeout"})
+    finally:
+        _preview_slots.release()
+
+
+@router.post(
     "/days/{service_area_id}/{route_date}/redirect",
     response_model=WorkerDayStateRead,
+    description="Deprecated compatibility endpoint. Active travel cannot be redirected.",
 )
 def redirect_worker(
     service_area_id: int,
@@ -248,7 +312,7 @@ def redirect_worker(
     except day_state.ServiceAreaNotFound as error:
         raise HTTPException(404, detail="Зона обслуживания не найдена") from error
     except day_state.UnsafeRedirect as error:
-        raise HTTPException(422, detail=str(error)) from error
+        raise HTTPException(409, detail={"code": error.code}) from error
 
 
 @router.get("/plans/{plan_id}", response_model=PlanRead, response_model_exclude_unset=True)

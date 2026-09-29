@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "timezone": "Europe/Moscow",
+  "route_date": "2030-01-15",
+  "active_stage_cases": [
+    {
+      "id": "emergency-arrives-en-route",
+      "lifecycle_state": "en_route",
+      "received_at": "2030-01-15T10:05:00+03:00",
+      "expected_available_at": "2030-01-15T11:20:00+03:00",
+      "expected_worker_eligible": false,
+      "expected_current_destination_mutated": false
+    },
+    {
+      "id": "emergency-arrives-in-progress",
+      "lifecycle_state": "in_progress",
+      "received_at": "2030-01-15T10:40:00+03:00",
+      "expected_available_at": "2030-01-15T12:10:00+03:00",
+      "expected_worker_eligible": false,
+      "expected_current_ticket_mutated": false
+    },
+    {
+      "id": "completion-uses-actual-point-and-time",
+      "lifecycle_state": "completed",
+      "actual_completed_at": "2030-01-15T11:47:00+03:00",
+      "last_location_id": 750,
+      "expected_worker_eligible": true,
+      "expected_anchor_location_id": 750,
+      "expected_anchor_at": "2030-01-15T11:47:00+03:00"
+    }
+  ],
+  "ordinary_insert_cases": [
+    {
+      "id": "ordinary-request-fits-between-fixed-visits",
+      "published_service_starts": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T13:00:00+03:00"
+      ],
+      "new_visit_window": [
+        "2030-01-15T11:00:00+03:00",
+        "2030-01-15T12:00:00+03:00"
+      ],
+      "expected_insert_allowed": true,
+      "expected_existing_order_changed": false,
+      "expected_existing_workers_changed": false,
+      "expected_existing_service_starts_changed": false
+    },
+    {
+      "id": "ordinary-request-does-not-displace-published-visit",
+      "published_service_starts": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T13:00:00+03:00"
+      ],
+      "new_visit_window": [
+        "2030-01-15T10:00:00+03:00",
+        "2030-01-15T12:00:00+03:00"
+      ],
+      "expected_insert_allowed": false,
+      "expected_existing_order_changed": false,
+      "expected_existing_workers_changed": false,
+      "expected_existing_service_starts_changed": false
+    }
+  ],
+  "response_cases": [
+    {
+      "id": "arrival-at-60-minutes",
+      "received_at": "2030-01-15T09:00:00+03:00",
+      "arrival_at": "2030-01-15T10:00:00+03:00",
+      "service_start_at": "2030-01-15T10:10:00+03:00",
+      "service_end_at": "2030-01-15T10:40:00+03:00",
+      "service_deadline_at": "2030-01-15T11:00:00+03:00",
+      "expected_arrival_minutes": 60,
+      "expected_service_start_minutes": 70,
+      "expected_within_60": true,
+      "expected_within_120": true,
+      "expected_deadline_met": true
+    },
+    {
+      "id": "arrival-at-120-service-after-target",
+      "received_at": "2030-01-15T09:00:00+03:00",
+      "arrival_at": "2030-01-15T11:00:00+03:00",
+      "service_start_at": "2030-01-15T11:15:00+03:00",
+      "service_end_at": "2030-01-15T11:45:00+03:00",
+      "service_deadline_at": "2030-01-15T12:00:00+03:00",
+      "expected_arrival_minutes": 120,
+      "expected_service_start_minutes": 135,
+      "expected_within_60": false,
+      "expected_within_120": true,
+      "expected_deadline_met": true
+    },
+    {
+      "id": "sla-violation-after-active-stage",
+      "received_at": "2030-01-15T09:00:00+03:00",
+      "arrival_at": "2030-01-15T11:30:00+03:00",
+      "service_start_at": "2030-01-15T11:40:00+03:00",
+      "service_end_at": "2030-01-15T12:20:00+03:00",
+      "service_deadline_at": "2030-01-15T12:00:00+03:00",
+      "expected_arrival_minutes": 150,
+      "expected_service_start_minutes": 160,
+      "expected_within_60": false,
+      "expected_within_120": false,
+      "expected_deadline_met": false
+    }
+  ]
+}

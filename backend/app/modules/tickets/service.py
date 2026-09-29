@@ -892,6 +892,8 @@ def _publish_manual_assignment_revision(
     )
     if previous is not None:
         old_state = previous.plan_state or {}
+        if "area_scope_tickets" in old_state:
+            new_state["area_scope_tickets"] = old_state["area_scope_tickets"]
         kept_visits = [
             visit
             for visit in old_state.get("visits", [])
